@@ -1,0 +1,13 @@
+# JetBrains Git dialogs don't strip ANSI; keep hook output plain.
+colors: false
+
+pre-commit:
+  parallel: false
+  commands:
+    test:
+      run: npm test
+
+commit-msg:
+  commands:
+    commitlint:
+      run: npx --no-install commitlint --edit {1}

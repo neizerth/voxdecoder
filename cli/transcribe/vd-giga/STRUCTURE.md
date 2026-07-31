@@ -2,7 +2,7 @@
 
 Rust + Candle crate for the GigaAM CLI. **No Python at runtime.**
 
-Related: [README.md](README.md) (model notes) · [cli.md](cli.md) (flags)
+Related: [README.md](README.md) (model notes) · [cli.md](cli.md) (flags) · [RUST.md](RUST.md) (fmt / clippy)
 
 ---
 

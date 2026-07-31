@@ -1,0 +1,6 @@
+# Clippy defaults for this repo. Enforced via `cargo clippy -- -D warnings`
+# and `[workspace.lints]` in the root Cargo.toml.
+
+cognitive-complexity-threshold = 30
+too-many-arguments-threshold = 8
+type-complexity-threshold = 250

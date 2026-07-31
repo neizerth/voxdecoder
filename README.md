@@ -2,6 +2,19 @@
 
 License: [MIT](LICENSE)
 
+## Rust
+
+Toolchain + linters: see [cli/transcribe/vd-giga/RUST.md](cli/transcribe/vd-giga/RUST.md).
+
+```bash
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+npm test                 # all CLI tests
+npm run test:vd-giga     # vd-giga only
+```
+
+Hooks ([lefthook.yml](lefthook.yml)): `commit-msg` → commitlint; `pre-commit` → `npm test`. After clone: `npm install`.
+
 ## CLI apps
 
 ### Transcribation

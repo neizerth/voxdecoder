@@ -1,0 +1,17 @@
+[package]
+name = "vd-giga"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Local GigaAM transcription CLI (Rust + Candle)"
+publish = false
+
+[[bin]]
+name = "vd-giga"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
