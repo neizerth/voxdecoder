@@ -22,8 +22,109 @@ impl Binder for SubprocessBinder {
             Capability::FixTerms => run_fix(req, "vd-fix-terms"),
             Capability::Diarize => run_diarize(req),
             Capability::MeetingMerge => run_meeting_merge(req),
+            Capability::Postprocess => run_postprocess(req),
         }
     }
+}
+
+fn run_postprocess(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
+    let bin = find_bin("vd-postprocess")?;
+    let mut args = vec!["run".into(), "-q".into()];
+
+    // Named inputs from options.inputs map; fallback: primary req.input as `input`.
+    let mut have_named = false;
+    if let Some(map) = req.options.get("inputs").and_then(ArgValue::as_map) {
+        for (name, v) in map {
+            if let Some(path) = v.as_string() {
+                have_named = true;
+                args.push("--input".into());
+                args.push(format!("{name}={path}"));
+            }
+        }
+    }
+    if !have_named {
+        args.push("--input".into());
+        args.push(format!("input={}", req.input.display()));
+    }
+
+    match req.options.get("recipes") {
+        Some(ArgValue::Strings(rs)) => {
+            for r in rs {
+                args.push("--recipe".into());
+                args.push(r.clone());
+            }
+        }
+        Some(ArgValue::String(r)) => {
+            args.push("--recipe".into());
+            args.push(r.clone());
+        }
+        Some(ArgValue::Map(m)) => {
+            for v in m.values() {
+                if let Some(r) = v.as_string() {
+                    args.push("--recipe".into());
+                    args.push(r);
+                }
+            }
+        }
+        _ => {
+            return Err(ExecError::Step(
+                "postprocess requires options.recipes".into(),
+            ));
+        }
+    }
+
+    if let Some(map) = req.options.get("provider").and_then(ArgValue::as_map) {
+        if let Some(t) = map.get("type").and_then(ArgValue::as_string) {
+            args.push("--provider".into());
+            args.push(t);
+        }
+        if let Some(m) = map.get("model").and_then(ArgValue::as_string) {
+            args.push("-m".into());
+            args.push(m);
+        }
+    } else if let Some(t) = req.options.get("provider").and_then(ArgValue::as_string) {
+        args.push("--provider".into());
+        args.push(t);
+    } else {
+        args.push("--provider".into());
+        args.push("stub".into());
+    }
+
+    if let Some(map) = req.options.get("variables").and_then(ArgValue::as_map) {
+        for (k, v) in map {
+            if let Some(val) = v.as_string() {
+                args.push("--var".into());
+                args.push(format!("{k}={val}"));
+            }
+        }
+    }
+
+    if let Some(d) = &req.output_dir {
+        args.push("-d".into());
+        args.push(d.display().to_string());
+    } else if let Some(o) = &req.output {
+        if let Some(parent) = o.parent() {
+            args.push("-d".into());
+            args.push(parent.display().to_string());
+        }
+    }
+
+    if req.options.get("overwrite").and_then(ArgValue::as_bool) == Some(true) {
+        args.push("--overwrite".into());
+    }
+
+    run_cmd(&bin, &args, &req.working_dir)?;
+
+    // Primary output: first recipe's first declared file is unknown here; use output_dir or working_dir.
+    let primary = req.output.clone().unwrap_or_else(|| {
+        req.output_dir
+            .clone()
+            .unwrap_or_else(|| req.working_dir.clone())
+    });
+    Ok(InvokeResult {
+        primary_output: primary,
+        outputs: BTreeMap::new(),
+    })
 }
 
 fn run_meeting_merge(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {

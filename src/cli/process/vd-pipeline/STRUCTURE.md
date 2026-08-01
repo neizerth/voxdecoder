@@ -16,7 +16,7 @@ Any Job builder  →  Job (DAG)  →  Executor  →  Capabilities
 
 - **Job** is the unit of work (YAML/JSON DAG).
 - **Executor** does not know whether the Job came from flags, a file, `vd-meeting`, MCP, or `vd-srv`.
-- **`use`** is an action (`transcribe`, `prepare-context`, `fix-*`, `diarize`, `meeting-merge`), not a binary name.
+- **`use`** is an action (`transcribe`, `prepare-context`, `fix-*`, `diarize`, `meeting-merge`, `postprocess`), not a binary name.
 - Implementation knobs live under **`options`**.
 - **`id`** / **`outputs`** register named artifacts; **`name`** is display only.
 - **`inputs`** (sugar: **`input`**) and **`depends`** form DAG edges.
@@ -113,6 +113,8 @@ pub enum Capability {
     FixTerms,
     Diarize,        // → vd-diarize
     MeetingMerge,   // stub binder → meeting.json
+    Postprocess,    // → vd-postprocess (recipes required)
+}
 }
 ```
 

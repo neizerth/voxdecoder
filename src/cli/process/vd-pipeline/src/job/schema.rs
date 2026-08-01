@@ -119,6 +119,7 @@ pub enum Capability {
     FixTerms,
     Diarize,
     MeetingMerge,
+    Postprocess,
 }
 
 impl Capability {
@@ -131,6 +132,7 @@ impl Capability {
             Self::FixTerms => "fix-terms",
             Self::Diarize => "diarize",
             Self::MeetingMerge => "meeting-merge",
+            Self::Postprocess => "postprocess",
         }
     }
 

@@ -218,6 +218,7 @@ Independent ready steps may run together up to `max_parallel` and free resource 
 | `fix-terms` | `vd-fix-terms` | [cli](../../fix/vd-fix-terms/cli.md) |
 | `diarize` | `vd-diarize` | [README](../vd-diarize/README.md) |
 | `meeting-merge` | merge stub (in-process) | writes `meeting.json`; real merge later |
+| `postprocess` | `vd-postprocess` | [README](../vd-postprocess/README.md) |
 
 ### Default Job shape (CLI)
 

@@ -5,7 +5,7 @@ use std::env;
 use std::path::{Path, PathBuf};
 
 use super::schema::{
-    ArtifactRef, Capability, Job, JobError, ResolvedJob, ResolvedStep, TranscribeEngine,
+    ArgValue, ArtifactRef, Capability, Job, JobError, ResolvedJob, ResolvedStep, TranscribeEngine,
 };
 
 pub fn resolve_job(job: Job) -> Result<ResolvedJob, JobError> {
@@ -90,7 +90,8 @@ fn preview_input(
         Capability::FixCasing
         | Capability::FixAsr
         | Capability::FixTerms
-        | Capability::MeetingMerge => Ok(None),
+        | Capability::MeetingMerge
+        | Capability::Postprocess => Ok(None),
     }
 }
 
@@ -119,6 +120,21 @@ fn validate_artifact_refs(job: &Job) -> Result<(), JobError> {
                     return Err(JobError::Usage(format!(
                         "unknown artifact id in inputs: {id}"
                     )));
+                }
+            }
+        }
+        if step.r#use == Capability::Postprocess {
+            if let Some(map) = step.options.get("inputs").and_then(ArgValue::as_map) {
+                for v in map.values() {
+                    if let Some(raw) = v.as_string() {
+                        if let ArtifactRef::Id(id) = ArtifactRef::parse(&raw) {
+                            if !produced.contains(&id) {
+                                return Err(JobError::Usage(format!(
+                                    "unknown artifact id in postprocess options.inputs: {id}"
+                                )));
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -170,6 +186,19 @@ pub fn schedule_order(job: &Job) -> Result<Vec<usize>, JobError> {
         for dep in &step.depends {
             if let Some(&from) = id_to_idx.get(dep.as_str()) {
                 add_edge(&mut adj, &mut indeg, from, i);
+            }
+        }
+        if step.r#use == Capability::Postprocess {
+            if let Some(map) = step.options.get("inputs").and_then(ArgValue::as_map) {
+                for v in map.values() {
+                    if let Some(raw) = v.as_string() {
+                        if let ArtifactRef::Id(id) = ArtifactRef::parse(&raw) {
+                            if let Some(&from) = artifact_to_idx.get(id.as_str()) {
+                                add_edge(&mut adj, &mut indeg, from, i);
+                            }
+                        }
+                    }
+                }
             }
         }
         // Linear sugar: no inputs → depend on previous non-skip step in declaration order
@@ -256,6 +285,26 @@ fn gate_capabilities(job: &Job) -> Result<(), JobError> {
                 step.r#use.as_str()
             )));
         }
+        if step.r#use == Capability::Postprocess {
+            gate_postprocess_options(step)?;
+        }
+    }
+    Ok(())
+}
+
+fn gate_postprocess_options(step: &super::schema::Step) -> Result<(), JobError> {
+    let recipes = step.options.get("recipes");
+    let empty = match recipes {
+        None => true,
+        Some(ArgValue::Strings(v)) => v.is_empty(),
+        Some(ArgValue::String(s)) => s.is_empty(),
+        Some(ArgValue::Map(m)) => m.is_empty(),
+        Some(_) => false,
+    };
+    if empty {
+        return Err(JobError::Usage(
+            "postprocess step requires options.recipes (non-empty)".into(),
+        ));
     }
     Ok(())
 }
@@ -316,7 +365,8 @@ pub fn exec_input(
         Capability::FixCasing
         | Capability::FixAsr
         | Capability::FixTerms
-        | Capability::MeetingMerge => prev.cloned().ok_or_else(|| {
+        | Capability::MeetingMerge
+        | Capability::Postprocess => prev.cloned().ok_or_else(|| {
             JobError::Usage(format!(
                 "{} step needs inputs or a previous step output",
                 step.r#use.as_str()

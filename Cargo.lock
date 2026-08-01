@@ -2926,6 +2926,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "vd-postprocess"
+version = "0.1.0"
+dependencies = [
+ "assert_cmd",
+ "clap",
+ "predicates",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tempfile",
+ "thiserror 2.0.19",
+ "toml",
+ "vd-artifact",
+ "vd-progress",
+]
+
+[[package]]
 name = "vd-progress"
 version = "0.1.0"
 dependencies = [

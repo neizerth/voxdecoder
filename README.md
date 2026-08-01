@@ -17,7 +17,8 @@ audio / video / docs / meeting tracks
    MCP / vd-srv     ─┘         │
                                ├─ transcribe / fix-* / prepare-context
                                ├─ diarize          → vd-diarize
-                               └─ meeting-merge    → Meeting Artifact
+                               ├─ meeting-merge    → Meeting Artifact
+                               └─ postprocess      → derived artifacts (recipes)
 ```
 
 Foreground: call a binary directly, or submit a Job via `vd-pipeline` / `vd-meeting`.  
@@ -47,7 +48,7 @@ vd-gigaam run -i meeting.ogg -m v2_rnnt --device metal
 
 ### Process
 
-Prepare project knowledge, run Jobs, diarize, and build meeting Jobs.
+Prepare project knowledge, run Jobs, diarize, build meeting Jobs, and derive artifacts from recipes.
 
 | CLI | Role | Status | Spec |
 |-----|------|--------|------|
@@ -55,6 +56,7 @@ Prepare project knowledge, run Jobs, diarize, and build meeting Jobs.
 | [`vd-assets`](src/cli/process/vd-assets/) | Docs/PDF/Office → `.voxdecoder/` (`md/` + `terms.yml`) | implemented | [cli](src/cli/process/vd-assets/cli.md) · [structure](src/cli/process/vd-assets/STRUCTURE.md) |
 | [`vd-diarize`](src/cli/process/vd-diarize/) | Who spoke when → Diarization Artifact (`use: diarize`, local-first) | implemented | [cli](src/cli/process/vd-diarize/cli.md) · [structure](src/cli/process/vd-diarize/STRUCTURE.md) |
 | [`vd-meeting`](src/cli/process/vd-meeting/) | Meeting Planner (MeetingRequest → Job → same Executor) | implemented | [cli](src/cli/process/vd-meeting/cli.md) · [structure](src/cli/process/vd-meeting/STRUCTURE.md) |
+| [`vd-postprocess`](src/cli/process/vd-postprocess/) | User recipes + execution provider → derived artifacts (`use: postprocess`) | implemented | [cli](src/cli/process/vd-postprocess/cli.md) · [structure](src/cli/process/vd-postprocess/STRUCTURE.md) |
 
 Overview: [src/cli/process/](src/cli/process/).
 
@@ -69,6 +71,7 @@ Overview: [src/cli/process/](src/cli/process/).
 | `fix-terms` | Canonical terminology | `vd-fix-terms` |
 | `diarize` | Speaker timeline | `vd-diarize` |
 | `meeting-merge` | Meeting Artifact | stub in `vd-pipeline` (real merge later) |
+| `postprocess` | Derived artifacts via user recipes | `vd-postprocess` |
 
 ```bash
 vd-pipeline run -i meeting.ogg
@@ -80,6 +83,8 @@ vd-assets run -i ./spec.pdf --ocr
 
 vd-diarize run -i meeting.wav
 vd-diarize run -i meeting.wav --backend stub
+
+vd-postprocess run --input meeting=meeting.json --recipe ./summary.yaml --provider stub
 ```
 
 | Tool | Owns |
@@ -87,6 +92,7 @@ vd-diarize run -i meeting.wav --backend stub
 | `vd-pipeline` | Shared Executor (any Job DAG) |
 | `vd-diarize` | One audio → anonymous speaker timeline |
 | `vd-meeting` | Plan MeetingRequest → Job only — does not execute |
+| `vd-postprocess` | Recipes + provider → derived artifacts |
 
 ### Fix (local cleaning)
 

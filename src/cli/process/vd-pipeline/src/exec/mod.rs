@@ -3,13 +3,13 @@
 mod bind;
 mod subprocess;
 
-use std::collections::HashMap;
-use std::path::PathBuf;
+use std::collections::{BTreeMap, HashMap};
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use vd_progress::{Progress, ProgressMode};
 
-use crate::job::{resolve, ArgValue, ResolvedJob};
+use crate::job::{resolve, ArgValue, ArtifactRef, Capability, ResolvedJob};
 use crate::status;
 
 pub use bind::{Binder, InvokeRequest, InvokeResult};
@@ -80,6 +80,16 @@ impl<B: Binder> Executor<B> {
             live.input = Some(input.clone());
             status::emit_step_start(&progress, &live, total, overall);
 
+            let mut options = step.options.clone();
+            if step.capability == Capability::Postprocess {
+                resolve_postprocess_inputs(
+                    &mut options,
+                    &artifacts,
+                    &resolved.working_dir,
+                )
+                .map_err(ExecError::Step)?;
+            }
+
             let req = InvokeRequest {
                 capability: step.capability,
                 working_dir: resolved.working_dir.clone(),
@@ -87,7 +97,7 @@ impl<B: Binder> Executor<B> {
                 output: step.output.clone(),
                 output_dir: resolved.job.output.dir.clone(),
                 context_assets: resolved.job.context.assets.clone(),
-                options: step.options.clone(),
+                options,
             };
 
             match self.binder.invoke(&req) {
@@ -174,4 +184,36 @@ pub fn dry_run_text(resolved: &ResolvedJob) -> String {
 
 pub fn dry_run_json(resolved: &ResolvedJob) -> Result<String, ExecError> {
     serde_json::to_string_pretty(&resolved.job).map_err(|e| ExecError::Other(e.to_string()))
+}
+
+fn resolve_postprocess_inputs(
+    options: &mut BTreeMap<String, ArgValue>,
+    artifacts: &HashMap<String, PathBuf>,
+    working_dir: &Path,
+) -> Result<(), String> {
+    let Some(ArgValue::Map(map)) = options.get("inputs").cloned() else {
+        return Ok(());
+    };
+    let mut resolved = BTreeMap::new();
+    for (name, v) in map {
+        let Some(raw) = v.as_string() else {
+            continue;
+        };
+        let path = match ArtifactRef::parse(&raw) {
+            ArtifactRef::Id(id) => artifacts
+                .get(&id)
+                .cloned()
+                .ok_or_else(|| format!("postprocess input '{name}': artifact not produced: {id}"))?,
+            ArtifactRef::Path(p) => {
+                if p.is_absolute() {
+                    p
+                } else {
+                    working_dir.join(p)
+                }
+            }
+        };
+        resolved.insert(name, ArgValue::String(path.display().to_string()));
+    }
+    options.insert("inputs".into(), ArgValue::Map(resolved));
+    Ok(())
 }

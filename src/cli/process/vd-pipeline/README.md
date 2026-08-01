@@ -2,7 +2,7 @@
 
 Layout: [STRUCTURE.md](STRUCTURE.md).  
 CLI / Job surface: [cli.md](cli.md).  
-Stack overview: [../README.md](../README.md) · [vd-meeting](../vd-meeting/) · [vd-diarize](../vd-diarize/) · [../../fix/README.md](../../fix/README.md).  
+Stack overview: [../README.md](../README.md) · [vd-meeting](../vd-meeting/) · [vd-diarize](../vd-diarize/) · [vd-postprocess](../vd-postprocess/) · [../../fix/README.md](../../fix/README.md).  
 Shared crates: [`vd-artifact`](../../../crates/vd-artifact/), [`vd-output`](../../../crates/vd-output/), [`vd-progress`](../../../crates/vd-progress/).  
 Rust gates: [RUST.md](RUST.md).
 
@@ -59,6 +59,7 @@ The binary is still named `vd-pipeline` for familiarity; the product is the **Ex
 | `fix-terms` | Canonical terminology | `vd-fix-terms` |
 | `diarize` | Who spoke when | [`vd-diarize`](../vd-diarize/) |
 | `meeting-merge` | Build Meeting Artifact from transcripts + timeline | stub binder in [`vd-pipeline`](.) (real merge later) |
+| `postprocess` | Derived artifacts via **user recipes** + execution provider | [`vd-postprocess`](../vd-postprocess/) (default `stub`; LLM/process backends TBD) |
 
 Knobs live under `options:`. Reserved step fields stay free (`id`, `name`, `inputs`, `outputs`, `depends`, …).
 

@@ -6,6 +6,7 @@ mod cli;
 mod default_job;
 mod engine_gate;
 mod job_parse;
+mod postprocess;
 mod resolve;
 mod status;
 
