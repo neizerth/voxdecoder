@@ -11,6 +11,7 @@
     "build:vd-fix-terms": "cargo build -p vd-fix-terms --release",
     "build:vd-assets": "cargo build -p vd-assets --release",
     "build:vd-diarize": "cargo build -p vd-diarize --release",
+    "build:vd-meeting": "cargo build -p vd-meeting --release",
     "build:vd-pipeline": "cargo build -p vd-pipeline --release",
     "install:vd-gigaam": "cargo install --path src/cli/transcribe/vd-gigaam --locked --force --features metal",
     "install:vd-gigaam:cpu": "cargo install --path src/cli/transcribe/vd-gigaam --locked --force",
@@ -19,6 +20,7 @@
     "install:vd-fix-terms": "cargo install --path src/cli/fix/vd-fix-terms --locked --force",
     "install:vd-assets": "cargo install --path src/cli/process/vd-assets --locked --force",
     "install:vd-diarize": "cargo install --path src/cli/process/vd-diarize --locked --force",
+    "install:vd-meeting": "cargo install --path src/cli/process/vd-meeting --locked --force",
     "install:vd-pipeline": "cargo install --path src/cli/process/vd-pipeline --locked --force",
     "lint:rust": "cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warnings"
   },

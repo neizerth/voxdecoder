@@ -217,7 +217,7 @@ Independent ready steps may run together up to `max_parallel` and free resource 
 | `fix-asr` | `vd-fix-asr` | [cli](../../fix/vd-fix-asr/cli.md) |
 | `fix-terms` | `vd-fix-terms` | [cli](../../fix/vd-fix-terms/cli.md) |
 | `diarize` | `vd-diarize` | [README](../vd-diarize/README.md) |
-| `meeting-merge` | merge impl (from `vd-meeting`) | [README](../vd-meeting/README.md) — planned |
+| `meeting-merge` | merge stub (in-process) | writes `meeting.json`; real merge later |
 
 ### Default Job shape (CLI)
 

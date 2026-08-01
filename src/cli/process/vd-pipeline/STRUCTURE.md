@@ -32,7 +32,7 @@ Domain logic stays in implementations. This crate owns schema, resolve, schedule
 - Flat flags mixed into the step root (use `options`)
 - Using `name` as an artifact id
 - Reimplement engines / meeting merge / diarization inside this crate
-- Silent reserved capabilities (`whisper`, `meeting-merge` before they exist)
+- Silent reserved capabilities (`whisper` before it exists; `meeting-merge` is stubbed)
 - Replace `vd-srv` (queue submits Jobs to this Executor)
 - Let `vd-meeting` run its own executor
 
@@ -112,7 +112,7 @@ pub enum Capability {
     FixAsr,
     FixTerms,
     Diarize,        // → vd-diarize
-    MeetingMerge,   // planned binder
+    MeetingMerge,   // stub binder → meeting.json
 }
 ```
 

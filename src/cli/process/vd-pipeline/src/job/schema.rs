@@ -135,7 +135,7 @@ impl Capability {
     }
 
     pub fn is_reserved(self) -> bool {
-        matches!(self, Self::MeetingMerge)
+        false
     }
 }
 

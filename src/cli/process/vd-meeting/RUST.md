@@ -2,7 +2,7 @@
 
 Pinned toolchain: [`rust-toolchain.toml`](../../../../rust-toolchain.toml) (`stable` + `rustfmt` + `clippy` + `rust-analyzer`).
 
-**Status: planned** — commands below apply once `vd-meeting` is a workspace member.
+**Status: implemented.**
 
 | Tool | Config | Command |
 |------|--------|---------|

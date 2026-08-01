@@ -21,9 +21,72 @@ impl Binder for SubprocessBinder {
             Capability::FixAsr => run_fix(req, "vd-fix-asr"),
             Capability::FixTerms => run_fix(req, "vd-fix-terms"),
             Capability::Diarize => run_diarize(req),
-            Capability::MeetingMerge => Err(ExecError::Reserved(
-                "meeting-merge is reserved; not available yet".into(),
-            )),
+            Capability::MeetingMerge => run_meeting_merge(req),
+        }
+    }
+}
+
+fn run_meeting_merge(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
+    // Stub merge: write a minimal Meeting Artifact JSON so Jobs validate end-to-end.
+    // Full alignment / speaker matching lands with the real meeting-merge implementation.
+    let out = req.output.clone().unwrap_or_else(|| {
+        req.output_dir
+            .as_ref()
+            .map_or_else(
+                || req.working_dir.join("meeting.json"),
+                |d| d.join("meeting.json"),
+            )
+    });
+    if let Some(parent) = out.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| ExecError::Step(format!("meeting-merge mkdir: {e}")))?;
+    }
+
+    let participants = req
+        .options
+        .get("participants")
+        .cloned()
+        .unwrap_or(ArgValue::Map(BTreeMap::new()));
+    let alignment = req
+        .options
+        .get("alignment")
+        .cloned()
+        .unwrap_or(ArgValue::Map(BTreeMap::new()));
+
+    let body = serde_json::json!({
+        "version": 1,
+        "artifact_type": "meeting",
+        "stub": true,
+        "input": req.input.display().to_string(),
+        "alignment": arg_to_json(&alignment),
+        "participants": arg_to_json(&participants),
+        "notes": "Stub meeting-merge; replace with real alignment when ready.",
+    });
+    let text = serde_json::to_string_pretty(&body)
+        .map_err(|e| ExecError::Step(format!("meeting-merge json: {e}")))?;
+    std::fs::write(&out, text)
+        .map_err(|e| ExecError::Step(format!("meeting-merge write: {e}")))?;
+
+    Ok(InvokeResult {
+        primary_output: out,
+        outputs: BTreeMap::new(),
+    })
+}
+
+fn arg_to_json(v: &ArgValue) -> serde_json::Value {
+    match v {
+        ArgValue::Bool(b) => serde_json::Value::Bool(*b),
+        ArgValue::Number(n) => serde_json::json!(n),
+        ArgValue::String(s) => serde_json::Value::String(s.clone()),
+        ArgValue::Strings(xs) => {
+            serde_json::Value::Array(xs.iter().cloned().map(serde_json::Value::String).collect())
+        }
+        ArgValue::Map(m) => {
+            let mut obj = serde_json::Map::new();
+            for (k, v) in m {
+                obj.insert(k.clone(), arg_to_json(v));
+            }
+            serde_json::Value::Object(obj)
         }
     }
 }

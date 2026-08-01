@@ -3,10 +3,10 @@
 Layout: [STRUCTURE.md](STRUCTURE.md).  
 CLI / Meeting document: [cli.md](cli.md).  
 Stack overview: [../README.md](../README.md) · [vd-pipeline](../vd-pipeline/) · [vd-diarize](../vd-diarize/) · [../../fix/README.md](../../fix/README.md).  
-Shared crates (planned): [`vd-artifact`](../../../crates/vd-artifact/), [`vd-progress`](../../../crates/vd-progress/), [`vd-pipeline`](../vd-pipeline/).  
+Shared crates: [`vd-artifact`](../../../crates/vd-artifact/), [`vd-progress`](../../../crates/vd-progress/), [`vd-pipeline`](../vd-pipeline/).  
 Rust gates: [RUST.md](RUST.md).
 
-**Status: planned.** Workspace member to be `src/cli/process/vd-meeting`.
+**Status: implemented.** Workspace member: `src/cli/process/vd-meeting`. `meeting-merge` currently uses a stub binder in `vd-pipeline` (writes `meeting.json`); real alignment lands later.
 
 ## Core rule
 

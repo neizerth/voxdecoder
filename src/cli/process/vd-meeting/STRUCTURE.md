@@ -2,7 +2,7 @@
 
 Rust crate: **Meeting Planner**. Validates / normalizes a meeting, plans a Job DAG, submits it to the shared [`vd-pipeline`](../vd-pipeline/) Executor. Does not run steps.
 
-**Status: planned.** Workspace member to be `src/cli/process/vd-meeting`.
+**Status: implemented.** Workspace member: `src/cli/process/vd-meeting`.
 
 Related: [README.md](README.md) · [cli.md](cli.md) · [RUST.md](RUST.md) · [../README.md](../README.md) · [../vd-pipeline/](../vd-pipeline/) · [../vd-diarize/](../vd-diarize/)
 
@@ -126,7 +126,7 @@ src/cli/process/vd-meeting/
 
 ---
 
-## Domain model (planned)
+## Domain model
 
 ```rust
 /// Meeting domain only — no Job / Executor knobs.

@@ -54,7 +54,7 @@ Prepare project knowledge, run Jobs, diarize, and build meeting Jobs.
 | [`vd-pipeline`](src/cli/process/vd-pipeline/) | Universal Job Executor (+ CLI builder for single-source cleanup) | implemented | [cli](src/cli/process/vd-pipeline/cli.md) · [structure](src/cli/process/vd-pipeline/STRUCTURE.md) |
 | [`vd-assets`](src/cli/process/vd-assets/) | Docs/PDF/Office → `.voxdecoder/` (`md/` + `terms.yml`) | implemented | [cli](src/cli/process/vd-assets/cli.md) · [structure](src/cli/process/vd-assets/STRUCTURE.md) |
 | [`vd-diarize`](src/cli/process/vd-diarize/) | Who spoke when → Diarization Artifact (`use: diarize`, local-first) | implemented | [cli](src/cli/process/vd-diarize/cli.md) · [structure](src/cli/process/vd-diarize/STRUCTURE.md) |
-| [`vd-meeting`](src/cli/process/vd-meeting/) | Meeting Planner (MeetingRequest → Job → same Executor) | planned | [cli](src/cli/process/vd-meeting/cli.md) · [structure](src/cli/process/vd-meeting/STRUCTURE.md) |
+| [`vd-meeting`](src/cli/process/vd-meeting/) | Meeting Planner (MeetingRequest → Job → same Executor) | implemented | [cli](src/cli/process/vd-meeting/cli.md) · [structure](src/cli/process/vd-meeting/STRUCTURE.md) |
 
 Overview: [src/cli/process/](src/cli/process/).
 
@@ -68,7 +68,7 @@ Overview: [src/cli/process/](src/cli/process/).
 | `fix-asr` | Wording / ASR repair | `vd-fix-asr` |
 | `fix-terms` | Canonical terminology | `vd-fix-terms` |
 | `diarize` | Speaker timeline | `vd-diarize` |
-| `meeting-merge` | Meeting Artifact | merge step (planned) |
+| `meeting-merge` | Meeting Artifact | stub in `vd-pipeline` (real merge later) |
 
 ```bash
 vd-pipeline run -i meeting.ogg

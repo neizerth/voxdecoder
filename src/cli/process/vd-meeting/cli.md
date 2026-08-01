@@ -2,7 +2,7 @@
 
 **Meeting Planner**: inputs + Meeting Model → Job DAG → shared Executor.
 
-**Status: planned.**
+**Status: implemented.**
 
 Product: [README.md](README.md). Layout: [STRUCTURE.md](STRUCTURE.md). Process: [../README.md](../README.md). Executor: [../vd-pipeline/cli.md](../vd-pipeline/cli.md).
 
@@ -45,7 +45,7 @@ There is **no** meeting-specific runtime.
 | `vd-meeting plan` | Plan Job and print it (alias of `run --dry-run`) |
 | `vd-meeting config` | Planner / BuildOptions defaults |
 
-Shorthand (planned): `vd-meeting …` without subcommand inserts `run`.
+Shorthand: `vd-meeting …` without subcommand inserts `run`.
 
 ---
 

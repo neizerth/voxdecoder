@@ -58,7 +58,7 @@ The binary is still named `vd-pipeline` for familiarity; the product is the **Ex
 | `fix-asr` | Wording / ASR repair | `vd-fix-asr` |
 | `fix-terms` | Canonical terminology | `vd-fix-terms` |
 | `diarize` | Who spoke when | [`vd-diarize`](../vd-diarize/) |
-| `meeting-merge` | Build Meeting Artifact from transcripts + timeline | [`vd-meeting`](../vd-meeting/) merge step (**planned**) |
+| `meeting-merge` | Build Meeting Artifact from transcripts + timeline | stub binder in [`vd-pipeline`](.) (real merge later) |
 
 Knobs live under `options:`. Reserved step fields stay free (`id`, `name`, `inputs`, `outputs`, `depends`, …).
 
@@ -119,7 +119,7 @@ builds the **same** Job a file would describe (linear transcribe → fix-*), the
 The Executor never:
 
 - owns ASR / context / fix / diarize / merge domain logic (implementations do)
-- pretends `whisper` / `meeting-merge` work before they exist
+- pretends `whisper` works before it exists; `meeting-merge` is a stub until alignment lands
 - runs a second path beside the Job graph
 - replaces `vd-srv` (queue) — this is the shared run engine; the queue submits Jobs
 
