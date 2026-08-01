@@ -55,9 +55,21 @@ cli/vd-giga/
 │           └── rnnt.rs         # when supported
 │
 ├── tests/
-│   ├── cli.rs
-│   ├── output_paths.rs
-│   └── golden_ctc.rs
+│   ├── unit/                   # library API, no process spawn
+│   │   ├── mod.rs              # harness (`cargo test --test unit`)
+│   │   ├── cli.rs
+│   │   ├── output_paths.rs
+│   │   ├── audio.rs
+│   │   ├── audio_mel.rs
+│   │   ├── mel.rs
+│   │   ├── mel_golden.rs
+│   │   ├── resample.rs
+│   │   ├── rope.rs
+│   │   ├── ctc.rs
+│   │   └── golden_ctc.rs
+│   └── e2e/                    # spawn `vd-giga` binary
+│       ├── mod.rs              # harness (`cargo test --test e2e`)
+│       └── binary.rs
 │
 ├── fixtures/                   # wav / json / golden tensors (not scripts/)
 │   ├── audio/
@@ -155,14 +167,31 @@ Not free functions `load` / `transcribe` — method style matches Rust usage and
 
 ## Tests and fixtures
 
+All tests live under `tests/` — **no** `#[cfg(test)]` modules in `src/`.
+
+Cargo does not auto-discover subdirs; harnesses are declared in `Cargo.toml` as `[[test]]` → `tests/unit/mod.rs` and `tests/e2e/mod.rs`.
+
 | Path | Role |
 |------|------|
-| `tests/cli.rs` | clap / exit codes / flag conflicts |
-| `tests/output_paths.rs` | `-o` / `-d` / `--segments` / `--overwrite` |
-| `tests/golden_ctc.rs` | layer or end-to-end vs golden tensors/text |
+| `tests/unit/cli.rs` | clap / exit codes / flag conflicts |
+| `tests/unit/output_paths.rs` | `-o` / `-d` / `--segments` / `--overwrite` |
+| `tests/unit/audio.rs` | WAV load → 16 kHz mono |
+| `tests/unit/audio_mel.rs` | audio → log-mel shape |
+| `tests/unit/mel.rs` | HTK mel frontend |
+| `tests/unit/mel_golden.rs` | Rust mel vs torchaudio dump |
+| `tests/unit/resample.rs` | mono / resample |
+| `tests/unit/rope.rs` | RoPE helpers |
+| `tests/unit/ctc.rs` | CTC greedy collapse |
+| `tests/unit/golden_ctc.rs` | layer / tensor parity vs golden dumps |
+| `tests/e2e/binary.rs` | spawn `vd-giga`; exit codes, I/O, progress |
 | `fixtures/audio/` | short wavs |
 | `fixtures/expected/` | expected transcripts / JSON |
 | `fixtures/golden/` | dumped tensors from `scripts/dump_golden.py` |
+
+```bash
+cargo test -p vd-giga --test unit
+cargo test -p vd-giga --test e2e
+```
 
 Keep fixtures out of `scripts/` — scripts generate or convert; fixtures are committed inputs for `cargo test`.
 

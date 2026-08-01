@@ -2,18 +2,28 @@
 
 License: [MIT](LICENSE)
 
-## Rust
+## Rust / npm scripts
 
 Toolchain + linters: see [cli/transcribe/vd-giga/RUST.md](cli/transcribe/vd-giga/RUST.md).
 
+After clone: `npm install` (runs `prepare` → lefthook install).
+
+| Script | What it does |
+|--------|----------------|
+| `npm test` | All CLI tests (currently `test:vd-giga`) |
+| `npm run test:vd-giga` | `cargo test -p vd-giga` |
+| `npm run build:vd-giga` | Release binary with Metal (`--features metal`) → `target/release/vd-giga` |
+| `npm run build:vd-giga:cpu` | Release binary without Metal |
+| `npm run install:vd-giga` | `cargo install` into `~/.cargo/bin` (Metal enabled) |
+| `npm run lint:rust` | `cargo fmt --check` + `clippy -D warnings` |
+
 ```bash
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- -D warnings
-npm test                 # all CLI tests
-npm run test:vd-giga     # vd-giga only
+npm test
+npm run build:vd-giga
+vd-giga --help   # after install:vd-giga, or use ./target/release/vd-giga
 ```
 
-Hooks ([lefthook.yml](lefthook.yml)): `commit-msg` → commitlint; `pre-commit` → `npm test`. After clone: `npm install`.
+Hooks ([lefthook.yml](lefthook.yml)): `commit-msg` → commitlint; `pre-commit` → `npm test`.
 
 ## CLI apps
 
@@ -32,3 +42,9 @@ See [cli/transcribe/](cli/transcribe/) — separate CLIs per model (not a univer
 ### vd-srv: background process
 
 Background queue manager — [cli/vd-srv/](cli/vd-srv/)
+
+## MCP
+
+### vd-mcp
+
+MCP Server

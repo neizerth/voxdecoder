@@ -5,6 +5,9 @@
     "prepare": "lefthook install",
     "test": "npm run test:vd-giga",
     "test:vd-giga": "cargo test -p vd-giga",
+    "build:vd-giga": "cargo build -p vd-giga --release --features metal",
+    "build:vd-giga:cpu": "cargo build -p vd-giga --release",
+    "install:vd-giga": "cargo install --path cli/transcribe/vd-giga --locked --force --features metal",
     "lint:rust": "cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warnings"
   },
   "devDependencies": {

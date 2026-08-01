@@ -1,12 +1,12 @@
 # Rust quality gates
 
-Pinned toolchain: [`rust-toolchain.toml`](../rust-toolchain.toml) (`stable` + `rustfmt` + `clippy`).
+Pinned toolchain: [`rust-toolchain.toml`](../../../rust-toolchain.toml) (`stable` + `rustfmt` + `clippy` + `rust-analyzer`).
 
 | Tool | Config | Command |
 |------|--------|---------|
 | rustfmt | [`rustfmt.toml`](../rustfmt.toml) | `cargo fmt --all -- --check` |
 | clippy | [`clippy.toml`](../clippy.toml) + workspace lints in root `Cargo.toml` | `cargo clippy --workspace --all-targets -- -D warnings` |
-| tests | `cli/vd-giga/tests/` (when present) | `npm run test:vd-giga` / `npm test` |
+| tests | `cli/transcribe/vd-giga/tests/{unit,e2e}/` | `npm run test:vd-giga` / `npm test` |
 
 From repo root:
 
