@@ -10,10 +10,13 @@ pub fn execute(args: InstallArgs) -> Result<(), CliError> {
     let root = args
         .download_root
         .unwrap_or_else(paths::default_models_dir);
-    let mode = args
-        .progress
-        .map(ProgressMode::from)
-        .unwrap_or(ProgressMode::None);
+    let mode = if args.quiet {
+        ProgressMode::None
+    } else {
+        args.progress
+            .map(ProgressMode::from)
+            .unwrap_or(ProgressMode::Text)
+    };
     let progress = Progress::new(mode);
 
     let models: Vec<&str> = if args.all {

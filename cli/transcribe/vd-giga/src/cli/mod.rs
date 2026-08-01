@@ -92,9 +92,12 @@ pub struct RunCli {
     /// With --dry-run: print the plan as JSON on stdout
     #[arg(long = "json")]
     pub json: bool,
-    /// Progress on stderr: text|json (off if omitted)
-    #[arg(long = "progress", value_enum)]
+    /// Progress on stderr: text|json [default: text]
+    #[arg(long = "progress", value_enum, require_equals = true)]
     pub progress: Option<CliProgress>,
+    /// Disable progress on stderr
+    #[arg(short = 'q', long = "quiet")]
+    pub quiet: bool,
     /// Catalog name or path to weights (default: v2_rnnt / config)
     #[arg(short = 'm', long = "model")]
     pub model: Option<String>,
@@ -204,9 +207,12 @@ pub struct InstallArgs {
     /// Checkpoint directory (same as run --download-root)
     #[arg(long = "download-root")]
     pub download_root: Option<PathBuf>,
-    /// Progress on stderr: text|json (off if omitted)
-    #[arg(long = "progress", value_enum)]
+    /// Progress on stderr: text|json [default: text]
+    #[arg(long = "progress", value_enum, require_equals = true)]
     pub progress: Option<CliProgress>,
+    /// Disable progress on stderr
+    #[arg(short = 'q', long = "quiet")]
+    pub quiet: bool,
 }
 
 #[derive(Debug, Clone, Parser)]
@@ -361,6 +367,7 @@ fn validate_run(cli: RunCli) -> Result<RunArgs, CliError> {
         dry_run: cli.dry_run,
         json: cli.json,
         progress: cli.progress.map(ProgressMode::from),
+        quiet: cli.quiet,
         model: cli.model,
         device,
         no_fp16_encoder: cli.no_fp16_encoder,

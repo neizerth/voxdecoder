@@ -23,6 +23,7 @@ pub struct RunArgs {
     pub dry_run: bool,
     pub json: bool,
     pub progress: Option<ProgressMode>,
+    pub quiet: bool,
     pub model: Option<String>,
     pub device: Option<Device>,
     pub no_fp16_encoder: bool,
@@ -33,7 +34,11 @@ pub struct RunArgs {
 
 impl RunArgs {
     pub fn effective_progress(&self) -> ProgressMode {
-        self.progress.unwrap_or(ProgressMode::None)
+        if self.quiet {
+            ProgressMode::None
+        } else {
+            self.progress.unwrap_or(ProgressMode::Text)
+        }
     }
 }
 

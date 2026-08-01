@@ -38,6 +38,7 @@ fn run_defaults() {
     assert!(!r.json);
     assert_eq!(r.format, None);
     assert_eq!(r.progress, None);
+    assert!(!r.quiet);
     assert!(!r.segments);
 }
 
@@ -68,8 +69,17 @@ fn run_rejects_word_timestamps_without_sink() {
 }
 
 #[test]
-fn progress_off_by_default() {
+fn progress_text_by_default() {
     let cmd = parse(&["run", "-i", "a.wav"]).unwrap();
+    let VdCommand::Run(r) = cmd else {
+        panic!("expected Run");
+    };
+    assert_eq!(r.effective_progress(), ProgressMode::Text);
+}
+
+#[test]
+fn quiet_disables_progress() {
+    let cmd = parse(&["run", "-i", "a.wav", "-q"]).unwrap();
     let VdCommand::Run(r) = cmd else {
         panic!("expected Run");
     };
@@ -78,7 +88,7 @@ fn progress_off_by_default() {
 
 #[test]
 fn progress_json_explicit() {
-    let cmd = parse(&["run", "-i", "a.wav", "--progress", "json"]).unwrap();
+    let cmd = parse(&["run", "-i", "a.wav", "--progress=json"]).unwrap();
     let VdCommand::Run(r) = cmd else {
         panic!("expected Run");
     };
@@ -86,12 +96,12 @@ fn progress_json_explicit() {
 }
 
 #[test]
-fn progress_text_explicit() {
-    let cmd = parse(&["run", "-i", "a.wav", "--progress", "text"]).unwrap();
+fn quiet_overrides_progress_json() {
+    let cmd = parse(&["run", "-i", "a.wav", "--progress=json", "-q"]).unwrap();
     let VdCommand::Run(r) = cmd else {
         panic!("expected Run");
     };
-    assert_eq!(r.effective_progress(), ProgressMode::Text);
+    assert_eq!(r.effective_progress(), ProgressMode::None);
 }
 
 #[test]
