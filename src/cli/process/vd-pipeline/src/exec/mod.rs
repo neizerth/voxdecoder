@@ -1,4 +1,4 @@
-//! Job Executor.
+//! Job Executor (DAG schedule; concurrent ready-set up to max_parallel later).
 
 mod bind;
 mod subprocess;
@@ -53,8 +53,11 @@ impl<B: Binder> Executor<B> {
         let mut completed = 0u32;
         let mut last_out = None;
         let continue_on_error = resolved.job.continue_on_error;
+        // Parallel ready-set uses max_parallel later; run topo order for now.
+        let _max_parallel = resolved.job.max_parallel.unwrap_or(1).max(1);
 
-        for (i, step) in resolved.steps.iter().enumerate() {
+        for &i in &resolved.order {
+            let step = &resolved.steps[i];
             let overall = status::overall_percent(completed, total);
             let job_step = &resolved.job.steps[i];
 
@@ -92,6 +95,14 @@ impl<B: Binder> Executor<B> {
                     if let Some(id) = &step.id {
                         artifacts.insert(id.clone(), result.primary_output.clone());
                     }
+                    for (name, path) in &result.outputs {
+                        artifacts.insert(name.clone(), path.clone());
+                    }
+                    for (name, path) in &step.outputs {
+                        artifacts
+                            .entry(name.clone())
+                            .or_insert_with(|| path.clone());
+                    }
                     prev = Some(result.primary_output.clone());
                     last_out = Some(result.primary_output.clone());
                     completed += 1;
@@ -128,8 +139,12 @@ pub fn dry_run_text(resolved: &ResolvedJob) -> String {
     if let Some(a) = &resolved.job.input.audio {
         lines.push(format!("input.audio: {}", a.display()));
     }
+    if let Some(p) = resolved.job.max_parallel {
+        lines.push(format!("max_parallel: {p}"));
+    }
     lines.push(format!("steps: {}", resolved.steps.len()));
-    for (i, s) in resolved.steps.iter().enumerate() {
+    for &i in &resolved.order {
+        let s = &resolved.steps[i];
         let job_step = &resolved.job.steps[i];
         let mut parts = vec![format!("{}. {}", s.index, s.capability.as_str())];
         if s.skip {
@@ -138,12 +153,13 @@ pub fn dry_run_text(resolved: &ResolvedJob) -> String {
         if let Some(id) = &s.id {
             parts.push(format!("id={id}"));
         }
-        if let Some(inp) = &job_step.input {
-            parts.push(format!("input={inp}"));
+        let refs = job_step.input_refs();
+        if !refs.is_empty() {
+            parts.push(format!("inputs=[{}]", refs.join(", ")));
         } else if let Some(inp) = &s.input {
             parts.push(format!("input={}", inp.display()));
         } else {
-            parts.push("input=<prev>".into());
+            parts.push("inputs=<prev>".into());
         }
         if let Some(engine) = s.options.get("engine").and_then(ArgValue::as_string) {
             parts.push(format!("engine={engine}"));

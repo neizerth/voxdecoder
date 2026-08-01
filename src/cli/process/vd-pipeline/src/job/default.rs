@@ -37,8 +37,12 @@ pub fn default_job(args: &DefaultJobArgs) -> Job {
         id: Some("transcript".into()),
         name: None,
         input: None,
+        inputs: Vec::new(),
         output: None,
+        outputs: BTreeMap::new(),
+        depends: Vec::new(),
         skip: false,
+        resource: None,
         options,
     }];
 
@@ -48,8 +52,12 @@ pub fn default_job(args: &DefaultJobArgs) -> Job {
             id: None,
             name: None,
             input: None,
+            inputs: Vec::new(),
             output: None,
+            outputs: BTreeMap::new(),
+            depends: Vec::new(),
             skip: false,
+            resource: None,
             options: BTreeMap::new(),
         });
     }
@@ -59,8 +67,12 @@ pub fn default_job(args: &DefaultJobArgs) -> Job {
         id: None,
         name: None,
         input: Some("transcript".into()),
+        inputs: Vec::new(),
         output: None,
+        outputs: BTreeMap::new(),
+        depends: Vec::new(),
         skip: false,
+        resource: None,
         options: overwrite_opts(args.overwrite),
     });
     steps.push(Step {
@@ -68,8 +80,12 @@ pub fn default_job(args: &DefaultJobArgs) -> Job {
         id: None,
         name: None,
         input: None,
+        inputs: Vec::new(),
         output: None,
+        outputs: BTreeMap::new(),
+        depends: Vec::new(),
         skip: false,
+        resource: None,
         options: overwrite_opts(args.overwrite),
     });
     steps.push(Step {
@@ -77,8 +93,12 @@ pub fn default_job(args: &DefaultJobArgs) -> Job {
         id: None,
         name: None,
         input: None,
+        inputs: Vec::new(),
         output: None,
+        outputs: BTreeMap::new(),
+        depends: Vec::new(),
         skip: false,
+        resource: None,
         options: overwrite_opts(args.overwrite),
     });
 
@@ -97,6 +117,8 @@ pub fn default_job(args: &DefaultJobArgs) -> Job {
             dir: args.output_dir.clone(),
         },
         continue_on_error: args.continue_on_error,
+        max_parallel: None,
+        resources: BTreeMap::new(),
         steps,
     }
 }

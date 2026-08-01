@@ -14,6 +14,8 @@ fn job_with_steps(steps: Vec<Step>) -> Job {
         },
         context: Default::default(),
         output: Default::default(),
+        max_parallel: None,
+        resources: Default::default(),
         continue_on_error: false,
         steps,
     }
@@ -22,13 +24,8 @@ fn job_with_steps(steps: Vec<Step>) -> Job {
 #[test]
 fn unknown_artifact_id_errors() {
     let job = job_with_steps(vec![Step {
-        r#use: Capability::FixCasing,
-        id: None,
-        name: None,
         input: Some("missing".into()),
-        output: None,
-        skip: false,
-        options: Default::default(),
+        ..Step::new(Capability::FixCasing)
     }]);
     let err = resolve_job(job).unwrap_err();
     assert_eq!(err.exit_code(), 2);
@@ -39,22 +36,13 @@ fn unknown_artifact_id_errors() {
 fn duplicate_id_errors() {
     let job = job_with_steps(vec![
         Step {
-            r#use: Capability::Transcribe,
             id: Some("t".into()),
-            name: None,
-            input: None,
-            output: None,
-            skip: false,
-            options: Default::default(),
+            ..Step::new(Capability::Transcribe)
         },
         Step {
-            r#use: Capability::FixCasing,
             id: Some("t".into()),
-            name: None,
             input: Some("t".into()),
-            output: None,
-            skip: false,
-            options: Default::default(),
+            ..Step::new(Capability::FixCasing)
         },
     ]);
     let err = resolve_job(job).unwrap_err();
@@ -65,24 +53,30 @@ fn duplicate_id_errors() {
 fn name_not_used_for_wiring() {
     let job = job_with_steps(vec![
         Step {
-            r#use: Capability::Transcribe,
             id: Some("transcript".into()),
             name: Some("Initial".into()),
-            input: None,
-            output: None,
-            skip: false,
-            options: Default::default(),
+            ..Step::new(Capability::Transcribe)
         },
         Step {
-            r#use: Capability::FixCasing,
-            id: None,
-            name: None,
             input: Some("Initial".into()),
-            output: None,
-            skip: false,
-            options: Default::default(),
+            ..Step::new(Capability::FixCasing)
         },
     ]);
     let err = resolve_job(job).unwrap_err();
     assert!(err.to_string().contains("unknown artifact id"));
+}
+
+#[test]
+fn inputs_list_sugar() {
+    let job = job_with_steps(vec![
+        Step {
+            id: Some("transcript".into()),
+            ..Step::new(Capability::Transcribe)
+        },
+        Step {
+            inputs: vec!["transcript".into()],
+            ..Step::new(Capability::FixCasing)
+        },
+    ]);
+    assert!(resolve_job(job).is_ok());
 }

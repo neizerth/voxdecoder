@@ -95,7 +95,53 @@ fn run_prepare_context() {
 }
 
 #[test]
+fn run_diarize_stub() {
+    if !child_available("vd-diarize") {
+        eprintln!("skip run_diarize_stub: vd-diarize not built");
+        return;
+    }
+
+    let dir = TempDir::new().unwrap();
+    let audio = dir.path().join("meeting.wav");
+    fs::write(&audio, vec![0u8; 16_000]).unwrap();
+    let job = dir.path().join("job.yaml");
+    fs::write(
+        &job,
+        format!(
+            "version: 1\nworking_dir: {}\ninput:\n  audio: meeting.wav\nsteps:\n  - use: diarize\n    options:\n      backend:\n        provider: stub\n      overwrite: true\n",
+            dir.path().display()
+        ),
+    )
+    .unwrap();
+    let cfg = dir.path().join("config.toml");
+
+    let mut cmd = bin();
+    with_isolation(&mut cmd, &cfg);
+    // Prefer sibling binary from cargo target dir.
+    if let Ok(d) = which_near_pipeline("vd-diarize") {
+        if let Some(parent) = d.parent() {
+            let path = env_path_prepend(parent);
+            cmd.env("PATH", path);
+        }
+    }
+    cmd.arg(&job).arg("-q").assert().success();
+
+    let out = dir.path().join("meeting.diarization.json");
+    assert!(out.exists(), "expected {}", out.display());
+}
+
+#[test]
 #[ignore = "requires VD_PIPELINE_E2E_FULL=1, audio, and vd-gigaam"]
 fn run_full_pipeline() {
     // Placeholder for gated full ASR e2e when VD_PIPELINE_E2E_FULL=1.
+}
+
+fn env_path_prepend(dir: &std::path::Path) -> std::ffi::OsString {
+    use std::env;
+    let mut out = dir.as_os_str().to_owned();
+    if let Some(rest) = env::var_os("PATH") {
+        out.push(":");
+        out.push(rest);
+    }
+    out
 }

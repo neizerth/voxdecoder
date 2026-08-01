@@ -25,15 +25,13 @@ fn options_forwarded_untouched() {
         },
         context: Default::default(),
         output: Default::default(),
+        max_parallel: None,
+        resources: Default::default(),
         continue_on_error: false,
         steps: vec![Step {
-            r#use: Capability::Transcribe,
-            id: None,
-            name: None,
-            input: None,
             output: Some(PathBuf::from("/work/t.txt")),
-            skip: false,
             options: options.clone(),
+            ..Step::new(Capability::Transcribe)
         }],
     };
     let resolved = resolve_job(job).unwrap();

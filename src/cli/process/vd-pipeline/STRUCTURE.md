@@ -1,26 +1,28 @@
 # vd-pipeline — project layout
 
-Rust crate: Job builder (CLI) + Job Executor.
+Rust crate: Job builders (CLI) + **universal Job Executor** (DAG).
 
 **Status: implemented.** Workspace member: `src/cli/process/vd-pipeline`.
 
-Related: [README.md](README.md) · [cli.md](cli.md) · [RUST.md](RUST.md) · [../README.md](../README.md)
+Related: [README.md](README.md) · [cli.md](cli.md) · [RUST.md](RUST.md) · [../README.md](../README.md) · [../vd-meeting/](../vd-meeting/)
 
 ---
 
 ## Philosophy
 
 ```text
-CLI flags / Job file / MCP JSON  →  Job  →  Executor  →  Capabilities
+Any Job builder  →  Job (DAG)  →  Executor  →  Capabilities
 ```
 
-- **Job** is the unit of work (YAML/JSON specification).
-- **Executor** does not know whether the Job came from flags, a file, or MCP.
-- **`use`** is an action (`transcribe`, `prepare-context`, `fix-*`), not a binary name.
-- Implementation knobs live under **`options`** (`engine`, `model`, …).
-- **`id`** wires artifacts; **`name`** is an optional human label only.
+- **Job** is the unit of work (YAML/JSON DAG).
+- **Executor** does not know whether the Job came from flags, a file, `vd-meeting`, MCP, or `vd-srv`.
+- **`use`** is an action (`transcribe`, `prepare-context`, `fix-*`, `diarize`, `meeting-merge`), not a binary name.
+- Implementation knobs live under **`options`**.
+- **`id`** / **`outputs`** register named artifacts; **`name`** is display only.
+- **`inputs`** (sugar: **`input`**) and **`depends`** form DAG edges.
+- **`max_parallel`** + **resource groups** limit concurrency.
 
-Domain ASR / context / fix logic stays in implementations. This crate owns schema, resolve, status, execute.
+Domain logic stays in implementations. This crate owns schema, resolve, schedule, status, execute.
 
 ---
 
@@ -29,10 +31,10 @@ Domain ASR / context / fix logic stays in implementations. This crate owns schem
 - Second runtime path for “standard mode” (CLI only builds a Job)
 - Flat flags mixed into the step root (use `options`)
 - Using `name` as an artifact id
-- Full DAG / `depends_on` in v1 (schema leaves room)
-- Reimplement engines
-- Silent `whisper` before it exists
-- Replace `vd-srv`
+- Reimplement engines / meeting merge / diarization inside this crate
+- Silent reserved capabilities (`whisper`, `meeting-merge` before they exist)
+- Replace `vd-srv` (queue submits Jobs to this Executor)
+- Let `vd-meeting` run its own executor
 
 ---
 
@@ -78,22 +80,28 @@ src/cli/process/vd-pipeline/
 ```rust
 pub struct Job {
     pub version: u32,
-    pub name: Option<String>,       // job label only
-    pub working_dir: PathBuf,
+    pub name: Option<String>,
+    pub working_dir: Option<PathBuf>,
     pub input: JobInput,
     pub context: JobContext,
     pub output: JobOutput,
     pub continue_on_error: bool,
+    pub max_parallel: Option<u32>,
+    pub resources: BTreeMap<String, u32>,  // gpu / cpu / io → slots
     pub steps: Vec<Step>,
 }
 
 pub struct Step {
-    pub r#use: Capability,          // Transcribe | PrepareContext | FixCasing | …
-    pub id: Option<String>,         // artifact id for wiring
-    pub name: Option<String>,       // optional human label — not for wiring
-    pub input: Option<ArtifactRef>, // Id("transcript") | Path(...)
-    pub output: Option<PathBuf>,
+    pub r#use: Capability,
+    pub id: Option<String>,              // primary artifact name
+    pub name: Option<String>,            // display only
+    pub input: Option<String>,           // sugar → inputs
+    pub inputs: Vec<String>,             // artifact ids | paths
+    pub output: Option<PathBuf>,         // primary path sugar
+    pub outputs: BTreeMap<String, PathBuf>,
+    pub depends: Vec<String>,            // step ids (ordering)
     pub skip: bool,
+    pub resource: Option<String>,
     pub options: BTreeMap<String, ArgValue>,
 }
 
@@ -103,15 +111,12 @@ pub enum Capability {
     FixCasing,
     FixAsr,
     FixTerms,
-}
-
-pub enum ArtifactRef {
-    Id(String),
-    Path(PathBuf),
+    Diarize,        // → vd-diarize
+    MeetingMerge,   // planned binder
 }
 ```
 
-Default Job from CLI: see [cli.md](cli.md#default-job-shape-what-cli-builds).
+Default Job from CLI: see [cli.md](cli.md#default-job-shape-cli).
 
 ---
 
@@ -131,20 +136,21 @@ Default Job from CLI: see [cli.md](cli.md#default-job-shape-what-cli-builds).
 
 ```text
 build or parse Job
-resolve working_dir + paths
-resolve artifact ids
-gate reserved engines
+normalize input → inputs; resolve working_dir
+validate artifact refs + DAG (no cycles)
+gate reserved engines / capabilities
 dry-run? → emit Job → exit 0
-for step in steps:
-  skipped? → status skipped; continue
-  status step_start (path = resolved input)
-  exec capability(options)
-  remap progress → {step}:{phase}
-  fail? → step_failed; maybe stop
-  register artifact if id set
-  status step_done (path = primary output)
+schedule:
+  while incomplete:
+    ready = steps whose inputs/depends are satisfied
+    run up to max_parallel within resource caps
+    for each finished step:
+      register id + outputs into artifact map
+      emit progress
 done
 ```
+
+Linear Jobs remain valid DAGs (single chain). Parallelism is an Executor concern — builders only declare edges.
 
 ---
 
@@ -268,4 +274,4 @@ Wire `vd-pipeline` into [`scripts/test.sh`](../../../../scripts/test.sh) (`all` 
 
 ## Public contract note
 
-**Job + Executor** are the product. CLI is one frontend. MCP reuses the Job document. Implementation binding is an internal detail.
+**Job + Executor** are the product. CLI and `vd-meeting` are Job builders. MCP / `vd-srv` reuse the Job document. Implementation binding is an internal detail.

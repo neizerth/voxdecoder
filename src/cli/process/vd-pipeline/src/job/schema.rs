@@ -20,6 +20,10 @@ pub struct Job {
     pub output: JobOutput,
     #[serde(default)]
     pub continue_on_error: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_parallel: Option<u32>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub resources: BTreeMap<String, u32>,
     pub steps: Vec<Step>,
 }
 
@@ -51,14 +55,53 @@ pub struct Step {
     pub id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// Sugar for a single-entry [`Self::inputs`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub inputs: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output: Option<PathBuf>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub outputs: BTreeMap<String, PathBuf>,
+    /// Ordering edges to other step `id`s (no data required).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub depends: Vec<String>,
     #[serde(default, skip_serializing_if = "is_false")]
     pub skip: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resource: Option<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub options: BTreeMap<String, ArgValue>,
+}
+
+impl Step {
+    pub fn new(r#use: Capability) -> Self {
+        Self {
+            r#use,
+            id: None,
+            name: None,
+            input: None,
+            inputs: Vec::new(),
+            output: None,
+            outputs: BTreeMap::new(),
+            depends: Vec::new(),
+            skip: false,
+            resource: None,
+            options: BTreeMap::new(),
+        }
+    }
+
+    /// Effective input refs (`inputs`, or sugar `input`).
+    pub fn input_refs(&self) -> Vec<&str> {
+        if !self.inputs.is_empty() {
+            self.inputs.iter().map(String::as_str).collect()
+        } else if let Some(i) = &self.input {
+            vec![i.as_str()]
+        } else {
+            Vec::new()
+        }
+    }
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)] // serde skip_serializing_if signature
@@ -74,6 +117,8 @@ pub enum Capability {
     FixCasing,
     FixAsr,
     FixTerms,
+    Diarize,
+    MeetingMerge,
 }
 
 impl Capability {
@@ -84,7 +129,13 @@ impl Capability {
             Self::FixCasing => "fix-casing",
             Self::FixAsr => "fix-asr",
             Self::FixTerms => "fix-terms",
+            Self::Diarize => "diarize",
+            Self::MeetingMerge => "meeting-merge",
         }
+    }
+
+    pub fn is_reserved(self) -> bool {
+        matches!(self, Self::MeetingMerge)
     }
 }
 
@@ -95,6 +146,7 @@ pub enum ArgValue {
     Number(f64),
     String(String),
     Strings(Vec<String>),
+    Map(BTreeMap<String, Self>),
 }
 
 impl ArgValue {
@@ -103,13 +155,20 @@ impl ArgValue {
             Self::String(s) => Some(s.clone()),
             Self::Number(n) => Some(n.to_string()),
             Self::Bool(b) => Some(b.to_string()),
-            Self::Strings(_) => None,
+            Self::Strings(_) | Self::Map(_) => None,
         }
     }
 
     pub fn as_bool(&self) -> Option<bool> {
         match self {
             Self::Bool(b) => Some(*b),
+            _ => None,
+        }
+    }
+
+    pub fn as_map(&self) -> Option<&BTreeMap<String, Self>> {
+        match self {
+            Self::Map(m) => Some(m),
             _ => None,
         }
     }
@@ -160,6 +219,8 @@ pub struct ResolvedJob {
     pub job: Job,
     pub working_dir: PathBuf,
     pub steps: Vec<ResolvedStep>,
+    /// Topological execution order (indices into `steps` / `job.steps`).
+    pub order: Vec<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -171,6 +232,7 @@ pub struct ResolvedStep {
     pub skip: bool,
     pub input: Option<PathBuf>,
     pub output: Option<PathBuf>,
+    pub outputs: BTreeMap<String, PathBuf>,
     pub options: BTreeMap<String, ArgValue>,
 }
 

@@ -19,34 +19,23 @@ fn omitted_input_uses_previous_output() {
         },
         context: Default::default(),
         output: Default::default(),
+        max_parallel: None,
+        resources: Default::default(),
         continue_on_error: false,
         steps: vec![
             Step {
-                r#use: Capability::Transcribe,
                 id: Some("transcript".into()),
-                name: None,
-                input: None,
                 output: Some(PathBuf::from("/work/t.txt")),
-                skip: false,
-                options: Default::default(),
+                ..Step::new(Capability::Transcribe)
             },
             Step {
-                r#use: Capability::FixCasing,
-                id: None,
-                name: None,
                 input: Some("transcript".into()),
                 output: Some(PathBuf::from("/work/c.txt")),
-                skip: false,
-                options: Default::default(),
+                ..Step::new(Capability::FixCasing)
             },
             Step {
-                r#use: Capability::FixAsr,
-                id: None,
-                name: None,
-                input: None,
                 output: Some(PathBuf::from("/work/a.txt")),
-                skip: false,
-                options: Default::default(),
+                ..Step::new(Capability::FixAsr)
             },
         ],
     };

@@ -1,5 +1,6 @@
 //! Spawn child CLIs for capabilities.
 
+use std::collections::BTreeMap;
 use std::env;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -19,8 +20,85 @@ impl Binder for SubprocessBinder {
             Capability::FixCasing => run_fix(req, "vd-fix-casing"),
             Capability::FixAsr => run_fix(req, "vd-fix-asr"),
             Capability::FixTerms => run_fix(req, "vd-fix-terms"),
+            Capability::Diarize => run_diarize(req),
+            Capability::MeetingMerge => Err(ExecError::Reserved(
+                "meeting-merge is reserved; not available yet".into(),
+            )),
         }
     }
+}
+
+fn run_diarize(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
+    let bin = find_bin("vd-diarize")?;
+    let mut args = vec![
+        "run".into(),
+        "-i".into(),
+        req.input.display().to_string(),
+        "-q".into(),
+    ];
+
+    let (provider, model) = diarize_backend(&req.options);
+    if let Some(p) = provider {
+        args.push("--backend".into());
+        args.push(p);
+    }
+    if let Some(m) = model {
+        args.push("-m".into());
+        args.push(m);
+    }
+    if let Some(d) = req.options.get("device").and_then(ArgValue::as_string) {
+        args.push("--device".into());
+        args.push(d);
+    }
+    if req.options.get("overwrite").and_then(ArgValue::as_bool) == Some(true) {
+        args.push("--overwrite".into());
+    }
+    if let Some(o) = &req.output {
+        args.push("-o".into());
+        args.push(o.display().to_string());
+    } else if let Some(d) = &req.output_dir {
+        args.push("-d".into());
+        args.push(d.display().to_string());
+    }
+
+    run_cmd(&bin, &args, &req.working_dir)?;
+    Ok(InvokeResult {
+        primary_output: infer_diarize_output(req),
+        outputs: BTreeMap::new(),
+    })
+}
+
+/// Resolve `options.backend.{provider,model}` or flat `provider` / `backend` + `model`.
+fn diarize_backend(options: &BTreeMap<String, ArgValue>) -> (Option<String>, Option<String>) {
+    if let Some(map) = options.get("backend").and_then(ArgValue::as_map) {
+        let provider = map.get("provider").and_then(ArgValue::as_string);
+        let model = map.get("model").and_then(ArgValue::as_string);
+        return (provider, model);
+    }
+    let provider = options
+        .get("provider")
+        .or_else(|| options.get("backend"))
+        .and_then(ArgValue::as_string);
+    let model = options.get("model").and_then(ArgValue::as_string);
+    (provider, model)
+}
+
+fn infer_diarize_output(req: &InvokeRequest) -> PathBuf {
+    if let Some(o) = &req.output {
+        return o.clone();
+    }
+    let stem = req
+        .input
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("out");
+    if let Some(d) = &req.output_dir {
+        return d.join(format!("{stem}.diarization.json"));
+    }
+    req.input
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join(format!("{stem}.diarization.json"))
 }
 
 fn run_transcribe(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
@@ -73,6 +151,7 @@ fn run_transcribe(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
     let out = infer_gigaam_output(req);
     Ok(InvokeResult {
         primary_output: out,
+        outputs: BTreeMap::new(),
     })
 }
 
@@ -118,6 +197,7 @@ fn run_prepare_context(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
     run_cmd(&bin, &args, &req.working_dir)?;
     Ok(InvokeResult {
         primary_output: out_dir,
+        outputs: BTreeMap::new(),
     })
 }
 
@@ -158,6 +238,7 @@ fn run_fix(req: &InvokeRequest, bin_name: &str) -> Result<InvokeResult, ExecErro
     run_cmd(&bin, &args, &req.working_dir)?;
     Ok(InvokeResult {
         primary_output: infer_fix_output(req),
+        outputs: BTreeMap::new(),
     })
 }
 

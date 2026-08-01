@@ -17,6 +17,8 @@ fn base_job(steps: Vec<Step>) -> Job {
         },
         context: Default::default(),
         output: Default::default(),
+        max_parallel: None,
+        resources: Default::default(),
         continue_on_error: false,
         steps,
     }
@@ -27,31 +29,18 @@ fn steps_run_in_order() {
     let binder = RecordingBinder::new();
     let job = base_job(vec![
         Step {
-            r#use: Capability::Transcribe,
             id: Some("transcript".into()),
-            name: None,
-            input: None,
             output: Some(PathBuf::from("/work/t.txt")),
-            skip: false,
-            options: Default::default(),
+            ..Step::new(Capability::Transcribe)
         },
         Step {
-            r#use: Capability::FixCasing,
-            id: None,
-            name: None,
             input: Some("transcript".into()),
             output: Some(PathBuf::from("/work/c.txt")),
-            skip: false,
-            options: Default::default(),
+            ..Step::new(Capability::FixCasing)
         },
         Step {
-            r#use: Capability::FixAsr,
-            id: None,
-            name: None,
-            input: None,
             output: Some(PathBuf::from("/work/a.txt")),
-            skip: false,
-            options: Default::default(),
+            ..Step::new(Capability::FixAsr)
         },
     ]);
     let resolved = resolve_job(job).unwrap();
@@ -76,31 +65,19 @@ fn skip_does_not_invoke() {
     let binder = RecordingBinder::new();
     let job = base_job(vec![
         Step {
-            r#use: Capability::Transcribe,
             id: Some("transcript".into()),
-            name: None,
-            input: None,
             output: Some(PathBuf::from("/work/t.txt")),
-            skip: false,
-            options: Default::default(),
+            ..Step::new(Capability::Transcribe)
         },
         Step {
-            r#use: Capability::FixCasing,
-            id: None,
-            name: None,
             input: Some("transcript".into()),
-            output: None,
             skip: true,
-            options: Default::default(),
+            ..Step::new(Capability::FixCasing)
         },
         Step {
-            r#use: Capability::FixAsr,
-            id: None,
-            name: None,
             input: Some("transcript".into()),
             output: Some(PathBuf::from("/work/a.txt")),
-            skip: false,
-            options: Default::default(),
+            ..Step::new(Capability::FixAsr)
         },
     ]);
     let resolved = resolve_job(job).unwrap();

@@ -56,6 +56,7 @@ impl RecordingBinder {
             .unwrap_or_else(|| PathBuf::from(format!("/tmp/stub-out-{n}.txt")));
         Ok(InvokeResult {
             primary_output: out,
+            outputs: BTreeMap::new(),
         })
     }
 }

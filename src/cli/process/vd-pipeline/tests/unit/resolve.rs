@@ -18,26 +18,15 @@ fn relative_paths_join_working_dir() {
             assets: None,
         },
         output: Default::default(),
+        max_parallel: None,
+        resources: Default::default(),
         continue_on_error: false,
         steps: vec![
             Step {
-                r#use: Capability::Transcribe,
                 id: Some("transcript".into()),
-                name: None,
-                input: None,
-                output: None,
-                skip: false,
-                options: Default::default(),
+                ..Step::new(Capability::Transcribe)
             },
-            Step {
-                r#use: Capability::PrepareContext,
-                id: None,
-                name: None,
-                input: None,
-                output: None,
-                skip: false,
-                options: Default::default(),
-            },
+            Step::new(Capability::PrepareContext),
         ],
     };
     let resolved = resolve_job(job).unwrap();
@@ -49,5 +38,28 @@ fn relative_paths_join_working_dir() {
     assert_eq!(
         resolved.steps[1].input.as_deref(),
         Some(PathBuf::from("/work/docs").as_path())
+    );
+}
+
+#[test]
+fn diarize_resolves_from_audio() {
+    let job = Job {
+        version: 1,
+        name: None,
+        working_dir: Some(PathBuf::from("/work")),
+        input: JobInput {
+            audio: Some(PathBuf::from("meeting.wav")),
+        },
+        context: Default::default(),
+        output: Default::default(),
+        max_parallel: None,
+        resources: Default::default(),
+        continue_on_error: false,
+        steps: vec![Step::new(Capability::Diarize)],
+    };
+    let resolved = resolve_job(job).unwrap();
+    assert_eq!(
+        resolved.steps[0].input.as_deref(),
+        Some(PathBuf::from("/work/meeting.wav").as_path())
     );
 }

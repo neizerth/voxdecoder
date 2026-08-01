@@ -19,25 +19,19 @@ fn artifact_id_wires_path() {
         },
         context: Default::default(),
         output: Default::default(),
+        max_parallel: None,
+        resources: Default::default(),
         continue_on_error: false,
         steps: vec![
             Step {
-                r#use: Capability::Transcribe,
                 id: Some("transcript".into()),
-                name: None,
-                input: None,
                 output: Some(PathBuf::from("/work/transcript.txt")),
-                skip: false,
-                options: Default::default(),
+                ..Step::new(Capability::Transcribe)
             },
             Step {
-                r#use: Capability::FixCasing,
-                id: None,
-                name: None,
                 input: Some("transcript".into()),
                 output: Some(PathBuf::from("/work/fixed.txt")),
-                skip: false,
-                options: Default::default(),
+                ..Step::new(Capability::FixCasing)
             },
         ],
     };

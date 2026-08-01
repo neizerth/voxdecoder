@@ -17,34 +17,23 @@ fn job(continue_on_error: bool) -> Job {
         },
         context: Default::default(),
         output: Default::default(),
+        max_parallel: None,
+        resources: Default::default(),
         continue_on_error,
         steps: vec![
             Step {
-                r#use: Capability::Transcribe,
                 id: Some("transcript".into()),
-                name: None,
-                input: None,
                 output: Some(PathBuf::from("/work/t.txt")),
-                skip: false,
-                options: Default::default(),
+                ..Step::new(Capability::Transcribe)
             },
             Step {
-                r#use: Capability::FixCasing,
-                id: None,
-                name: None,
                 input: Some("transcript".into()),
                 output: Some(PathBuf::from("/work/c.txt")),
-                skip: false,
-                options: Default::default(),
+                ..Step::new(Capability::FixCasing)
             },
             Step {
-                r#use: Capability::FixAsr,
-                id: None,
-                name: None,
-                input: None,
                 output: Some(PathBuf::from("/work/a.txt")),
-                skip: false,
-                options: Default::default(),
+                ..Step::new(Capability::FixAsr)
             },
         ],
     }
@@ -70,7 +59,6 @@ fn continue_on_error_runs_rest() {
         binder: &binder,
         progress: ProgressMode::None,
     };
-    // prev stays at transcript; fix-asr gets input None → prev still transcript
     let out = exec.run(&resolved).unwrap();
     assert_eq!(out, PathBuf::from("/work/a.txt"));
     assert_eq!(binder.calls.borrow().len(), 3);

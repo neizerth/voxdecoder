@@ -21,6 +21,7 @@ pub struct InvokeRequest {
 #[derive(Debug, Clone)]
 pub struct InvokeResult {
     pub primary_output: PathBuf,
+    pub outputs: BTreeMap<String, PathBuf>,
 }
 
 pub trait Binder {

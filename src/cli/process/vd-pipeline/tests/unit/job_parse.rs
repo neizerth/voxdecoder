@@ -38,3 +38,25 @@ fn empty_steps_rejected() {
     let err = load_job_file(&path).unwrap_err();
     assert!(err.to_string().contains("no steps"));
 }
+
+#[test]
+fn diarize_nested_backend_options() {
+    use vd_pipeline::ArgValue;
+
+    let job = load_job_file(&fixture("jobs/diarize.yaml")).unwrap();
+    assert_eq!(job.steps.len(), 1);
+    assert_eq!(job.steps[0].r#use, Capability::Diarize);
+    let backend = job.steps[0]
+        .options
+        .get("backend")
+        .and_then(ArgValue::as_map)
+        .expect("nested backend map");
+    assert_eq!(
+        backend.get("provider").and_then(ArgValue::as_string).as_deref(),
+        Some("stub")
+    );
+    assert_eq!(
+        backend.get("model").and_then(ArgValue::as_string).as_deref(),
+        Some("deterministic-v1")
+    );
+}
