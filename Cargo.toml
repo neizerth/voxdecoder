@@ -1,7 +1,22 @@
 [workspace]
 resolver = "2"
-members = ["cli/transcribe/vd-gigaam", "cli/fix/vd-fix-casing"]
-default-members = ["cli/transcribe/vd-gigaam", "cli/fix/vd-fix-casing"]
+members = [
+    "src/crates/vd-artifact",
+    "src/crates/vd-output",
+    "src/crates/vd-progress",
+    "src/cli/transcribe/vd-gigaam",
+    "src/cli/fix/vd-fix-casing",
+    "src/cli/fix/vd-fix-asr",
+]
+default-members = [
+    "src/crates/vd-artifact",
+    "src/crates/vd-output",
+    "src/crates/vd-progress",
+    "src/cli/transcribe/vd-gigaam",
+    "src/cli/fix/vd-fix-casing",
+    "src/cli/fix/vd-fix-asr",
+]
+
 
 [workspace.package]
 edition = "2021"

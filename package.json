@@ -3,14 +3,18 @@
   "type": "module",
   "scripts": {
     "prepare": "lefthook install",
-    "test": "npm run test:vd-gigaam && npm run test:vd-fix-casing",
+    "test": "npm run test:vd-gigaam && npm run test:crates && npm run test:vd-fix-casing && npm run test:vd-fix-asr",
     "test:vd-gigaam": "cargo test -p vd-gigaam",
+    "test:crates": "cargo test -p vd-artifact -p vd-output -p vd-progress",
     "test:vd-fix-casing": "cargo test -p vd-fix-casing",
+    "test:vd-fix-asr": "cargo test -p vd-fix-asr",
     "build:vd-gigaam": "cargo build -p vd-gigaam --release --features metal",
     "build:vd-gigaam:cpu": "cargo build -p vd-gigaam --release",
     "build:vd-fix-casing": "cargo build -p vd-fix-casing --release",
-    "install:vd-gigaam": "cargo install --path cli/transcribe/vd-gigaam --locked --force --features metal",
-    "install:vd-fix-casing": "cargo install --path cli/fix/vd-fix-casing --locked --force",
+    "build:vd-fix-asr": "cargo build -p vd-fix-asr --release",
+    "install:vd-gigaam": "cargo install --path src/cli/transcribe/vd-gigaam --locked --force --features metal",
+    "install:vd-fix-casing": "cargo install --path src/cli/fix/vd-fix-casing --locked --force",
+    "install:vd-fix-asr": "cargo install --path src/cli/fix/vd-fix-asr --locked --force",
     "lint:rust": "cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warnings"
   },
   "devDependencies": {

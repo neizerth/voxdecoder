@@ -2406,18 +2406,48 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
-name = "vd-fix-casing"
+name = "vd-artifact"
+version = "0.1.0"
+dependencies = [
+ "directories",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.19",
+]
+
+[[package]]
+name = "vd-fix-asr"
 version = "0.1.0"
 dependencies = [
  "assert_cmd",
  "clap",
- "directories",
  "predicates",
  "serde",
  "serde_json",
  "tempfile",
  "thiserror 2.0.19",
  "toml",
+ "vd-artifact",
+ "vd-output",
+ "vd-progress",
+]
+
+[[package]]
+name = "vd-fix-casing"
+version = "0.1.0"
+dependencies = [
+ "assert_cmd",
+ "clap",
+ "predicates",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.19",
+ "toml",
+ "vd-artifact",
+ "vd-output",
+ "vd-progress",
 ]
 
 [[package]]
@@ -2439,6 +2469,23 @@ dependencies = [
  "thiserror 2.0.19",
  "toml",
  "ureq",
+]
+
+[[package]]
+name = "vd-output"
+version = "0.1.0"
+dependencies = [
+ "tempfile",
+ "thiserror 2.0.19",
+ "vd-artifact",
+]
+
+[[package]]
+name = "vd-progress"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

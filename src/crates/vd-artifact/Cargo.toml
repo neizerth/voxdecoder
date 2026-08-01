@@ -1,0 +1,28 @@
+[package]
+name = "vd-artifact"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Transcript artifact load / TextSpan walk / write"
+publish = false
+
+[lib]
+name = "vd_artifact"
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+directories = "6"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+
+[dev-dependencies]
+tempfile = "3"
+
+[[test]]
+name = "unit"
+path = "tests/unit/mod.rs"

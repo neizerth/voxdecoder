@@ -6,6 +6,6 @@
 .DS_Store
 /knowledge
 /node_modules/
-cli/transcribe/vd-gigaam/models/
-cli/transcribe/vd-gigaam/scripts/.venv/
+src/cli/transcribe/vd-gigaam/models/
+src/cli/transcribe/vd-gigaam/scripts/.venv/
 **/fixtures/golden/

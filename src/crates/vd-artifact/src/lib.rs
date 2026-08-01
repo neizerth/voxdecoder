@@ -1,0 +1,22 @@
+//! Transcript artifact I/O: detect, load, `TextSpan` walk, write.
+//!
+//! Shared by `vd-fix-*` (and any CLI that edits the same artifact shapes).
+//! Does **not** own presentation / ASR / terms backends, output-path policy, or progress UX.
+
+mod detect;
+mod formats;
+mod load;
+mod text_spans;
+mod writer;
+
+pub mod paths;
+pub mod types;
+
+pub use detect::detect_type;
+pub use formats::VttBlock;
+pub use load::{load, load_from_str, Artifact, ArtifactError};
+pub use text_spans::{apply_to_text_spans, collect_span_texts, count_text_spans};
+pub use types::{
+    ArtifactType, FixOptions, FixResult, Language, SpanId, TextSpan,
+};
+pub use writer::write;
