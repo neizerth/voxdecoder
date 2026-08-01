@@ -33,6 +33,7 @@ pub fn execute(args: InstallArgs) -> Result<(), CliError> {
             artifact_type: None,
             language: None,
             model: Some(&model),
+            device: None,
             path: Some(&path_s),
         });
 
@@ -44,11 +45,12 @@ pub fn execute(args: InstallArgs) -> Result<(), CliError> {
             };
             if pct != last_pct {
                 last_pct = pct;
-                progress.emit(&ProgressEvent::Downloading {
-                    percent: pct,
-                    bytes_done: Some(done),
-                    bytes_total: total,
-                });
+                progress.emit(&ProgressEvent::phase_download(
+                    "downloading",
+                    pct,
+                    done,
+                    total,
+                ));
             }
         };
 

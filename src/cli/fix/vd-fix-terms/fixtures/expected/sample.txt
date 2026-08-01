@@ -1,0 +1,1 @@
+мы деплоим на Kubernetes и гоняем GitHub Actions

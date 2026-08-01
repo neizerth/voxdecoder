@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use tempfile::TempDir;
 use vd_gigaam::config::resolve::OutputFormat;
-use vd_gigaam::output::path::{resolve_output_paths, OutputPathError, OutputPathRequest};
+use vd_gigaam::output::{resolve_output_paths, OutputPathError, OutputPathRequest};
 
 fn req(
     input: &str,
@@ -115,7 +115,7 @@ fn rejects_both_output_and_dir() {
         false,
     ))
     .unwrap_err();
-    assert!(matches!(err, OutputPathError::OutputAndDir));
+    assert!(matches!(err, OutputPathError::ConflictingTargets));
     assert_eq!(err.exit_code(), 2);
 }
 

@@ -7,7 +7,8 @@ pub mod gigaam;
 pub mod output;
 pub mod paths;
 pub mod platform;
-pub mod progress;
+
+pub use vd_progress as progress;
 
 use std::ffi::OsString;
 use std::process::ExitCode;

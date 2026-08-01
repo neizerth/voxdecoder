@@ -7,6 +7,7 @@ Transcript artifact I/O for VoxDecoder CLIs.
 - Detect / load / `TextSpan` walk / write (`txt`, `json`, `jsonl`, `srt`, `vtt`, `md`)
 - Types: `ArtifactType`, `Language`, `SpanId`, `TextSpan`, `FixOptions`, `FixResult`
 - Platform path helpers: `paths::{config_path, cache_dir}`
+- Project assets dir: `paths::{project_dir, project_dir_if_present}` — default `.voxdecoder`, override `$VD_PROJECT_DIR` / `.voxdecoder/env` / `.env`
 
 ## Does not own
 

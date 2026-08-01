@@ -1,4 +1,4 @@
-//! Stderr progress for long-running CLI work (`--progress=text|json`).
+//! Stderr progress for long-running CLIs.
 
 mod progress;
 

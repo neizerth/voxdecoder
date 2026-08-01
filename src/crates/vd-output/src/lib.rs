@@ -1,5 +1,8 @@
-//! Output path resolution for transcript CLIs (filesystem only).
+//! Output path resolution for VoxDecoder CLIs (filesystem only).
 
 mod path;
 
-pub use path::{resolve_output_path, OutputPathError, OutputPathRequest, OutputPaths};
+pub use path::{
+    ensure_writable, file_stem, fixed_file_name, resolve_output_path, segments_sidecar,
+    stem_ext_file_name, OutputPathError, OutputPathRequest, OutputPaths,
+};

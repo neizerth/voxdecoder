@@ -17,7 +17,9 @@ fn repair_tokens(text: &str, language: Language, ctx: SpanContext<'_>) -> String
     let mut rest = text;
     while !rest.is_empty() {
         let (token, after) = next_token(rest);
-        if token.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '+')
+        if token
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '+')
             && !token.is_empty()
         {
             out.push_str(&repair_one(token, language, ctx));
@@ -144,7 +146,11 @@ fn closest_neighbor_form(lower: &str, ctx: SpanContext<'_>) -> Option<String> {
         return None;
     }
     let mut best: Option<(usize, String)> = None;
-    for neigh in ctx.neighbors_before.iter().chain(ctx.neighbors_after.iter()) {
+    for neigh in ctx
+        .neighbors_before
+        .iter()
+        .chain(ctx.neighbors_after.iter())
+    {
         for token in neigh.split(|c: char| !(c.is_alphanumeric() || c == '_' || c == '-')) {
             if token.is_empty() {
                 continue;
@@ -198,9 +204,7 @@ fn edit_distance(a: &str, b: &str) -> usize {
         cur[0] = i;
         for j in 1..=m {
             let cost = usize::from(a[i - 1] != b[j - 1]);
-            cur[j] = (prev[j] + 1)
-                .min(cur[j - 1] + 1)
-                .min(prev[j - 1] + cost);
+            cur[j] = (prev[j] + 1).min(cur[j - 1] + 1).min(prev[j - 1] + cost);
         }
         std::mem::swap(&mut prev, &mut cur);
     }

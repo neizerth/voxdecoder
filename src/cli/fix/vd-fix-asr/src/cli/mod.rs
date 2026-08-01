@@ -47,7 +47,7 @@ enum RootCommand {
     about = "Repair ASR wording in a local text artifact",
     after_help = "Examples:\n  \
 vd-fix-asr run -i meeting.txt\n  \
-vd-fix-asr -i meeting.txt --context ./docs\n  \
+vd-fix-asr -i meeting.txt --context ./assets\n  \
 vd-fix-asr -i meeting.txt --dry-run"
 )]
 pub struct RunCli {
@@ -67,7 +67,7 @@ pub struct RunCli {
         value_parser = PossibleValuesParser::new(Language::allowed())
     )]
     pub language: Option<String>,
-    /// Additional project material (file or directory). Repeatable.
+    /// Project assets from `vd-assets` (default: nearest `.voxdecoder` if present). Repeatable.
     #[arg(long = "context")]
     pub context: Vec<PathBuf>,
     #[arg(long = "context-neighbors")]

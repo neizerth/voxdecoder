@@ -6,8 +6,8 @@ Pinned toolchain: [`rust-toolchain.toml`](../../../../rust-toolchain.toml) (`sta
 |------|--------|---------|
 | rustfmt | [`rustfmt.toml`](../../../../rustfmt.toml) | `cargo fmt --all -- --check` |
 | clippy | [`clippy.toml`](../../../../clippy.toml) + workspace lints in root `Cargo.toml` | `cargo clippy --workspace --all-targets -- -D warnings` |
-| tests (I/O) | `src/crates/{vd-artifact,vd-output}/tests/unit/` | `npm run test:crates` |
-| tests (CLI) | `src/cli/fix/vd-fix-asr/tests/{unit,e2e}/` | `npm run test:vd-fix-asr` |
+| tests (I/O) | `src/crates/{vd-artifact,vd-output}/tests/unit/` | `./scripts/test.sh crates` |
+| tests (CLI) | `src/cli/fix/vd-fix-asr/tests/{unit,e2e}/` | `./scripts/test.sh vd-fix-asr` |
 
 **Status: implemented.** Workspace members: shared crates + `vd-fix-asr`. Optional downloadable `assets/` remain future work.
 

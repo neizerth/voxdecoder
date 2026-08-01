@@ -4,15 +4,16 @@ Local post-processing for transcripts and other text artifacts. Three tools, alm
 
 ```text
 vd-fix-casing  →  vd-fix-asr  →  vd-fix-terms
-   (form)           (words)          (canonical names)
+   (form)           (words)          (terminology)
 ```
 
 | CLI | Changes | Spec |
 |-----|---------|------|
 | `vd-fix-casing` | Presentation only | [vd-fix-casing/](vd-fix-casing/) ([cli](vd-fix-casing/cli.md)) |
 | `vd-fix-asr` | Words / meaning | [vd-fix-asr/](vd-fix-asr/) ([cli](vd-fix-asr/cli.md)) |
+| `vd-fix-terms` | Canonical terminology | [vd-fix-terms/](vd-fix-terms/) ([cli](vd-fix-terms/cli.md)) |
 
-| `vd-fix-terms` | Canonical names | TBD |
+Project assets (default `.voxdecoder/` with `md/` + `terms.yml`) for `--context` / `--terms`: [`vd-assets`](../process/vd-assets/) ([cli](../process/vd-assets/cli.md)). Override via `$VD_PROJECT_DIR` or `VD_PROJECT_DIR=` in `.voxdecoder/env` / `.env`.
 
 Queue / background runs: [`vd-srv`](../vd-srv/).
 
@@ -32,13 +33,13 @@ All three CLIs share the same I/O contract so they can be chained in any order (
 
 Each binary documents an explicit **Guarantees** section (what it never changes). That contract is more important than the option list: it makes the pipeline safe to chain.
 
-How they differ is only **Behavior**:
+How they differ is only **Behavior** — each has one core rule:
 
-| CLI | Behavior |
-|-----|----------|
-| `vd-fix-casing` | changes presentation only |
-| `vd-fix-asr` | changes words only |
-| `vd-fix-terms` | changes canonical term representation only |
+| CLI | Behavior | Core rule |
+|-----|----------|-----------|
+| `vd-fix-casing` | changes presentation only | Never changes words |
+| `vd-fix-asr` | changes words only | Changes words only to restore meaning |
+| `vd-fix-terms` | changes canonical terminology only | Never guesses |
 
 ---
 
@@ -49,8 +50,8 @@ Workspace libs live under [`../../crates/`](../../crates/) (`src/crates/`, not u
 | Crate | Path | Use when developing |
 |-------|------|---------------------|
 | **`vd-artifact`** | [`vd-artifact`](../../crates/vd-artifact/) | Artifact load/walk/write, shared types, `paths` helpers |
-| **`vd-output`** | [`vd-output`](../../crates/vd-output/) | `.fixed.` path resolution |
-| **`vd-progress`** | [`vd-progress`](../../crates/vd-progress/) | Stderr progress + `ProgressFormat` |
+| **`vd-output`** | [`vd-output`](../../crates/vd-output/) | `-o` / `-d` / `--in-place`; caller-supplied naming (`.fixed.` for fix CLIs) |
+| **`vd-progress`** | [`vd-progress`](../../crates/vd-progress/) | Stderr progress (`start` / `phase` / `done` / `error`) |
 
 Backends (`casing/` / `asr/` / `terms/`), pack install UX, clap, and config stay **per binary**.
 
@@ -60,6 +61,7 @@ Overview: [src/crates/README.md](../../crates/README.md). Each CLI’s STRUCTURE
 cargo test -p vd-artifact -p vd-output -p vd-progress
 cargo test -p vd-fix-casing
 cargo test -p vd-fix-asr
+cargo test -p vd-fix-terms
 ```
 
 ---
@@ -88,7 +90,11 @@ Fixes speech-recognition errors. Spec: [vd-fix-asr/](vd-fix-asr/) ([cli](vd-fix-
 
 ## `vd-fix-terms`
 
-Normalizes terminology to a single canonical form.
+Normalizes **canonical terminology** to a single form. Spec: [vd-fix-terms/](vd-fix-terms/) ([cli](vd-fix-terms/cli.md)).
+
+**Status: implemented** (shipping lexicon + `--terms`; optional packs later).
+
+**Core rule:** never guesses — every replacement must be backed by shipping lexicon, `--terms`, or an explicit rule.
 
 Works from dictionaries and rules — it does not “guess.”
 
@@ -113,7 +119,7 @@ Works from dictionaries and rules — it does not “guess.”
 
 **Sources**
 
-- `terms.yaml` / `terms.json`
+- `terms.yml` / `terms.json`
 - Markdown / README / docs
 - user glossary
 
@@ -133,6 +139,6 @@ Each tool owns one layer of the text:
 
 1. **Form** — make it readable (`vd-fix-casing`)
 2. **Sense** — fix what was misheard (`vd-fix-asr`)
-3. **Terms** — lock names to the project vocabulary (`vd-fix-terms`)
+3. **Terminology** — lock vocabulary to the project dictionary (`vd-fix-terms`)
 
 Together: **presentation → meaning → terminology**. That covers almost all local transcript cleanup while keeping each binary small, clear, and independent.

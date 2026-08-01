@@ -1,0 +1,50 @@
+[package]
+name = "vd-assets"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Convert Office/PDF project docs to Markdown and build a shared dictionary for vd-fix-*"
+publish = false
+
+[[bin]]
+name = "vd-assets"
+path = "src/main.rs"
+
+[lib]
+name = "vd_assets"
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+calamine = "0.26"
+clap = { version = "4", features = ["derive", "env"] }
+directories = "6"
+pdf-extract = "0.10"
+quick-xml = "0.37"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+sha2 = "0.10"
+thiserror = "2"
+toml = "0.8"
+vd-artifact = { path = "../../../crates/vd-artifact" }
+vd-output = { path = "../../../crates/vd-output" }
+vd-progress = { path = "../../../crates/vd-progress" }
+zip = { version = "2", default-features = false, features = ["deflate"] }
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"
+tempfile = "3"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+
+[[test]]
+name = "unit"
+path = "tests/unit/mod.rs"
+
+[[test]]
+name = "e2e"
+path = "tests/e2e/mod.rs"

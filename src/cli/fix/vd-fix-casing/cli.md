@@ -304,21 +304,21 @@ Stdout stays free (except `--dry-run` / `info` / `list` text).
 
 ```json
 {"event":"start","input":"…","output":"…","artifact_type":"txt","language":"ru","model":"ru"}
-{"event":"loading","percent":5}
-{"event":"processing","percent":40,"span":1,"span_total":3}
-{"event":"processing","percent":70,"span":2,"span_total":3}
-{"event":"writing","percent":90}
+{"event":"phase","phase":"loading","percent":5}
+{"event":"phase","phase":"processing","percent":40,"span":1,"span_total":3}
+{"event":"phase","phase":"processing","percent":70,"span":2,"span_total":3}
+{"event":"phase","phase":"writing","percent":90}
 {"event":"done","output":"/path/meeting.fixed.txt","duration_sec":1.2,"char_count":12400}
 {"event":"error","code":"backend_init_failed","message":"…"}
 ```
 
-`processing.percent` tracks span progress (0–100). Meaningful for multi-span artifacts (`srt` / `json` / …); single-span `txt` still emits percent.
+`phase=processing` + `span` / `span_total` tracks span progress (0–100). Meaningful for multi-span artifacts (`srt` / `json` / …); single-span `txt` still emits percent.
 
 ### `install --progress=json`
 
 ```json
 {"event":"start","model":"ru","path":"…/vd-fix-casing/models"}
-{"event":"downloading","percent":42,"bytes_done":12345,"bytes_total":30000}
+{"event":"phase","phase":"downloading","percent":42,"bytes_done":12345,"bytes_total":30000}
 {"event":"done","model":"ru","path":"…/vd-fix-casing/models/ru"}
 {"event":"error","code":"download_failed","message":"…"}
 ```

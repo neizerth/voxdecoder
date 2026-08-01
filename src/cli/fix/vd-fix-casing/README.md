@@ -7,9 +7,24 @@ Shared crates: [`vd-artifact`](../../../crates/vd-artifact/), [`vd-output`](../.
 Rust gates: [RUST.md](RUST.md).  
 Languages beyond `ru` / `en`: [TODO-languages.md](TODO-languages.md).
 
+**Status: docs / planned.** Not a workspace member yet.
+
+## Core rule
+
+```text
+Never changes words.
+
+Rewrites only presentation (punctuation, casing, whitespace, quotes, dashes, sentence layout).
+The input artifact type and structure are preserved.
+```
+
 `vd-fix-casing` fixes **presentation** of text artifacts without changing words or meaning. First step in the local cleanup pipeline (`vd-fix-casing` → `vd-fix-asr` → `vd-fix-terms`).
 
-Rewrites only presentation. The input artifact type and structure are preserved.
+| CLI | Owns | Core rule |
+|-----|------|-----------|
+| `vd-fix-casing` | **presentation only** | Never changes words |
+| `vd-fix-asr` | **wording only** | Changes words only to restore meaning |
+| `vd-fix-terms` | **canonical terminology only** | Never guesses |
 
 ---
 

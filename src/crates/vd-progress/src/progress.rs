@@ -1,4 +1,7 @@
 //! Progress reporting on stderr (`--progress`).
+//!
+//! Unified NDJSON scheme for `vd-fix-*` and transcription CLIs:
+//! `start` → `phase`* → `done` | `error`.
 
 use serde::Serialize;
 use std::cell::Cell;
@@ -36,30 +39,27 @@ pub enum ProgressEvent<'a> {
         #[serde(skip_serializing_if = "Option::is_none")]
         model: Option<&'a str>,
         #[serde(skip_serializing_if = "Option::is_none")]
+        device: Option<&'a str>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         path: Option<&'a str>,
     },
-    Loading {
-        #[serde(skip_serializing_if = "Option::is_none")]
-        percent: Option<u8>,
-    },
-    Downloading {
-        percent: u8,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        bytes_done: Option<u64>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        bytes_total: Option<u64>,
-    },
-    Processing {
+    /// Mid-lifecycle work unit (`loading`, `downloading`, `processing`, `transcribing`, …).
+    Phase {
+        phase: &'a str,
         #[serde(skip_serializing_if = "Option::is_none")]
         percent: Option<u8>,
         #[serde(skip_serializing_if = "Option::is_none")]
         span: Option<u32>,
         #[serde(skip_serializing_if = "Option::is_none")]
         span_total: Option<u32>,
-    },
-    Writing {
         #[serde(skip_serializing_if = "Option::is_none")]
-        percent: Option<u8>,
+        segment: Option<u32>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        segment_total: Option<u32>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        bytes_done: Option<u64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        bytes_total: Option<u64>,
     },
     Done {
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -77,6 +77,50 @@ pub enum ProgressEvent<'a> {
         code: &'a str,
         message: &'a str,
     },
+}
+
+impl<'a> ProgressEvent<'a> {
+    /// Phase with percent only (loading / writing / …).
+    pub fn phase(phase: &'a str, percent: u8) -> Self {
+        Self::Phase {
+            phase,
+            percent: Some(percent),
+            span: None,
+            span_total: None,
+            segment: None,
+            segment_total: None,
+            bytes_done: None,
+            bytes_total: None,
+        }
+    }
+
+    /// Phase with span counters (fix CLIs).
+    pub fn phase_span(phase: &'a str, percent: u8, span: u32, span_total: u32) -> Self {
+        Self::Phase {
+            phase,
+            percent: Some(percent),
+            span: Some(span),
+            span_total: Some(span_total),
+            segment: None,
+            segment_total: None,
+            bytes_done: None,
+            bytes_total: None,
+        }
+    }
+
+    /// Phase with download bytes.
+    pub fn phase_download(phase: &'a str, percent: u8, done: u64, total: Option<u64>) -> Self {
+        Self::Phase {
+            phase,
+            percent: Some(percent),
+            span: None,
+            span_total: None,
+            segment: None,
+            segment_total: None,
+            bytes_done: Some(done),
+            bytes_total: total,
+        }
+    }
 }
 
 pub struct Progress {
@@ -119,41 +163,26 @@ impl Progress {
                             let _ = writeln!(err, "start");
                         }
                     }
-                    ProgressEvent::Loading { percent } => {
-                        let label = percent
-                            .map_or_else(|| "loading".to_string(), |p| format!("loading {p}%"));
-                        self.emit_phase(&mut err, tty, &label);
-                    }
-                    ProgressEvent::Downloading {
-                        percent,
-                        bytes_done,
-                        bytes_total,
-                    } => {
-                        let label = match (bytes_done, bytes_total) {
-                            (Some(d), Some(t)) => {
-                                format!("downloading {percent}% ({d}/{t})")
-                            }
-                            _ => format!("downloading {percent}%"),
-                        };
-                        self.emit_phase(&mut err, tty, &label);
-                    }
-                    ProgressEvent::Processing {
+                    ProgressEvent::Phase {
+                        phase,
                         percent,
                         span,
                         span_total,
+                        segment,
+                        segment_total,
+                        bytes_done,
+                        bytes_total,
                     } => {
-                        let label = match (percent, span, span_total) {
-                            (Some(p), Some(s), Some(t)) => {
-                                format!("processing {p}% (span {s}/{t})")
-                            }
-                            (Some(p), _, _) => format!("processing {p}%"),
-                            _ => "processing".to_string(),
-                        };
-                        self.emit_phase(&mut err, tty, &label);
-                    }
-                    ProgressEvent::Writing { percent } => {
-                        let label = percent
-                            .map_or_else(|| "writing".to_string(), |p| format!("writing {p}%"));
+                        let label = phase_label(
+                            phase,
+                            *percent,
+                            *span,
+                            *span_total,
+                            *segment,
+                            *segment_total,
+                            *bytes_done,
+                            *bytes_total,
+                        );
                         self.emit_phase(&mut err, tty, &label);
                     }
                     ProgressEvent::Done {
@@ -191,4 +220,28 @@ impl Progress {
             let _ = writeln!(err, "{label}");
         }
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn phase_label(
+    phase: &str,
+    percent: Option<u8>,
+    span: Option<u32>,
+    span_total: Option<u32>,
+    segment: Option<u32>,
+    segment_total: Option<u32>,
+    bytes_done: Option<u64>,
+    bytes_total: Option<u64>,
+) -> String {
+    let pct = percent.map(|p| format!(" {p}%")).unwrap_or_default();
+    let detail = if let (Some(d), Some(t)) = (bytes_done, bytes_total) {
+        format!(" ({d}/{t})")
+    } else if let (Some(s), Some(t)) = (span, span_total) {
+        format!(" (span {s}/{t})")
+    } else if let (Some(s), Some(t)) = (segment, segment_total) {
+        format!(" (segment {s}/{t})")
+    } else {
+        String::new()
+    };
+    format!("{phase}{pct}{detail}")
 }

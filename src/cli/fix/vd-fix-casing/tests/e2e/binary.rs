@@ -34,7 +34,8 @@ fn install_and_list() {
     cmd.args(["install", "ru", "--progress=json"])
         .assert()
         .success()
-        .stderr(predicate::str::contains("\"event\":\"downloading\""));
+        .stderr(predicate::str::contains("\"event\":\"phase\""))
+        .stderr(predicate::str::contains("\"phase\":\"downloading\""));
 
     let mut cmd = bin();
     with_isolation(&mut cmd, &cfg, &models);
@@ -200,7 +201,8 @@ fn run_progress_has_processing_percent() {
         .arg("--progress=json")
         .assert()
         .success()
-        .stderr(predicate::str::contains("\"event\":\"processing\""))
+        .stderr(predicate::str::contains("\"event\":\"phase\""))
+        .stderr(predicate::str::contains("\"phase\":\"processing\""))
         .stderr(predicate::str::contains("\"percent\""));
 }
 

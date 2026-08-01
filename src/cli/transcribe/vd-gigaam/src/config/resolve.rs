@@ -6,7 +6,7 @@ use serde::Serialize;
 
 use super::FileConfig;
 use crate::gigaam::catalog::resolve_model_name;
-use crate::output::path::{resolve_output_paths, OutputPathError, OutputPathRequest, OutputPaths};
+use crate::output::{resolve_output_paths, OutputPathError, OutputPathRequest, OutputPaths};
 use crate::paths;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

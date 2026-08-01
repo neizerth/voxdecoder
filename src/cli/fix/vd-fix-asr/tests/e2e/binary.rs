@@ -14,6 +14,7 @@ fn bin() -> Command {
 
 fn with_isolation(cmd: &mut Command, config: &Path) {
     cmd.env("VD_FIX_ASR_CONFIG", config);
+    cmd.env_remove("VD_PROJECT_DIR");
 }
 
 #[test]
@@ -60,6 +61,26 @@ fn dry_run_shows_context() {
 }
 
 #[test]
+fn defaults_context_to_dot_voxdecoder() {
+    let dir = TempDir::new().unwrap();
+    let input = dir.path().join("meeting.txt");
+    fs::write(&input, "hello").unwrap();
+    let assets = dir.path().join(".voxdecoder");
+    fs::create_dir(&assets).unwrap();
+    fs::write(assets.join("terms.yml"), "version: 1\nentries: []\nforms: []\n").unwrap();
+    let cfg = dir.path().join("config.toml");
+
+    let mut cmd = bin();
+    with_isolation(&mut cmd, &cfg);
+    cmd.args(["run", "-i"])
+        .arg(&input)
+        .arg("--dry-run")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(".voxdecoder"));
+}
+
+#[test]
 fn dry_run_json() {
     let dir = TempDir::new().unwrap();
     let input = dir.path().join("meeting.txt");
@@ -97,7 +118,8 @@ fn run_progress_has_span_percent() {
         .arg("--progress=json")
         .assert()
         .success()
-        .stderr(predicate::str::contains("\"event\":\"processing\""))
+        .stderr(predicate::str::contains("\"event\":\"phase\""))
+        .stderr(predicate::str::contains("\"phase\":\"processing\""))
         .stderr(predicate::str::contains("\"span\""))
         .stderr(predicate::str::contains("\"percent\""));
 }

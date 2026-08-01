@@ -98,11 +98,12 @@ pub fn execute(args: RunArgs) -> Result<(), CliError> {
         artifact_type: Some(resolved.artifact_type.as_str()),
         language: Some(resolved.language.as_str()),
         model: None,
+        device: None,
         path: None,
     });
 
     let started = Instant::now();
-    progress.emit(&ProgressEvent::Loading { percent: Some(5) });
+    progress.emit(&ProgressEvent::phase("loading", 5));
 
     let mut artifact = artifact::load(&resolved.input).map_err(|e| {
         progress.emit(&ProgressEvent::Error {
@@ -137,11 +138,12 @@ pub fn execute(args: RunArgs) -> Result<(), CliError> {
         |span: TextSpan<'_>, ctx| -> Result<(), CliError> {
             span_idx += 1;
             let percent = ((u64::from(span_idx) * 80) / span_total as u64) as u8 + 10;
-            progress.emit(&ProgressEvent::Processing {
-                percent: Some(percent.min(90)),
-                span: Some(span_idx),
-                span_total: Some(span_total as u32),
-            });
+            progress.emit(&ProgressEvent::phase_span(
+                "processing",
+                percent.min(90),
+                span_idx,
+                span_total as u32,
+            ));
             let result = fixer
                 .fix(&span, ctx, FixOptions::default())
                 .map_err(|e| CliError::with_code(e.exit_code(), e.to_string()))?;
@@ -153,7 +155,7 @@ pub fn execute(args: RunArgs) -> Result<(), CliError> {
         },
     )?;
 
-    progress.emit(&ProgressEvent::Writing { percent: Some(95) });
+    progress.emit(&ProgressEvent::phase("writing", 95));
 
     artifact::write(&artifact, &resolved.paths.main).map_err(|e| {
         progress.emit(&ProgressEvent::Error {

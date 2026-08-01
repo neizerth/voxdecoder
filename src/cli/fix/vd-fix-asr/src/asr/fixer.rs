@@ -32,8 +32,7 @@ pub struct AsrFixer {
 
 impl AsrFixer {
     pub fn load(opts: AsrLoadOptions) -> Result<Self, AsrError> {
-        let materials = load_materials(&opts.context_paths)
-            .map_err(AsrError::BackendInit)?;
+        let materials = load_materials(&opts.context_paths).map_err(AsrError::BackendInit)?;
         Ok(Self {
             language: opts.language,
             materials,

@@ -102,8 +102,8 @@ pub fn resolve_run(
         output: ov.output,
         output_dir: ov.output_dir,
         in_place,
-        artifact_type,
         overwrite: ov.overwrite || in_place,
+        default_file_name: crate::output::fixed_file_name(&input, artifact_type.extension()),
     })?;
 
     Ok(ResolvedRun {

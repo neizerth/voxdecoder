@@ -109,14 +109,14 @@ It **may** change words, but **only inside transcript text spans**.
 | Argument | Short | Default | Description |
 |----------|-------|---------|-------------|
 | `--language` | `-l` | `ru` | Language mode: `ru` (shipping focus — Russian + English insertions); `en` reserved; `de`, `auto` reserved |
-| `--context` | — | — | Additional project material (file or directory). Repeatable. May be docs, glossaries, dictionaries, source code, wiki, RFCs, … |
+| `--context` | — | nearest `.voxdecoder` if present | Project assets from `vd-assets`. **Repeatable**. Explicit paths replace the default. Do not pass raw Office/PDF |
 | `--context-neighbors` | — | `1` | How many neighboring segments to consider (0 = span only) |
 | `--dry-run` | — | — | Print resolved options and exit (no rewrite) |
 | `--json` | — | — | With `--dry-run`: machine-readable plan on stdout |
 | `--progress` | — | `text` | Progress on stderr: `text` or `json` |
 | `--quiet` | `-q` | — | Disable progress on stderr |
 
-`--context` is intentionally broad: additional project documentation, glossaries, dictionaries, code trees, and similar materials used as recognition hints — **not** canonical term locking (`vd-fix-terms`).
+Prefer prepared assets from [`vd-assets`](../../process/vd-assets/). Default: nearest **`.voxdecoder/`** (walk up from the input). Override with `--context`, `$VD_PROJECT_DIR`, or `VD_PROJECT_DIR=` in `.voxdecoder/env` / `.env`. The assets directory is the unit: Markdown → recognition context; `terms.yml` → vocabulary hints. Not canonical term locking (`vd-fix-terms`).
 
 #### Examples
 
@@ -128,8 +128,10 @@ vd-fix-asr -i /path/meeting.txt
 vd-fix-asr run -i meeting.txt -o ./out/meeting.txt
 vd-fix-asr run -i meeting.srt -d ./cleaned/
 vd-fix-asr run -i meeting.txt --in-place
-vd-fix-asr run -i meeting.txt --context ./docs --context ./glossary.yaml
-vd-fix-asr run -i meeting.txt --context ./README.md --context-neighbors 2
+vd-fix-asr run -i meeting.txt
+# → uses ./.voxdecoder when present
+vd-fix-asr run -i meeting.txt --context /other/assets
+vd-fix-asr run -i meeting.txt --context /other/assets --context-neighbors 2
 vd-fix-asr run -i meeting.txt --language ru --progress=json
 vd-fix-asr run -i meeting.txt --dry-run
 vd-fix-asr run -i meeting.txt --dry-run --json
@@ -147,7 +149,7 @@ Input: /path/meeting.txt
 Artifact type: txt
 Output: /path/meeting.fixed.txt
 Language: ru
-Context: ./docs, ./glossary.yaml
+Context: ./.voxdecoder
 Context neighbors: 1
 In-place: off
 Overwrite: off
@@ -161,7 +163,7 @@ Machine-readable (`--dry-run --json`):
   "artifact_type": "txt",
   "output": "/path/meeting.fixed.txt",
   "language": "ru",
-  "context": ["./docs", "./glossary.yaml"],
+  "context": ["./.voxdecoder"],
   "context_neighbors": 1,
   "in_place": false,
   "overwrite": false
@@ -227,15 +229,15 @@ Stdout stays free (except `--dry-run` / config text).
 
 ```json
 {"event":"start","input":"…","output":"…","artifact_type":"txt","language":"ru"}
-{"event":"loading","percent":5}
-{"event":"processing","percent":40,"span":1,"span_total":3}
-{"event":"processing","percent":70,"span":2,"span_total":3}
-{"event":"writing","percent":90}
+{"event":"phase","phase":"loading","percent":5}
+{"event":"phase","phase":"processing","percent":40,"span":1,"span_total":3}
+{"event":"phase","phase":"processing","percent":70,"span":2,"span_total":3}
+{"event":"phase","phase":"writing","percent":90}
 {"event":"done","output":"/path/meeting.fixed.txt","duration_sec":2.4,"char_count":12400}
 {"event":"error","code":"backend_init_failed","message":"…"}
 ```
 
-`processing.percent` tracks span progress (0–100). Meaningful for multi-span artifacts (`srt` / `json` / …); single-span `txt` still emits percent.
+`phase=processing` + `span` / `span_total` tracks span progress (0–100). Meaningful for multi-span artifacts (`srt` / `json` / …); single-span `txt` still emits percent.
 
 ---
 

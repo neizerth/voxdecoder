@@ -7,7 +7,8 @@ use crate::config::file as config_file;
 use crate::config::resolve::{self, Device, DryRunPlan, OutputFormat, RunOverrides};
 use crate::gigaam::config::{GigaLoadOptions, TranscribeOptions};
 use crate::gigaam::model::{GigaModel, ModelError};
-use crate::output::path::OutputPathError;
+use crate::output::OutputPathError;
+
 use crate::output::writer;
 use crate::paths;
 use crate::progress::{Progress, ProgressEvent, ProgressMode};
@@ -90,19 +91,14 @@ pub fn execute(args: RunArgs) -> Result<(), CliError> {
     progress.emit(&ProgressEvent::Start {
         input: Some(resolved.input.to_str().unwrap_or("")),
         output: Some(resolved.plan.output.to_str().unwrap_or("")),
+        artifact_type: None,
+        language: None,
         model: Some(&resolved.plan.model),
         device: Some(resolved.plan.device.as_str()),
         path: None,
     });
 
-    progress.emit(&ProgressEvent::Phase {
-        phase: "loading_model",
-        percent: 5,
-        segment: None,
-        segment_total: None,
-        bytes_done: None,
-        bytes_total: None,
-    });
+    progress.emit(&ProgressEvent::phase("loading_model", 5));
 
     let model = GigaModel::load(GigaLoadOptions {
         model: resolved.plan.model.clone(),
@@ -116,14 +112,7 @@ pub fn execute(args: RunArgs) -> Result<(), CliError> {
     let samples = crate::audio::load_pcm16k_mono(&resolved.input)
         .map_err(|e| CliError::with_code(1, e.to_string()))?;
 
-    progress.emit(&ProgressEvent::Phase {
-        phase: "transcribing",
-        percent: 55,
-        segment: None,
-        segment_total: None,
-        bytes_done: None,
-        bytes_total: None,
-    });
+    progress.emit(&ProgressEvent::phase("transcribing", 55));
 
     let transcript = model
         .transcribe(

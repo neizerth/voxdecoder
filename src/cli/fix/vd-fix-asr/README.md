@@ -9,22 +9,30 @@ Languages: [TODO-languages.md](TODO-languages.md).
 
 **Status: implemented (rules backend).** Packs / `install` not required.
 
+## Core rule
+
+```text
+Changes words only to restore the intended meaning.
+
+Never invents unsupported content.
+Does not lock names to project-canonical terminology (vd-fix-terms).
+Does not restyle presentation (vd-fix-casing).
+```
+
 `vd-fix-asr` repairs **speech-recognition mistakes** in text artifacts: misheard words, homophones, Russian/English mix-ups, technical terms mangled by ASR. Second step in the local cleanup pipeline:
 
 ```text
 vd-fix-casing  →  vd-fix-asr  →  vd-fix-terms
- presentation       wording         canonical names
+ presentation       wording         terminology
 ```
 
 **Rewrites only wording needed to restore meaning.** The input artifact type and structure are preserved.
 
-That one line is the contract:
-
-| CLI | Owns |
-|-----|------|
-| `vd-fix-casing` | **presentation only** — how it is written |
-| `vd-fix-asr` | **wording only** — what was said |
-| `vd-fix-terms` | **canonical names only** — how the project names it |
+| CLI | Owns | Core rule |
+|-----|------|-----------|
+| `vd-fix-casing` | **presentation only** | Never changes words |
+| `vd-fix-asr` | **wording only** | Changes words only to restore meaning |
+| `vd-fix-terms` | **canonical terminology only** | Never guesses |
 
 ---
 
@@ -51,7 +59,7 @@ English identifiers and code-switched fragments stay in the language that was sp
 ```bash
 vd-fix-asr run -i meeting.txt
 vd-fix-asr run -i meeting.txt --progress=json
-vd-fix-asr run -i meeting.srt --context ./docs --context ./glossary.yaml
+vd-fix-asr run -i meeting.srt --context ./assets
 ```
 
 Builtin rules backend — no `install` required. Optional packs remain a possible future.
@@ -90,7 +98,7 @@ Shared I/O via [`crates/`](../../../crates/) (do not fork artifact/output/progre
 - neighboring segments for discourse context
 - **glossary** — project terminology hints for recognition (not canonical locking)
 - **dictionaries** — additional vocabulary
-- **`--context`** — additional project materials (documentation, glossaries, dictionaries, source code, wiki, RFCs, …)
+- **`--context`** — prefer `vd-assets` output (`./assets`); also text/Markdown. Recognition hints, not canonical locking
 
 **Does not**
 

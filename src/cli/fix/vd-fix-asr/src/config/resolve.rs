@@ -111,15 +111,23 @@ pub fn resolve_run(
         output: ov.output,
         output_dir: ov.output_dir,
         in_place,
-        artifact_type,
         overwrite: ov.overwrite || in_place,
+        default_file_name: crate::output::fixed_file_name(&input, artifact_type.extension()),
     })?;
+
+    let context = if ov.context.is_empty() {
+        vd_artifact::paths::project_dir_if_present(&input)
+            .into_iter()
+            .collect()
+    } else {
+        ov.context
+    };
 
     Ok(ResolvedRun {
         input,
         artifact_type,
         language,
-        context: ov.context,
+        context,
         context_neighbors,
         paths,
         overwrite: ov.overwrite || in_place,

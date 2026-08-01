@@ -27,6 +27,8 @@ pub fn execute(args: InstallArgs) -> Result<(), CliError> {
         progress.emit(&ProgressEvent::Start {
             input: None,
             output: None,
+            artifact_type: None,
+            language: None,
             model: Some(model),
             device: None,
             path: Some(root.to_str().unwrap_or("")),
@@ -40,14 +42,12 @@ pub fn execute(args: InstallArgs) -> Result<(), CliError> {
             };
             if pct != last_pct {
                 last_pct = pct;
-                progress.emit(&ProgressEvent::Phase {
-                    phase: "downloading",
-                    percent: pct,
-                    segment: None,
-                    segment_total: None,
-                    bytes_done: Some(done),
-                    bytes_total: total,
-                });
+                progress.emit(&ProgressEvent::phase_download(
+                    "downloading",
+                    pct,
+                    done,
+                    total,
+                ));
             }
         };
 

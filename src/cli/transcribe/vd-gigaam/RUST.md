@@ -6,7 +6,7 @@ Pinned toolchain: [`rust-toolchain.toml`](../../../../rust-toolchain.toml) (`sta
 |------|--------|---------|
 | rustfmt | [`rustfmt.toml`](../../../../rustfmt.toml) | `cargo fmt --all -- --check` |
 | clippy | [`clippy.toml`](../../../../clippy.toml) + workspace lints in root `Cargo.toml` | `cargo clippy --workspace --all-targets -- -D warnings` |
-| tests | `src/cli/transcribe/vd-gigaam/tests/{unit,e2e}/` | `npm run test:vd-gigaam` / `npm test` |
+| tests | `src/cli/transcribe/vd-gigaam/tests/{unit,e2e}/` | `./scripts/test.sh vd-gigaam` / `npm test` |
 
 From repo root:
 
@@ -15,7 +15,9 @@ rustup show                    # should pick repo toolchain
 cargo fmt --all
 cargo clippy --workspace --all-targets -- -D warnings
 npm test                       # all CLI packages (see package.json)
-npm run test:vd-gigaam
+npm test
+# or:
+./scripts/test.sh vd-gigaam
 ```
 
 Git hooks ([lefthook.yml](../../../../lefthook.yml)): `npm install` installs lefthook; `pre-commit` runs `npm test`; `commit-msg` runs commitlint (conventional commits).
