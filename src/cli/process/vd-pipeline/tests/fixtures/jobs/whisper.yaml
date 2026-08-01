@@ -1,0 +1,10 @@
+version: 1
+input:
+  audio: meeting.ogg
+steps:
+  - use: transcribe
+    id: transcript
+    options:
+      engine: whisper
+  - use: fix-casing
+    input: transcript

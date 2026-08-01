@@ -11,18 +11,20 @@ After clone: `npm install` (runs `prepare` → lefthook install).
 | Script | What it does |
 |--------|----------------|
 | `npm test` | All crate/CLI tests via [`scripts/test.sh`](scripts/test.sh) |
-| `./scripts/test.sh vd-gigaam` | `cargo test -p vd-gigaam` (same for `crates`, `vd-assets`, `vd-fix-casing`, `vd-fix-asr`, `vd-fix-terms`) |
+| `./scripts/test.sh vd-gigaam` | `cargo test -p vd-gigaam` (same for `crates`, `vd-assets`, `vd-pipeline`, `vd-fix-casing`, `vd-fix-asr`, `vd-fix-terms`) |
 | `npm run build:vd-gigaam` | Release binary with Metal (`--features metal`) → `target/release/vd-gigaam` |
 | `npm run build:vd-gigaam:cpu` | Release binary without Metal |
 | `npm run build:vd-fix-casing` | Release binary → `target/release/vd-fix-casing` |
 | `npm run build:vd-fix-asr` | Release binary → `target/release/vd-fix-asr` |
 | `npm run build:vd-fix-terms` | Release binary → `target/release/vd-fix-terms` |
 | `npm run build:vd-assets` | Release binary → `target/release/vd-assets` |
+| `npm run build:vd-pipeline` | Release binary → `target/release/vd-pipeline` |
 | `npm run install:vd-gigaam` | `cargo install` into `~/.cargo/bin` (Metal enabled) |
 | `npm run install:vd-fix-casing` | `cargo install` into `~/.cargo/bin` |
 | `npm run install:vd-fix-asr` | `cargo install` into `~/.cargo/bin` |
 | `npm run install:vd-fix-terms` | `cargo install` into `~/.cargo/bin` |
 | `npm run install:vd-assets` | `cargo install` into `~/.cargo/bin` |
+| `npm run install:vd-pipeline` | `cargo install` into `~/.cargo/bin` |
 | `npm run lint:rust` | `cargo fmt --check` + `clippy -D warnings` |
 
 ```bash
@@ -68,8 +70,9 @@ Shared Rust libs: [`src/crates/`](src/crates/) — `vd-artifact`, `vd-output`, `
 
 ### Process
 
-See [src/cli/process/](src/cli/process/) — prepare project docs for the fix pipeline.
+See [src/cli/process/](src/cli/process/) — prepare project docs and orchestrate multi-CLI runs.
 
+- [vd-pipeline](src/cli/process/vd-pipeline/) — execute a Job (`transcribe` → `prepare-context?` → `fix-*`; YAML/JSON shared with future MCP) ([structure](src/cli/process/vd-pipeline/STRUCTURE.md), [cli](src/cli/process/vd-pipeline/cli.md))
 - [vd-assets](src/cli/process/vd-assets/) — prepare project assets (default `.voxdecoder/`: `md/` + `terms.yml`) for `vd-fix-*` ([structure](src/cli/process/vd-assets/STRUCTURE.md), [cli](src/cli/process/vd-assets/cli.md))
 
 ### Diarization

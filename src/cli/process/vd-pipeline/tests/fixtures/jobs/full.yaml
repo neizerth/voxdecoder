@@ -1,0 +1,22 @@
+version: 1
+name: meeting cleanup
+working_dir: .
+input:
+  audio: meeting.ogg
+context:
+  docs: ./docs
+output:
+  dir: ./out
+continue_on_error: false
+steps:
+  - use: transcribe
+    id: transcript
+    name: Initial transcript
+    options:
+      engine: gigaam
+      model: v2_rnnt
+  - use: prepare-context
+  - use: fix-casing
+    input: transcript
+  - use: fix-asr
+  - use: fix-terms

@@ -1,0 +1,12 @@
+version: 1
+input:
+  audio: meeting.ogg
+steps:
+  - use: transcribe
+    id: transcript
+    options:
+      engine: gigaam
+  - use: fix-casing
+    input: transcript
+  - use: fix-asr
+  - use: fix-terms

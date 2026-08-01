@@ -1,0 +1,3 @@
+version: 1
+steps:
+  - use: not-a-capability

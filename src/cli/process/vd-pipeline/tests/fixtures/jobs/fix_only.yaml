@@ -1,0 +1,6 @@
+version: 1
+steps:
+  - use: fix-casing
+    input: sample.txt
+  - use: fix-asr
+  - use: fix-terms

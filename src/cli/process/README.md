@@ -1,33 +1,29 @@
 # Process CLIs
 
-Local document processing **before** the fix pipeline. Prepare project knowledge; do not rewrite transcripts.
+Local document / Job orchestration tools.
 
 ```text
-pdf / docx / …
+CLI / Job file
 
         ↓
 
-    vd-assets
+    vd-pipeline   (Job → Executor)
 
         ↓
 
-.voxdecoder/  (md/ + terms.yml)
-
-        ↓
-
-vd-fix-casing → vd-fix-asr → vd-fix-terms
+transcribe → prepare-context? → fix-casing → fix-asr → fix-terms
 ```
 
 | CLI | Role | Spec |
 |-----|------|------|
-| `vd-assets` | Build reusable project assets (`md/` + `terms.yml`) for `vd-fix-*` | [vd-assets/](vd-assets/) ([cli](vd-assets/cli.md), [structure](vd-assets/STRUCTURE.md)) |
+| `vd-pipeline` | Execute a Job (CLI builds default Job, or load YAML/JSON); MCP-ready schema | [vd-pipeline/](vd-pipeline/) ([cli](vd-pipeline/cli.md), [structure](vd-pipeline/STRUCTURE.md)) |
+| `vd-assets` | Implementation for `prepare-context` (`.voxdecoder/`) | [vd-assets/](vd-assets/) ([cli](vd-assets/cli.md), [structure](vd-assets/STRUCTURE.md)) |
 
-Default project dir: **`.voxdecoder/`** (override `$VD_PROJECT_DIR` or `VD_PROJECT_DIR=` in `.voxdecoder/env` / `.env`). Shared via [`vd-artifact::paths`](../../crates/vd-artifact/).
+Default project dir: **`.voxdecoder/`**. Shared via [`vd-artifact::paths`](../../crates/vd-artifact/).
 
-Fix CLIs: [../fix/README.md](../fix/README.md). Queue / background: [`vd-srv`](../vd-srv/).
+Transcribe: [../transcribe/](../transcribe/). Fix: [../fix/README.md](../fix/README.md). Queue: [`vd-srv`](../vd-srv/).
 
 ```bash
-vd-assets run -i ./docs
-vd-fix-asr   run -i meeting.txt
-vd-fix-terms run -i meeting.txt
+vd-pipeline run -i meeting.ogg --docs ./docs
+vd-pipeline run job.yaml
 ```
