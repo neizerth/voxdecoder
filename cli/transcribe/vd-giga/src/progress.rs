@@ -15,7 +15,6 @@ impl ProgressMode {
         match s {
             "text" => Some(Self::Text),
             "json" => Some(Self::Json),
-            "none" => Some(Self::None),
             _ => None,
         }
     }

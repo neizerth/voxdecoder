@@ -50,6 +50,29 @@ pub fn needs_tokenizer(name: &str) -> bool {
     n.contains("e2e") || n == "v1_rnnt"
 }
 
+/// Shown under `vd-giga install --help` and when MODEL is missing/unknown.
+pub const INSTALL_HELP: &str = concat!(
+    "Catalog models:\n",
+    "  v3_e2e_rnnt    rnnt  e2e (punctuation)\n",
+    "  v3_e2e_ctc     ctc   e2e (punctuation)\n",
+    "  v3_rnnt        rnnt  ASR\n",
+    "  v3_ctc         ctc   ASR\n",
+    "  v2_rnnt        rnnt  ASR (default for -m)\n",
+    "  v2_ctc         ctc   ASR\n",
+    "  v1_rnnt        rnnt  ASR\n",
+    "  v1_ctc         ctc   ASR\n",
+    "\n",
+    "Aliases: rnnt→v2_rnnt, ctc→v2_ctc, e2e_rnnt→v3_e2e_rnnt, e2e_ctc→v3_e2e_ctc\n",
+    "Runtime today: CTC after convert. RNNT can be installed; inference TBD.\n",
+    "\n",
+    "Examples:\n",
+    "  vd-giga install v3_e2e_ctc\n",
+    "  vd-giga install ctc\n",
+    "  vd-giga install --all\n",
+    "  vd-giga list --all"
+);
+
+
 pub fn ckpt_url(name: &str) -> String {
     let n = resolve_model_name(name);
     format!("{CDN_BASE}/{n}.ckpt")

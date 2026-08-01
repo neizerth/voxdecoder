@@ -89,7 +89,6 @@ fn e2e_dry_run_text_plan() {
         "-m",
         "ctc",
         "--dry-run",
-        "-q",
     ];
     #[cfg(not(target_os = "macos"))]
     args.insert(args.len() - 2, "--flash");
@@ -134,7 +133,6 @@ fn e2e_dry_run_json_plan() {
             "cpu",
             "--dry-run",
             "--json",
-            "-q",
         ])
         .assert()
         .success();
@@ -173,7 +171,6 @@ fn e2e_existing_output_without_overwrite_exits_2() {
         "-o",
         out.to_str().unwrap(),
         "--dry-run",
-        "-q",
     ])
     .assert()
     .failure()
@@ -242,7 +239,6 @@ fn e2e_config_overrides_dry_run_defaults() {
             wav.to_str().unwrap(),
             "--dry-run",
             "--json",
-            "-q",
         ])
         .assert()
         .success();
@@ -305,7 +301,7 @@ fn e2e_shorthand_dash_i_dry_run() {
     let wav = fixture_wav();
     let mut cmd = bin();
     with_isolation(&mut cmd, &config, &models);
-    cmd.args(["-i", wav.to_str().unwrap(), "--dry-run", "-q"])
+    cmd.args(["-i", wav.to_str().unwrap(), "--dry-run"])
         .assert()
         .success()
         .stdout(predicate::str::contains("Model: v2_rnnt"));
@@ -327,7 +323,6 @@ fn e2e_transcribe_without_weights_exits_4() {
         out.to_str().unwrap(),
         "--device",
         "cpu",
-        "-q",
     ])
     .assert()
     .failure()
@@ -355,7 +350,6 @@ fn e2e_golden_ctc_transcription() {
             "--device",
             "cpu",
             "--overwrite",
-            "-q",
         ])
         .status()
         .unwrap();
@@ -389,7 +383,6 @@ fn e2e_ctc_converted_smoke_if_present() {
             "--device",
             "cpu",
             "--overwrite",
-            "-q",
         ])
         .timeout(std::time::Duration::from_secs(180))
         .assert()
@@ -410,7 +403,6 @@ fn e2e_install_already_converted_is_fast_ok() {
             "v3_e2e_ctc",
             "--download-root",
             models.to_str().unwrap(),
-            "-q",
         ])
         .timeout(std::time::Duration::from_secs(10))
         .assert()

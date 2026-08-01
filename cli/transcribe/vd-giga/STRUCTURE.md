@@ -32,7 +32,7 @@ cli/vd-giga/
 │   │   ├── path.rs             # -o XOR -d, --overwrite, segments path
 │   │   ├── writer.rs
 │   │   └── formats.rs          # txt | json | srt | vtt
-│   ├── progress.rs             # --progress text|json|none → stderr
+│   ├── progress.rs             # --progress text|json → stderr (off by default)
 │   ├── paths.rs                # models root, VD_GIGA_MODELS_DIR, config path
 │   ├── audio/
 │   │   ├── mod.rs

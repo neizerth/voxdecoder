@@ -38,7 +38,6 @@ fn run_defaults() {
     assert!(!r.json);
     assert_eq!(r.format, None);
     assert_eq!(r.progress, None);
-    assert!(!r.quiet);
     assert!(!r.segments);
 }
 
@@ -69,8 +68,8 @@ fn run_rejects_word_timestamps_without_sink() {
 }
 
 #[test]
-fn quiet_maps_to_progress_none() {
-    let cmd = parse(&["run", "-i", "a.wav", "-q"]).unwrap();
+fn progress_off_by_default() {
+    let cmd = parse(&["run", "-i", "a.wav"]).unwrap();
     let VdCommand::Run(r) = cmd else {
         panic!("expected Run");
     };
@@ -84,6 +83,15 @@ fn progress_json_explicit() {
         panic!("expected Run");
     };
     assert_eq!(r.effective_progress(), ProgressMode::Json);
+}
+
+#[test]
+fn progress_text_explicit() {
+    let cmd = parse(&["run", "-i", "a.wav", "--progress", "text"]).unwrap();
+    let VdCommand::Run(r) = cmd else {
+        panic!("expected Run");
+    };
+    assert_eq!(r.effective_progress(), ProgressMode::Text);
 }
 
 #[test]
@@ -119,8 +127,19 @@ fn config_subcommands_parse() {
 fn install_requires_model_or_all() {
     let err = parse(&["install"]).unwrap_err();
     assert_eq!(err.exit_code(), 2);
+    let msg = err.to_string();
+    assert!(msg.contains("v3_e2e_ctc"), "{msg}");
+    assert!(msg.contains("Aliases:"), "{msg}");
     assert!(parse(&["install", "--all"]).is_ok());
     assert!(parse(&["install", "v2_rnnt"]).is_ok());
+    assert!(parse(&["install", "ctc"]).is_ok());
+}
+
+#[test]
+fn install_rejects_unknown_model() {
+    let err = parse(&["install", "nope"]).unwrap_err();
+    assert_eq!(err.exit_code(), 2);
+    assert!(err.to_string().contains("unknown model 'nope'"));
 }
 
 #[test]

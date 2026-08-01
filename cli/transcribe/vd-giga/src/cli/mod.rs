@@ -92,12 +92,9 @@ pub struct RunCli {
     /// With --dry-run: print the plan as JSON on stdout
     #[arg(long = "json")]
     pub json: bool,
-    /// Progress on stderr [default: text]
+    /// Progress on stderr: text|json (off if omitted)
     #[arg(long = "progress", value_enum)]
     pub progress: Option<CliProgress>,
-    /// Alias for --progress=none
-    #[arg(short = 'q', long = "quiet")]
-    pub quiet: bool,
     /// Catalog name or path to weights (default: v2_rnnt / config)
     #[arg(short = 'm', long = "model")]
     pub model: Option<String>,
@@ -154,7 +151,6 @@ impl From<CliFormat> for OutputFormat {
 pub enum CliProgress {
     Text,
     Json,
-    None,
 }
 
 impl From<CliProgress> for ProgressMode {
@@ -162,7 +158,6 @@ impl From<CliProgress> for ProgressMode {
         match v {
             CliProgress::Text => Self::Text,
             CliProgress::Json => Self::Json,
-            CliProgress::None => Self::None,
         }
     }
 }
@@ -192,9 +187,16 @@ pub enum ConfigAction {
 }
 
 #[derive(Debug, Clone, Parser)]
-#[command(about = "Download a catalog GigaAM model")]
+#[command(
+    about = "Download a catalog GigaAM model",
+    long_about = "Download a GigaAM checkpoint from the official CDN into the models directory,\n\
+then convert to SafeTensors when convert_ckpt.py (or VD_GIGA_CONVERT_SCRIPT) is available.\n\n\
+Pass a catalog MODEL name, a short alias, or --all.",
+    after_help = crate::gigaam::catalog::INSTALL_HELP
+)]
 pub struct InstallArgs {
-    /// Catalog name (e.g. v3_e2e_ctc); omit with --all
+    /// Catalog model name or alias (see after help for the full list)
+    #[arg(value_name = "MODEL")]
     pub model: Option<String>,
     /// Install every catalog model
     #[arg(long = "all")]
@@ -202,12 +204,9 @@ pub struct InstallArgs {
     /// Checkpoint directory (same as run --download-root)
     #[arg(long = "download-root")]
     pub download_root: Option<PathBuf>,
-    /// Progress on stderr [default: text]
+    /// Progress on stderr: text|json (off if omitted)
     #[arg(long = "progress", value_enum)]
     pub progress: Option<CliProgress>,
-    /// Alias for --progress=none
-    #[arg(short = 'q', long = "quiet")]
-    pub quiet: bool,
 }
 
 #[derive(Debug, Clone, Parser)]
@@ -298,7 +297,18 @@ where
         RootCommand::Config(a) => Ok(Command::Config(a)),
         RootCommand::Install(a) => {
             if a.model.is_none() && !a.all {
-                return Err(CliError::usage("install requires MODEL or --all"));
+                return Err(CliError::usage(format!(
+                    "install requires MODEL or --all\n\n{}",
+                    crate::gigaam::catalog::INSTALL_HELP
+                )));
+            }
+            if let Some(ref m) = a.model {
+                if !a.all && !crate::gigaam::catalog::is_catalog_name(m) {
+                    return Err(CliError::usage(format!(
+                        "unknown model '{m}'\n\n{}",
+                        crate::gigaam::catalog::INSTALL_HELP
+                    )));
+                }
             }
             Ok(Command::Install(a))
         }
@@ -351,7 +361,6 @@ fn validate_run(cli: RunCli) -> Result<RunArgs, CliError> {
         dry_run: cli.dry_run,
         json: cli.json,
         progress: cli.progress.map(ProgressMode::from),
-        quiet: cli.quiet,
         model: cli.model,
         device,
         no_fp16_encoder: cli.no_fp16_encoder,

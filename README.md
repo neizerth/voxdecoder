@@ -36,8 +36,7 @@ See [cli/transcribe/](cli/transcribe/) — separate CLIs per model (not a univer
 
 ### Diarization
 
-- vd-dia-hf. hugging face
-- vd-dia-pn. pyanote
+- vd-dia. hugging face / pyanote
 
 ### vd-srv: background process
 
@@ -47,4 +46,4 @@ Background queue manager — [cli/vd-srv/](cli/vd-srv/)
 
 ### vd-mcp
 
-MCP Server
+Rust MCP Server

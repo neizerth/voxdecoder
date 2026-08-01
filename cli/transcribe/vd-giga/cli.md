@@ -73,8 +73,7 @@ vd-giga run -i voice.mp3 --progress=json
 | `--overwrite` | — | — | Replace existing output files (default: error if present) |
 | `--dry-run` | — | — | Print resolved options and exit (no transcription) |
 | `--json` | — | — | With `--dry-run`: machine-readable plan on stdout |
-| `--progress` | — | — | Progress on stderr: `text`, `json`, `none` (default: `text`) |
-| `--quiet` | `-q` | — | Alias for `--progress=none` |
+| `--progress` | — | — | Progress on stderr: `text` or `json` (off if omitted) |
 
 `--output` and `--output-dir` are mutually exclusive (exit 2 if both are set).
 
@@ -196,7 +195,6 @@ vd-giga install v2_rnnt
 vd-giga install v3_e2e_rnnt --download-root ~/models/gigaam
 vd-giga install --all
 vd-giga install v2_rnnt --progress=json
-vd-giga install v2_rnnt -q
 
 vd-giga remove v2_rnnt
 vd-giga remove v2_rnnt -y
@@ -217,8 +215,7 @@ vd-giga info v3_e2e_rnnt --json
 | `MODEL` | — | Catalog name (`v2_rnnt`, …); omit with `--all` |
 | `--all` | — | Install every catalog model |
 | `--download-root` | — | Checkpoint directory (same flag as `run`) |
-| `--progress` | — | `text`, `json`, `none` (default: `text`) |
-| `--quiet` | `-q` | Alias for `--progress=none` |
+| `--progress` | — | `text` or `json` (off if omitted) |
 
 Default checkpoints: `…/vd-giga/models/<name>.ckpt`  
 (override: `VD_GIGA_MODELS_DIR` or `--download-root`).
@@ -320,9 +317,9 @@ Same flag for `run` and `install`:
 
 | Value | Description |
 |-------|-------------|
-| `text` | Human-readable progress on stderr (default) |
+| *(omit)* | No progress (default) |
+| `text` | Human-readable progress on stderr |
 | `json` | NDJSON events on stderr (for GUI / scripts) |
-| `none` | No progress; exit code only (`-q`) |
 
 Stdout stays free (except `--dry-run` / `info` / `list` text). Example for `run --progress=json`:
 
