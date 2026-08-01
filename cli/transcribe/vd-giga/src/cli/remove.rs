@@ -7,7 +7,7 @@ use crate::gigaam::weights;
 use crate::paths;
 
 pub fn execute(args: RemoveArgs) -> Result<(), CliError> {
-    let root = paths::default_models_dir();
+    let root = paths::resolve_models_dir(None);
     if !args.yes {
         if !io::stdin().is_terminal() {
             return Err(CliError::usage(

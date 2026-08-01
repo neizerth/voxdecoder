@@ -23,20 +23,27 @@ struct InfoJson {
 }
 
 pub fn execute(args: InfoArgs) -> Result<(), CliError> {
-    let root = paths::default_models_dir();
+    let root = paths::resolve_models_dir(None);
     let name = if looks_like_path(&args.model) {
         args.model.clone()
     } else {
         resolve_model_name(&args.model).to_string()
     };
 
+    let converted = weights::resolve_converted(&root, &name).ok();
     let path = if looks_like_path(&args.model) {
         std::path::PathBuf::from(&args.model)
+    } else if let Some(ref c) = converted {
+        c.safetensors.clone()
     } else {
         weights::checkpoint_path(&root, &name)
     };
 
-    let installed = path.is_file();
+    let installed = if looks_like_path(&args.model) {
+        path.is_file()
+    } else {
+        weights::is_installed(&root, &name)
+    };
     let decoder = decoder_kind(&name)
         .map(|k| match k {
             DecoderKind::Ctc => "ctc",

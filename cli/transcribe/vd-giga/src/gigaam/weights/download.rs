@@ -1,5 +1,6 @@
 //! HTTP download + optional `convert_ckpt.py` for install.
 
+use std::env;
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -12,39 +13,68 @@ use super::{ModelPaths, WeightsError};
 
 pub type ProgressFn<'a> = dyn FnMut(u64, Option<u64>) + 'a;
 
+#[derive(Debug)]
+pub enum InstallOutcome {
+    /// Converted SafeTensors already present under download_root.
+    AlreadyPresent(PathBuf),
+    /// Freshly converted (ckpt may have been reused or downloaded).
+    Installed(PathBuf),
+}
+
 /// Download catalog weights (and tokenizer if needed), then try SafeTensors convert.
 pub fn install_model(
     download_root: &Path,
     model: &str,
+    force: bool,
     mut on_progress: Option<&mut ProgressFn<'_>>,
-) -> Result<PathBuf, WeightsError> {
+) -> Result<InstallOutcome, WeightsError> {
     let name = resolve_model_name(model).to_string();
     if !catalog::is_catalog_name(&name) {
         return Err(WeightsError::DownloadNotImplemented(model.into()));
     }
     fs::create_dir_all(download_root)?;
+    scrub_partial_downloads(download_root, &name);
 
-    // Already converted?
-    if let Ok(paths) = super::resolve_converted(download_root, &name) {
-        return Ok(paths.safetensors);
+    if !force {
+        if let Ok(paths) = super::resolve_converted(download_root, &name) {
+            return Ok(InstallOutcome::AlreadyPresent(paths.safetensors));
+        }
+    } else {
+        // Drop converted tree so we reconvert (and re-fetch ckpt if missing).
+        let out_dir = download_root.join(&name);
+        if out_dir.is_dir() {
+            let _ = fs::remove_dir_all(&out_dir);
+        }
+        for flat in [
+            download_root.join(format!("{name}.safetensors")),
+            download_root.join(format!("{name}.json")),
+        ] {
+            let _ = fs::remove_file(flat);
+        }
     }
 
-    let ckpt_path = download_root.join(format!("{name}.ckpt"));
-    if !ckpt_path.is_file() {
+    let managed_ckpt = download_root.join(format!("{name}.ckpt"));
+    let ckpt_path = if managed_ckpt.is_file() {
+        managed_ckpt.clone()
+    } else if let Some(ext) = super::find_external_ckpt(&name) {
+        // Optional: reuse Python GigaAM cache without a second CDN download.
+        ext
+    } else {
         let url = catalog::ckpt_url(&name);
-        download_file(&url, &ckpt_path, &mut on_progress)?;
+        download_file(&url, &managed_ckpt, &mut on_progress)?;
         if let Some(expected) = catalog::ckpt_md5(&name) {
-            let got = file_md5(&ckpt_path)?;
+            let got = file_md5(&managed_ckpt)?;
             if got != expected {
-                let _ = fs::remove_file(&ckpt_path);
+                let _ = fs::remove_file(&managed_ckpt);
                 return Err(WeightsError::Checksum {
-                    path: ckpt_path,
+                    path: managed_ckpt,
                     expected: expected.into(),
                     got,
                 });
             }
         }
-    }
+        managed_ckpt.clone()
+    };
 
     if catalog::needs_tokenizer(&name) {
         let tok = download_root.join(format!("{name}_tokenizer.model"));
@@ -56,17 +86,27 @@ pub fn install_model(
 
     let out_dir = download_root.join(&name);
     match try_convert(&ckpt_path, &out_dir) {
-        Ok(paths) => Ok(paths.safetensors),
-        Err(conv_err) => {
-            // Keep the ckpt; surface convert failure clearly for CTC runtime.
-            Err(WeightsError::Convert(format!(
-                "downloaded {} but convert failed: {conv_err}. \
-                 Run: python cli/transcribe/vd-giga/scripts/convert_ckpt.py {} -o {}",
-                ckpt_path.display(),
-                ckpt_path.display(),
-                out_dir.display()
-            )))
-        }
+        Ok(paths) => Ok(InstallOutcome::Installed(paths.safetensors)),
+        Err(conv_err) => Err(WeightsError::Convert(format!(
+            "have checkpoint {} but convert failed: {conv_err}. \
+             Run: python cli/transcribe/vd-giga/scripts/convert_ckpt.py {} -o {}",
+            ckpt_path.display(),
+            ckpt_path.display(),
+            out_dir.display()
+        ))),
+    }
+}
+
+/// Remove interrupted `{name}.tmp` leftovers under download_root.
+pub fn scrub_partial_downloads(download_root: &Path, name: &str) {
+    let tmp = download_root.join(format!("{name}.tmp"));
+    if tmp.is_file() {
+        let _ = fs::remove_file(&tmp);
+    }
+    // ureq path uses `dest.with_extension("tmp")` → `v2_rnnt.tmp` for `v2_rnnt.ckpt`
+    let ckpt_tmp = download_root.join(format!("{name}.ckpt.tmp"));
+    if ckpt_tmp.is_file() {
+        let _ = fs::remove_file(&ckpt_tmp);
     }
 }
 
@@ -79,33 +119,40 @@ fn download_file(
         fs::create_dir_all(parent)?;
     }
     let tmp = dest.with_extension("tmp");
-    let response = ureq::get(url)
-        .call()
-        .map_err(|e| WeightsError::Download(format!("{url}: {e}")))?;
-    let total = response
-        .header("Content-Length")
-        .and_then(|s| s.parse::<u64>().ok());
-    let mut reader = response.into_reader();
-    let mut file = File::create(&tmp)?;
-    let mut buf = [0u8; 64 * 1024];
-    let mut done = 0u64;
-    loop {
-        let n = reader
-            .read(&mut buf)
-            .map_err(|e| WeightsError::Download(e.to_string()))?;
-        if n == 0 {
-            break;
+    let _ = fs::remove_file(&tmp);
+    let result = (|| {
+        let response = ureq::get(url)
+            .call()
+            .map_err(|e| WeightsError::Download(format!("{url}: {e}")))?;
+        let total = response
+            .header("Content-Length")
+            .and_then(|s| s.parse::<u64>().ok());
+        let mut reader = response.into_reader();
+        let mut file = File::create(&tmp)?;
+        let mut buf = [0u8; 64 * 1024];
+        let mut done = 0u64;
+        loop {
+            let n = reader
+                .read(&mut buf)
+                .map_err(|e| WeightsError::Download(e.to_string()))?;
+            if n == 0 {
+                break;
+            }
+            file.write_all(&buf[..n])?;
+            done += n as u64;
+            if let Some(cb) = on_progress.as_mut() {
+                cb(done, total);
+            }
         }
-        file.write_all(&buf[..n])?;
-        done += n as u64;
-        if let Some(cb) = on_progress.as_mut() {
-            cb(done, total);
-        }
+        file.flush()?;
+        drop(file);
+        fs::rename(&tmp, dest)?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&tmp);
     }
-    file.flush()?;
-    drop(file);
-    fs::rename(&tmp, dest)?;
-    Ok(())
+    result
 }
 
 fn file_md5(path: &Path) -> Result<String, WeightsError> {
@@ -125,8 +172,7 @@ fn file_md5(path: &Path) -> Result<String, WeightsError> {
 fn try_convert(ckpt: &Path, out_dir: &Path) -> Result<ModelPaths, WeightsError> {
     let script = find_convert_script().ok_or_else(|| {
         WeightsError::Convert(
-            "convert_ckpt.py not found (set VD_GIGA_CONVERT_SCRIPT or use repo scripts/)"
-                .into(),
+            "convert_ckpt.py not found (set VD_GIGA_CONVERT_SCRIPT or use repo scripts/)".into(),
         )
     })?;
     let python = find_python(&script);
@@ -163,7 +209,6 @@ fn find_convert_script() -> Option<PathBuf> {
             return Some(p);
         }
     }
-    // Dev: crate scripts/
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("scripts/convert_ckpt.py");
     if manifest.is_file() {
         return Some(manifest);
@@ -175,7 +220,6 @@ fn find_python(script: &Path) -> String {
     if let Ok(p) = std::env::var("VD_GIGA_PYTHON") {
         return p;
     }
-    // Prefer scripts/.venv if present next to convert_ckpt.py
     if let Some(dir) = script.parent() {
         let venv = dir.join(".venv/bin/python");
         if venv.is_file() {

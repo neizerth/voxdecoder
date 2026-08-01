@@ -263,7 +263,8 @@ fn e2e_list_and_info_json() {
     list.args(["list", "--json"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("v2_rnnt"));
+        .stdout(predicate::str::contains("v2_rnnt"))
+        .stdout(predicate::str::contains("models_dir"));
 
     let mut info = bin();
     with_isolation(&mut info, &config, &models);

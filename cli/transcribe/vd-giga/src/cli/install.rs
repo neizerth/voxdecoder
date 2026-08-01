@@ -2,14 +2,12 @@
 
 use crate::cli::{CliError, InstallArgs};
 use crate::gigaam::catalog::CATALOG;
-use crate::gigaam::weights;
+use crate::gigaam::weights::{self, InstallOutcome};
 use crate::paths;
 use crate::progress::{Progress, ProgressEvent, ProgressMode};
 
 pub fn execute(args: InstallArgs) -> Result<(), CliError> {
-    let root = args
-        .download_root
-        .unwrap_or_else(paths::default_models_dir);
+    let root = paths::resolve_models_dir(args.download_root.clone());
     let mode = if args.quiet {
         ProgressMode::None
     } else {
@@ -53,8 +51,20 @@ pub fn execute(args: InstallArgs) -> Result<(), CliError> {
             }
         };
 
-        match weights::install(&root, model, Some(&mut on_progress)) {
-            Ok(path) => {
+        match weights::install(&root, model, args.force, Some(&mut on_progress)) {
+            Ok(InstallOutcome::AlreadyPresent(path)) => {
+                if !args.quiet {
+                    let _ = writeln_already(&path);
+                }
+                progress.emit(&ProgressEvent::Done {
+                    output: None,
+                    model: Some(model),
+                    path: Some(path.to_str().unwrap_or("")),
+                    duration_sec: None,
+                    char_count: None,
+                });
+            }
+            Ok(InstallOutcome::Installed(path)) => {
                 progress.emit(&ProgressEvent::Done {
                     output: None,
                     model: Some(model),
@@ -73,4 +83,10 @@ pub fn execute(args: InstallArgs) -> Result<(), CliError> {
         }
     }
     Ok(())
+}
+
+fn writeln_already(path: &std::path::Path) -> std::io::Result<()> {
+    use std::io::{self, Write};
+    let mut err = io::stderr();
+    writeln!(err, "already installed: {}", path.display())
 }

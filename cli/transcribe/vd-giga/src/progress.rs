@@ -1,7 +1,8 @@
 //! Progress reporting on stderr (`--progress`).
 
 use serde::Serialize;
-use std::io::{self, Write};
+use std::cell::Cell;
+use std::io::{self, IsTerminal, Write};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProgressMode {
@@ -67,11 +68,23 @@ pub enum ProgressEvent<'a> {
 
 pub struct Progress {
     mode: ProgressMode,
+    /// Text mode: last emit was an in-place `\r` phase line.
+    phase_open: Cell<bool>,
 }
 
 impl Progress {
     pub fn new(mode: ProgressMode) -> Self {
-        Self { mode }
+        Self {
+            mode,
+            phase_open: Cell::new(false),
+        }
+    }
+
+    fn finish_phase_line(&self, err: &mut impl Write) {
+        if self.phase_open.get() {
+            let _ = writeln!(err);
+            self.phase_open.set(false);
+        }
     }
 
     pub fn emit(&self, event: &ProgressEvent<'_>) {
@@ -82,33 +95,45 @@ impl Progress {
                     let _ = writeln!(io::stderr(), "{line}");
                 }
             }
-            ProgressMode::Text => match event {
-                ProgressEvent::Start { model, .. } => {
-                    if let Some(m) = model {
-                        let _ = writeln!(io::stderr(), "start model={m}");
+            ProgressMode::Text => {
+                let mut err = io::stderr();
+                match event {
+                    ProgressEvent::Start { model, .. } => {
+                        self.finish_phase_line(&mut err);
+                        if let Some(m) = model {
+                            let _ = writeln!(err, "start model={m}");
+                        }
+                    }
+                    ProgressEvent::Phase { phase, percent, .. } => {
+                        if err.is_terminal() {
+                            let _ = write!(err, "\r\x1b[2K{phase} {percent}%");
+                            let _ = err.flush();
+                            self.phase_open.set(true);
+                        } else {
+                            let _ = writeln!(err, "{phase} {percent}%");
+                        }
+                    }
+                    ProgressEvent::Done {
+                        output,
+                        model,
+                        path,
+                        ..
+                    } => {
+                        self.finish_phase_line(&mut err);
+                        if let Some(o) = output {
+                            let _ = writeln!(err, "done {o}");
+                        } else if let Some(m) = model {
+                            let _ = writeln!(err, "done {m}");
+                        } else if let Some(p) = path {
+                            let _ = writeln!(err, "done {p}");
+                        }
+                    }
+                    ProgressEvent::Error { code, message } => {
+                        self.finish_phase_line(&mut err);
+                        let _ = writeln!(err, "error {code}: {message}");
                     }
                 }
-                ProgressEvent::Phase { phase, percent, .. } => {
-                    let _ = writeln!(io::stderr(), "{phase} {percent}%");
-                }
-                ProgressEvent::Done {
-                    output,
-                    model,
-                    path,
-                    ..
-                } => {
-                    if let Some(o) = output {
-                        let _ = writeln!(io::stderr(), "done {o}");
-                    } else if let Some(m) = model {
-                        let _ = writeln!(io::stderr(), "done {m}");
-                    } else if let Some(p) = path {
-                        let _ = writeln!(io::stderr(), "done {p}");
-                    }
-                }
-                ProgressEvent::Error { code, message } => {
-                    let _ = writeln!(io::stderr(), "error {code}: {message}");
-                }
-            },
+            }
         }
     }
 }

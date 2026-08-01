@@ -28,6 +28,24 @@ pub fn default_models_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("models"))
 }
 
+/// CLI override > `VD_GIGA_MODELS_DIR` > config `download_root` > platform default.
+pub fn resolve_models_dir(cli_override: Option<PathBuf>) -> PathBuf {
+    if let Some(p) = cli_override {
+        return p;
+    }
+    if env::var_os(ENV_MODELS).is_some() {
+        return default_models_dir();
+    }
+    match crate::config::file::load(&config_path()) {
+        Ok(cfg) => cfg
+            .download_root
+            .filter(|s| !s.is_empty())
+            .map(PathBuf::from)
+            .unwrap_or_else(default_models_dir),
+        Err(_) => default_models_dir(),
+    }
+}
+
 fn project_dirs() -> Option<ProjectDirs> {
     ProjectDirs::from("", "", "vd-giga")
 }

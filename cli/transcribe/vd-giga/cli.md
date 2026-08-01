@@ -217,11 +217,16 @@ vd-giga info v3_e2e_rnnt --json
 | `MODEL` | — | Catalog name (`v2_rnnt`, …); omit with `--all` |
 | `--all` | — | Install every catalog model |
 | `--download-root` | — | Checkpoint directory (same flag as `run`) |
+| `--force` | — | Re-download / reconvert even if already installed |
 | `--progress` | — | `text` or `json` (default: `text`) |
 | `--quiet` | `-q` | Disable progress on stderr |
 
-Default checkpoints: `…/vd-giga/models/<name>.ckpt`  
-(override: `VD_GIGA_MODELS_DIR` or `--download-root`).
+Default models dir (macOS): `~/Library/Application Support/vd-giga/models/`  
+(override: `VD_GIGA_MODELS_DIR`, `config set download_root`, or `--download-root`).
+
+Interrupted `*.tmp` files are deleted on the next install. Already-converted SafeTensors → no-op (`already installed`).
+
+If a catalog `.ckpt` already exists under Python GigaAM’s `~/.cache/gigaam/`, install reuses it (no CDN download); converted weights still land in the vd-giga models dir.
 
 ### `remove`
 
@@ -233,22 +238,29 @@ Default checkpoints: `…/vd-giga/models/<name>.ckpt`
 ### `list`
 
 ```text
-Installed
+Models dir: …/vd-giga/models
+GigaAM cache: ~/.cache/gigaam
 
-✓ v2_rnnt
-✓ v3_ctc
-✓ v3_e2e_rnnt
+Available
+
+✓ v2_rnnt          ready
+· v3_e2e_ctc       ckpt (GigaAM cache)
+· v3_e2e_rnnt      ckpt (GigaAM cache)
 ```
 
 `list --all`:
 
 ```text
-✓ v2_rnnt
-✓ v3_ctc
-○ v3_rnnt
-○ v3_e2e_ctc
+Models dir: …/vd-giga/models
+GigaAM cache: ~/.cache/gigaam
+
+✓ v2_rnnt          ready
+· v3_e2e_ctc       ckpt (GigaAM cache)
+○ v3_ctc           missing
 …
 ```
+
+Marks: `✓` converted (run-ready), `·` `.ckpt` present (models dir or Python cache), `○` missing.
 
 | Argument | Description |
 |----------|-------------|

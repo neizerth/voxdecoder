@@ -213,6 +213,9 @@ pub struct InstallArgs {
     /// Disable progress on stderr
     #[arg(short = 'q', long = "quiet")]
     pub quiet: bool,
+    /// Re-download / reconvert even if SafeTensors already exist
+    #[arg(long = "force")]
+    pub force: bool,
 }
 
 #[derive(Debug, Clone, Parser)]
