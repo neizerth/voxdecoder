@@ -3,11 +3,14 @@
   "type": "module",
   "scripts": {
     "prepare": "lefthook install",
-    "test": "npm run test:vd-giga",
-    "test:vd-giga": "cargo test -p vd-giga",
-    "build:vd-giga": "cargo build -p vd-giga --release --features metal",
-    "build:vd-giga:cpu": "cargo build -p vd-giga --release",
-    "install:vd-giga": "cargo install --path cli/transcribe/vd-giga --locked --force --features metal",
+    "test": "npm run test:vd-gigaam && npm run test:vd-fix-casing",
+    "test:vd-gigaam": "cargo test -p vd-gigaam",
+    "test:vd-fix-casing": "cargo test -p vd-fix-casing",
+    "build:vd-gigaam": "cargo build -p vd-gigaam --release --features metal",
+    "build:vd-gigaam:cpu": "cargo build -p vd-gigaam --release",
+    "build:vd-fix-casing": "cargo build -p vd-fix-casing --release",
+    "install:vd-gigaam": "cargo install --path cli/transcribe/vd-gigaam --locked --force --features metal",
+    "install:vd-fix-casing": "cargo install --path cli/fix/vd-fix-casing --locked --force",
     "lint:rust": "cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warnings"
   },
   "devDependencies": {

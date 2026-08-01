@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
-members = ["cli/transcribe/vd-giga"]
-default-members = ["cli/transcribe/vd-giga"]
+members = ["cli/transcribe/vd-gigaam", "cli/fix/vd-fix-casing"]
+default-members = ["cli/transcribe/vd-gigaam", "cli/fix/vd-fix-casing"]
 
 [workspace.package]
 edition = "2021"

@@ -1,35 +1,37 @@
 # TODO — languages beyond `ru` / `en`
 
-`--language` is already in the CLI ([cli.md](cli.md)); default is `ru`. Expanding the set should not change the flag surface.
+`--language` is already in the CLI ([cli.md](cli.md)); default is `ru`. Expanding the set should not change the flag surface — add a catalog pack + `install <code>`.
 
 ## Shipping languages
 
 | Code | Status | Notes |
 |------|--------|-------|
-| `ru` | default / required | First shipping language |
-| `en` | required | Capitalization + quotes/dashes norms differ from RU — ship with `ru` |
+| `ru` | default / shipping | builtin lexicon; optional `install ru` |
+| `en` | shipping | builtin lexicon; optional `install en` |
 
-## Near term
+## Done (near term)
 
-- [ ] Accept `ru` and `en` at CLI / config; reject unknown codes with exit 2.
-- [ ] Wire `language` into `CasingFixer::load` / backend init for both codes.
-- [ ] Fixtures + unit/e2e coverage for `ru` and `en`.
+- [x] Accept `ru` and `en` at CLI / config; unknown codes → exit 2.
+- [x] Wire `language` into `CasingFixer::load` (installed pack or builtin).
+- [x] Pack install UX (`install` / `remove` / `list` / `info`); packs optional for `run`.
+- [x] Unit / e2e coverage for install + `ru` / `en` rewrite without install.
 
 ## Later
 
 | Code | Status | Notes |
 |------|--------|-------|
-| `de` | TODO | Noun capitalization; quote style |
-| `auto` | TODO | Detect from artifact / heuristic; fall back to `ru` if unsure |
+| `de` | TODO | Catalog reserved (`shipping = false`); noun capitalization; quote style |
+| `auto` | TODO | Detect from artifact / heuristic; resolve to installed pack (`ru` fallback) |
 
 Add rows here when a new language is requested — do not invent CLI flags per language.
 
-## Per-language work (repeat for each code)
+## Per-language work (repeat for each new code)
 
+- [ ] Catalog entry + embedded (or remote) pack assets.
 - [ ] Presentation rules or backend weights for that language.
 - [ ] Fixtures under `fixtures/input/` + `fixtures/expected/` tagged by language.
 - [ ] Unit tests in `tests/unit/casing.rs` (words unchanged; presentation correct).
-- [ ] e2e: `run -i … --language <code> --dry-run` shows `language` in the plan.
+- [ ] e2e: `install <code>` then `run -i … --language <code> --dry-run` shows `model` / `installed`.
 
 ## Out of scope for language work
 

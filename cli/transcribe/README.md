@@ -4,7 +4,7 @@ Local speech-to-text as **one binary per model family**, not a shared multi-mode
 
 **Runtime basis:** Rust. Each CLI is a Rust binary that loads and runs its model through Candle (and model-specific code). **No Python in the product runtime** — users install a binary + weights only.
 
-Python may exist only as **maintainer/CI tooling** (one-shot `.ckpt` → SafeTensors/GGUF conversion, golden tensor dumps). It is never a dependency of `vd-giga` / `vd-whisper` and is not required to build or run released binaries if converted weights are published.
+Python may exist only as **maintainer/CI tooling** (one-shot `.ckpt` → SafeTensors/GGUF conversion, golden tensor dumps). It is never a dependency of `vd-gigaam` / `vd-whisper` and is not required to build or run released binaries if converted weights are published.
 
 ---
 
@@ -13,7 +13,7 @@ Python may exist only as **maintainer/CI tooling** (one-shot `.ckpt` → SafeTen
 | Approach | Our take |
 |----------|----------|
 | One engine + shared model trait / flat `--model-type` | Rejected |
-| Separate CLIs, options mirror each model API | **This** (`vd-giga`, `vd-whisper`, …) |
+| Separate CLIs, options mirror each model API | **This** (`vd-gigaam`, `vd-whisper`, …) |
 
 Why separate CLIs:
 
@@ -30,7 +30,7 @@ Shared UX conventions across binaries (I/O, `--progress`, config priority) are f
 
 | Binary | Model family | Spec |
 |--------|--------------|------|
-| `vd-giga` | [GigaAM](https://github.com/salute-developers/GigaAM) | [vd-giga/](vd-giga/) |
+| `vd-gigaam` | [GigaAM](https://github.com/salute-developers/GigaAM) | [vd-gigaam/](vd-gigaam/) |
 | `vd-whisper` | Whisper | TBD |
 
 Queue / background runs: [`vd-srv`](../vd-srv/).
@@ -118,7 +118,7 @@ audio/video
     │
     ▼
 ┌─────────────┐     ┌──────────────┐
-│  vd-giga    │     │  vd-whisper  │   … per-model CLIs
+│  vd-gigaam    │     │  vd-whisper  │   … per-model CLIs
 │  (GigaAM)   │     │  (Whisper)   │
 └──────┬──────┘     └──────┬───────┘
        │                   │

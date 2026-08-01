@@ -25,6 +25,9 @@ All three CLIs share the same I/O contract so they can be chained in any order (
 - **Input type == output type** (`txt→txt`, `json→json`, `srt→srt`, …).
 - Default output: `{stem}.fixed.{ext}` (never `.cased.` / `.clean.`).
 - Shared UX: `run` / `config`, `--dry-run`, `--progress=json`, `--language`, priority CLI > config > default.
+- When a CLI can use downloadable assets: **`install` / `remove` / `list` / `info`** (same shape as `vd-gigaam`). Packs are **optional** if processing works with a builtin/default — do not force `install` before `run`.
+
+`vd-fix-casing` already supports optional language packs (`install ru` / `en`) and runs without them. Other fix CLIs should follow the same pattern when they grow models or dictionaries.
 
 Each binary documents an explicit **Guarantees** section (what it never changes). That contract is more important than the option list: it makes the pipeline safe to chain.
 

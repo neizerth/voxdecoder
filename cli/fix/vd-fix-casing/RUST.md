@@ -6,7 +6,7 @@ Pinned toolchain: [`rust-toolchain.toml`](../../../rust-toolchain.toml) (`stable
 |------|--------|---------|
 | rustfmt | [`rustfmt.toml`](../../../rustfmt.toml) | `cargo fmt --all -- --check` |
 | clippy | [`clippy.toml`](../../../clippy.toml) + workspace lints in root `Cargo.toml` | `cargo clippy --workspace --all-targets -- -D warnings` |
-| tests | `cli/fix/vd-fix-casing/tests/{unit,e2e}/` | `cargo test -p vd-fix-casing` (npm script TBD) |
+| tests | `cli/fix/vd-fix-casing/tests/{unit,e2e}/` | `npm run test:vd-fix-casing` / `cargo test -p vd-fix-casing` |
 
 From repo root:
 
