@@ -1,7 +1,8 @@
 # InputSource (shared)
 
-**Status:** living note  
-**Used by:** Runtime API clients — MCP, Desktop, CLI, REST, Web — and Domain Requests.
+**Status:** living note (ADR [0008](adr/0008-input-resolution-layer.md))  
+**Crate:** [`vd-input`](../src/crates/vd-input/)  
+**Used by:** Runtime Planning API — MCP, Desktop, CLI, REST, Web — and Domain Requests.
 
 An **InputSource** is how a client points the Runtime at media or prior artifacts.  
 Same shape everywhere; the gateway does not invent a private upload protocol.
@@ -10,10 +11,40 @@ Same shape everywhere; the gateway does not invent a private upload protocol.
 InputSource
 
   path       filesystem path visible to the Runtime / host
-  uri        file:// · https:// · … (Runtime policy decides allowed schemes)
+  uri        file:// · other allowed schemes (Runtime policy)
+  url        http(s) online media
   artifact   ArtifactId already known to the Runtime
   blob       small inline payload (e.g. MCP binary / base64) — Runtime stores it
 ```
+
+Exactly one of these fields is set per InputSource (XOR).
+
+## Resolution
+
+```text
+InputSource
+        │
+        ▼
+   vd-input (Resolver)
+        │
+        ▼
+   ResolvedInput
+     audio · metadata · subtitle?
+        │
+        ▼
+   Planner  →  Job  →  Executor
+```
+
+| Field | Resolver |
+|-------|----------|
+| `path` / `file://` | File |
+| `url` | URL ([`vd-url`](../src/cli/process/vd-url/) / UrlResolver) |
+| `artifact` | Artifact store |
+| `blob` | Blob ingest |
+
+**Planners never see `InputSource.url`.** They receive artifact paths from `ResolvedInput`.
+
+Import options (`subtitles: ignore|prefer|require`, resolver hint, …) live on the Domain Request / `ResolveContext` — **not** inside InputSource.
 
 ## Examples
 
@@ -22,19 +53,24 @@ audio:
   path: /work/meeting.wav
 
 audio:
-  uri: file:///work/meeting.wav
+  url: https://youtu.be/...
+# request options:
+# subtitles: prefer
+```
 
-audio:
-  artifact: art_01H…
-
-audio:
-  blob: …   # small files only; large media should use path / uri / artifact
+```yaml
+inputs:
+  - role: room
+    url: https://youtu.be/...
+  - role: context
+    path: ./docs
 ```
 
 ## Rules
 
-* Resolution and persistence belong to the **Runtime** (or host mounts), not to individual frontends.
+* Resolution belongs to the **Runtime** (`vd-input` via Planning API), not to frontends or domain planners.
 * `blob` is for small payloads; do not treat MCP as a bulk file store.
-* Domain Requests (`AudioRequest`, `MeetingRequest`, …) and Jobs reuse this type.
+* Online import provenance (`import.provider`, …) lives on the Metadata Artifact.
+* `uri` vs `url`: prefer **`url`** for online media; keep **`uri`** for generic schemes (especially `file://`).
 
-Related: [`docs/runtime.md`](runtime.md) · [`vd-mcp`](../src/cli/manage/vd-mcp/) · [`vd-srv`](../src/cli/manage/vd-srv/).
+Related: [ADR 0008](adr/0008-input-resolution-layer.md) · [`docs/runtime.md`](runtime.md) · [`vd-input`](../src/crates/vd-input/) · [`vd-srv`](../src/cli/manage/vd-srv/).

@@ -27,6 +27,7 @@ packages=(
   -p vd-meeting
   -p vd-preprocess
   -p vd-postprocess
+  -p vd-url
   -p vd-assets
   -p vd-diarize
   -p vd-gigaam

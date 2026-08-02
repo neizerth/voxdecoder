@@ -2,8 +2,11 @@
 
 mod artifacts;
 mod graph;
+mod materialize;
 mod normalize;
 mod submit;
+
+use std::path::PathBuf;
 
 use vd_pipeline::Job;
 
@@ -45,7 +48,13 @@ impl MeetingPlanner {
         request: &MeetingRequest,
         options: &BuildOptions,
     ) -> Result<PlannedJob, PlanError> {
-        let resolved = normalize::normalize(request)?;
+        let data_dir = request
+            .working_dir
+            .clone()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join(".voxdecoder");
+        let request = materialize::materialize_request(request, &data_dir)?;
+        let resolved = normalize::normalize(&request)?;
         let job = graph::build_job(&resolved, options)?;
         Ok(PlannedJob { job, resolved })
     }

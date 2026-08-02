@@ -1,4 +1,6 @@
 //! Optional media preprocess (video → extract-audio via ffmpeg).
+//!
+//! URL sources are materialized by `vd-input` before planning (ADR 0008).
 
 use vd_pipeline::{
     default_preprocess_filters, is_video_path, ArgValue, Capability, Step,

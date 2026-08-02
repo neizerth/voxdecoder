@@ -12,8 +12,11 @@ fn src(role: InputRole, path: &str, participant: Option<&str>) -> InputSource {
     InputSource {
         role,
         path: PathBuf::from(path),
+        url: None,
         participant: participant.map(str::to_string),
         purposes: Vec::new(),
+        subtitles: None,
+        provider: None,
     }
 }
 

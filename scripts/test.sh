@@ -6,12 +6,13 @@ cd "$root"
 
 run_all() {
   cargo test -p vd-gigaam
-  cargo test -p vd-artifact -p vd-output -p vd-progress
+  cargo test -p vd-artifact -p vd-output -p vd-progress -p vd-input
   cargo test -p vd-assets
   cargo test -p vd-diarize
     cargo test -p vd-meeting
   cargo test -p vd-preprocess
   cargo test -p vd-postprocess
+  cargo test -p vd-url
   cargo test -p vd-pipeline
   cargo test -p vd-srv
   cargo test -p vd-mcp
@@ -30,7 +31,10 @@ case "${1:-all}" in
     cargo test -p vd-gigaam "${@:2}"
     ;;
   crates)
-    cargo test -p vd-artifact -p vd-output -p vd-progress "${@:2}"
+    cargo test -p vd-artifact -p vd-output -p vd-progress -p vd-input "${@:2}"
+    ;;
+  vd-input)
+    cargo test -p vd-input "${@:2}"
     ;;
   vd-assets)
     cargo test -p vd-assets "${@:2}"
@@ -46,6 +50,9 @@ case "${1:-all}" in
     ;;
   vd-postprocess)
     cargo test -p vd-postprocess "${@:2}"
+    ;;
+  vd-url)
+    cargo test -p vd-url "${@:2}"
     ;;
   vd-pipeline)
     cargo test -p vd-pipeline "${@:2}"
@@ -72,7 +79,7 @@ case "${1:-all}" in
     cargo test -p vd-fix-layout "${@:2}"
     ;;
   *)
-    echo "usage: $0 [all|vd-gigaam|crates|vd-assets|vd-diarize|vd-meeting|vd-preprocess|vd-postprocess|vd-pipeline|vd-srv|vd-mcp|vdctl|vd-fix-casing|vd-fix-asr|vd-fix-terms|vd-fix-layout] [cargo test args...]" >&2
+    echo "usage: $0 [all|vd-gigaam|crates|vd-input|vd-assets|vd-diarize|vd-meeting|vd-preprocess|vd-postprocess|vd-url|vd-pipeline|vd-srv|vd-mcp|vdctl|vd-fix-casing|vd-fix-asr|vd-fix-terms|vd-fix-layout] [cargo test args...]" >&2
     exit 2
     ;;
 esac

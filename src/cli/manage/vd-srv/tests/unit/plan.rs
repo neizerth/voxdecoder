@@ -1,38 +1,79 @@
-//! Runtime planning tests.
+//! Runtime planning tests (resolve → plan).
 
 use std::fs;
 use std::path::Path;
 
 use tempfile::TempDir;
 use vd_meeting::InputRole;
+use vd_pipeline::{default_job, Capability, DefaultJobArgs, TranscribeEngine};
 use vd_srv::plan::{
     plan_audio, plan_meeting, AudioRequest, InputSource, MeetingInput, MeetingPlanRequest,
 };
 use vd_srv::store::{ArtifactEntry, JobStore, Priority, RestartPolicy};
-use vd_pipeline::{default_job, DefaultJobArgs, TranscribeEngine};
+
+fn path_src(path: &str) -> InputSource {
+    InputSource {
+        path: Some(path.into()),
+        ..Default::default()
+    }
+}
 
 #[test]
 fn resolves_path_and_file_uri_inputs() {
-    let path = InputSource {
-        path: Some("/tmp/audio.wav".into()),
-        uri: None,
-        artifact: None,
-        blob: None,
-    };
+    let dir = TempDir::new().unwrap();
+    let path = path_src("/tmp/audio.wav");
+    let job = plan_audio(
+        &AudioRequest {
+            audio: path,
+            engine: None,
+            model: None,
+            device: None,
+            flash: false,
+            speed: None,
+            subtitles: None,
+            provider: None,
+            docs: None,
+            output_dir: None,
+            working_dir: None,
+            continue_on_error: false,
+            overwrite: false,
+        },
+        dir.path(),
+        None,
+    )
+    .unwrap();
     assert_eq!(
-        path.resolve(Path::new("/tmp"), None).unwrap(),
-        Path::new("/tmp/audio.wav")
+        job.input.audio.as_deref(),
+        Some(Path::new("/tmp/audio.wav"))
     );
 
     let uri = InputSource {
-        path: None,
         uri: Some("file:///tmp/audio.wav".into()),
-        artifact: None,
-        blob: None,
+        ..Default::default()
     };
+    let job = plan_audio(
+        &AudioRequest {
+            audio: uri,
+            engine: None,
+            model: None,
+            device: None,
+            flash: false,
+            speed: None,
+            subtitles: None,
+            provider: None,
+            docs: None,
+            output_dir: None,
+            working_dir: None,
+            continue_on_error: false,
+            overwrite: false,
+        },
+        dir.path(),
+        None,
+    )
+    .unwrap();
     assert_eq!(
-        uri.resolve(Path::new("/tmp"), None).unwrap(),
-        Path::new("/tmp/audio.wav")
+        job.input.audio.as_deref(),
+        Some(Path::new("/tmp/audio.wav"))
     );
 }
 
@@ -48,7 +89,7 @@ fn resolves_artifact_input() {
         model: None,
         device: None,
         flash: false,
-            speed: None,
+        speed: None,
         docs: None,
         output_dir: None,
         working_dir: None,
@@ -73,39 +114,43 @@ fn resolves_artifact_input() {
         .unwrap();
 
     let by_id = InputSource {
-        path: None,
-        uri: None,
         artifact: Some("prior-audio".into()),
-        blob: None,
+        ..Default::default()
     };
-    assert_eq!(
-        by_id.resolve(&data, Some(&store)).unwrap(),
-        art_path
-    );
-
-    let scoped = InputSource {
-        path: None,
-        uri: None,
-        artifact: Some(format!("{}:prior-audio", record.id)),
-        blob: None,
-    };
-    assert_eq!(scoped.resolve(&data, Some(&store)).unwrap(), art_path);
+    let planned = plan_audio(
+        &AudioRequest {
+            audio: by_id,
+            engine: None,
+            model: None,
+            device: None,
+            flash: false,
+            speed: None,
+            subtitles: None,
+            provider: None,
+            docs: None,
+            output_dir: None,
+            working_dir: None,
+            continue_on_error: false,
+            overwrite: false,
+        },
+        &data,
+        Some(&store),
+    )
+    .unwrap();
+    assert_eq!(planned.input.audio.as_deref(), Some(art_path.as_path()));
 }
 
 #[test]
 fn audio_plan_has_job_shape() {
     let request = AudioRequest {
-        audio: InputSource {
-            path: Some("/tmp/audio.wav".into()),
-            uri: None,
-            artifact: None,
-            blob: None,
-        },
+        audio: path_src("/tmp/audio.wav"),
         engine: None,
         model: None,
         device: None,
         flash: false,
         speed: None,
+        subtitles: None,
+        provider: None,
         docs: None,
         output_dir: None,
         working_dir: None,
@@ -118,6 +163,35 @@ fn audio_plan_has_job_shape() {
         Some(Path::new("/tmp/audio.wav"))
     );
     assert!(!job.steps.is_empty());
+    assert_eq!(job.leaf_steps()[0].r#use, Capability::Preprocess);
+}
+
+#[test]
+fn audio_plan_url_resolves_then_static_pipeline() {
+    let dir = TempDir::new().unwrap();
+    let request = AudioRequest {
+        audio: InputSource {
+            url: Some("https://example.com/x".into()),
+            ..Default::default()
+        },
+        engine: None,
+        model: None,
+        device: None,
+        flash: false,
+        speed: None,
+        subtitles: Some("prefer".into()),
+        provider: Some("stub".into()),
+        docs: None,
+        output_dir: None,
+        working_dir: None,
+        continue_on_error: false,
+        overwrite: true,
+    };
+    let job = plan_audio(&request, dir.path(), None).unwrap();
+    assert!(job.input.audio.as_ref().unwrap().is_file());
+    let leaves = job.leaf_steps();
+    assert_eq!(leaves[0].r#use, Capability::Preprocess);
+    assert!(!leaves.iter().any(|s| s.r#use == Capability::ImportUrl));
 }
 
 #[test]
@@ -127,12 +201,7 @@ fn meeting_plan_from_audio_convenience() {
         inputs: Vec::new(),
         meeting: Default::default(),
         output: Default::default(),
-        audio: Some(InputSource {
-            path: Some("/work/meeting.wav".into()),
-            uri: None,
-            artifact: None,
-            blob: None,
-        }),
+        audio: Some(path_src("/work/meeting.wav")),
         options: Default::default(),
         engine: None,
         model: None,
@@ -152,10 +221,13 @@ fn meeting_plan_from_inputs() {
             role: InputRole::Room,
             path: Some("/work/room.wav".into()),
             uri: None,
+            url: None,
             artifact: None,
             blob: None,
             participant: None,
             purposes: Vec::new(),
+            subtitles: None,
+            provider: None,
         }],
         meeting: Default::default(),
         output: Default::default(),
@@ -168,4 +240,40 @@ fn meeting_plan_from_inputs() {
     };
     let job = plan_meeting(&request, Path::new("/tmp"), None).unwrap();
     assert!(!job.steps.is_empty());
+}
+
+#[test]
+fn meeting_plan_url_resolves_without_import_url_step() {
+    let dir = TempDir::new().unwrap();
+    let work = dir.path().join("work");
+    fs::create_dir_all(&work).unwrap();
+    let request = MeetingPlanRequest {
+        working_dir: Some(work.clone()),
+        inputs: vec![MeetingInput {
+            role: InputRole::Room,
+            path: None,
+            uri: None,
+            url: Some("https://example.com/room".into()),
+            artifact: None,
+            blob: None,
+            participant: None,
+            purposes: Vec::new(),
+            subtitles: None,
+            provider: Some("stub".into()),
+        }],
+        meeting: Default::default(),
+        output: Default::default(),
+        audio: None,
+        options: Default::default(),
+        engine: None,
+        model: None,
+        document: None,
+        meeting_yaml: None,
+    };
+    let job = plan_meeting(&request, dir.path(), None).unwrap();
+    assert!(!job
+        .leaf_steps()
+        .iter()
+        .any(|s| s.r#use == Capability::ImportUrl));
+    assert!(job.leaf_steps().iter().any(|s| s.r#use == Capability::Transcribe));
 }

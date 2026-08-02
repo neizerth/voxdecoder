@@ -1,4 +1,6 @@
-//! CLI flags → default Job.
+//! CLI flags → default Job (static pipeline — ADR 0008).
+//!
+//! Input resolution (`InputSource` → artifacts) happens in `vd-input` before this builder runs.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -65,6 +67,9 @@ pub fn default_preprocess_filters(input: &Path, speed: Option<f64>) -> (String, 
     (provider, filters)
 }
 
+/// Default audio Job from a **resolved** audio artifact path.
+///
+/// Pipeline is static: preprocess → transcribe → prepare-context → fix-*.
 pub fn default_job(args: &DefaultJobArgs) -> Job {
     let (provider, filters) = default_preprocess_filters(&args.audio, args.speed);
 
@@ -110,8 +115,6 @@ pub fn default_job(args: &DefaultJobArgs) -> Job {
         .into(),
     ];
 
-    // Always prepare project assets for fix-asr / fix-terms (vd-assets).
-    // `--docs` selects the source root; default is `.` (working directory).
     steps.push(Step::new(Capability::PrepareContext).into());
 
     steps.push(
@@ -165,7 +168,6 @@ pub fn default_job(args: &DefaultJobArgs) -> Job {
     }
 }
 
-/// On macOS prefer Metal for ASR when the caller did not set `device`.
 fn default_transcribe_device() -> Option<String> {
     #[cfg(target_os = "macos")]
     {

@@ -1,10 +1,9 @@
-//! Runtime-owned domain request planning.
-
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+//! Runtime-owned domain request planning (resolve via `vd-input`, then plan).
 
 use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
+use vd_input::{resolve, ResolveContext, SubtitlePolicy};
+pub use vd_input::InputSource;
 use vd_meeting::{
     plan_job, BuildOptions, InputPurpose, InputRole, MeetingModel, MeetingOutput, MeetingRequest,
     TranscribeDefaults,
@@ -12,66 +11,6 @@ use vd_meeting::{
 use vd_pipeline::{default_job, DefaultJobArgs, Job, TranscribeEngine};
 
 use crate::store::JobStore;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct InputSource {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub path: Option<PathBuf>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub uri: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub artifact: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub blob: Option<String>,
-}
-
-impl InputSource {
-    pub fn resolve(&self, data_dir: &Path, store: Option<&JobStore>) -> Result<PathBuf, PlanError> {
-        let supplied = [
-            self.path.is_some(),
-            self.uri.is_some(),
-            self.artifact.is_some(),
-            self.blob.is_some(),
-        ]
-        .into_iter()
-        .filter(|present| *present)
-        .count();
-        if supplied != 1 {
-            return Err(PlanError::InvalidInput(
-                "input must specify exactly one of path, uri, artifact, or blob".into(),
-            ));
-        }
-        if let Some(path) = &self.path {
-            return Ok(path.clone());
-        }
-        if let Some(uri) = &self.uri {
-            return uri
-                .strip_prefix("file://")
-                .map(PathBuf::from)
-                .ok_or_else(|| {
-                    PlanError::InvalidInput(format!("unsupported input URI scheme: {uri}"))
-                });
-        }
-        if let Some(artifact) = &self.artifact {
-            let store = store.ok_or_else(|| {
-                PlanError::InvalidInput("artifact inputs require a Runtime Job Store".into())
-            })?;
-            return store
-                .resolve_artifact(artifact)
-                .map_err(|e| PlanError::InvalidInput(e.to_string()));
-        }
-        let blob = self.blob.as_deref().unwrap_or_default();
-        let dir = data_dir.join("inputs");
-        fs::create_dir_all(&dir).map_err(|e| PlanError::Io(e.to_string()))?;
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_err(|e| PlanError::Io(e.to_string()))?
-            .as_nanos();
-        let path = dir.join(format!("blob-{nonce}.bin"));
-        fs::write(&path, blob.as_bytes()).map_err(|e| PlanError::Io(e.to_string()))?;
-        Ok(path)
-    }
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AudioRequest {
@@ -84,9 +23,12 @@ pub struct AudioRequest {
     pub device: Option<String>,
     #[serde(default)]
     pub flash: bool,
-    /// Preprocess playback speed (e.g. 2.0–2.2). Timestamps remapped via TimeMap.
     #[serde(default)]
     pub speed: Option<f64>,
+    #[serde(default)]
+    pub subtitles: Option<String>,
+    #[serde(default)]
+    pub provider: Option<String>,
     #[serde(default)]
     pub docs: Option<PathBuf>,
     #[serde(default)]
@@ -95,7 +37,6 @@ pub struct AudioRequest {
     pub working_dir: Option<PathBuf>,
     #[serde(default)]
     pub continue_on_error: bool,
-    /// When unset, Runtime defaults to overwriting outputs next to the source.
     #[serde(default = "default_true")]
     pub overwrite: bool,
 }
@@ -104,12 +45,20 @@ fn default_true() -> bool {
     true
 }
 
+fn lookup<'a>(
+    store: Option<&'a JobStore>,
+) -> Option<Box<dyn Fn(&str) -> Result<PathBuf, String> + 'a>> {
+    store.map(|s| {
+        Box::new(move |id: &str| s.resolve_artifact(id).map_err(|e| e.to_string()))
+            as Box<dyn Fn(&str) -> Result<PathBuf, String> + 'a>
+    })
+}
+
 pub fn plan_audio(
     request: &AudioRequest,
     data_dir: &Path,
     store: Option<&JobStore>,
 ) -> Result<Job, PlanError> {
-    let audio = request.audio.resolve(data_dir, store)?;
     if let Some(speed) = request.speed {
         if !(0.25..=4.0).contains(&speed) {
             return Err(PlanError::InvalidInput(format!(
@@ -117,14 +66,33 @@ pub fn plan_audio(
             )));
         }
     }
+
+    let mut ctx = ResolveContext::new(data_dir);
+    ctx.overwrite = request.overwrite;
+    ctx.provider_hint = request.provider.as_deref();
+    if let Some(s) = &request.subtitles {
+        ctx.subtitles = SubtitlePolicy::parse(s).map_err(PlanError::InvalidInput)?;
+    }
+
+    let boxed = lookup(store);
+    let lookup_ref = boxed.as_ref().map(|b| b.as_ref() as &dyn Fn(&str) -> Result<PathBuf, String>);
+    let resolved = resolve(&request.audio, &ctx, lookup_ref)
+        .map_err(|e| PlanError::InvalidInput(e.to_string()))?;
+    let audio = resolved
+        .require_audio()
+        .map_err(|e| PlanError::InvalidInput(e.to_string()))?
+        .clone();
+
+    let engine = match request.engine.as_deref() {
+        Some(engine) => TranscribeEngine::parse(engine).ok_or_else(|| {
+            PlanError::InvalidInput(format!("unknown transcription engine: {engine}"))
+        })?,
+        None => TranscribeEngine::Gigaam,
+    };
+
     Ok(default_job(&DefaultJobArgs {
         audio,
-        engine: match request.engine.as_deref() {
-            Some(engine) => TranscribeEngine::parse(engine).ok_or_else(|| {
-                PlanError::InvalidInput(format!("unknown transcription engine: {engine}"))
-            })?,
-            None => TranscribeEngine::Gigaam,
-        },
+        engine,
         model: request.model.clone(),
         device: request.device.clone(),
         flash: request.flash,
@@ -146,6 +114,8 @@ pub struct MeetingInput {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub uri: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub artifact: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub blob: Option<String>,
@@ -153,28 +123,88 @@ pub struct MeetingInput {
     pub participant: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub purposes: Vec<InputPurpose>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subtitles: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
 }
 
 impl MeetingInput {
-    fn to_source(&self) -> InputSource {
+    fn to_wire_source(&self) -> InputSource {
         InputSource {
             path: self.path.clone(),
             uri: self.uri.clone(),
+            url: self.url.clone(),
             artifact: self.artifact.clone(),
             blob: self.blob.clone(),
         }
     }
 
-    fn resolve(
+    fn to_meeting_source(
         &self,
         data_dir: &Path,
         store: Option<&JobStore>,
     ) -> Result<vd_meeting::InputSource, PlanError> {
+        let wire = self.to_wire_source();
+        wire.validate_xor()
+            .map_err(|e| PlanError::InvalidInput(e.to_string()))?;
+
+        if self.role == InputRole::Context {
+            if wire.as_url().is_some() {
+                return Err(PlanError::InvalidInput(
+                    "context inputs cannot use url (use path/uri for docs)".into(),
+                ));
+            }
+            let boxed = lookup(store);
+            let lookup_ref = boxed
+                .as_ref()
+                .map(|b| b.as_ref() as &dyn Fn(&str) -> Result<PathBuf, String>);
+            let resolved = resolve(&wire, &ResolveContext::new(data_dir), lookup_ref)
+                .map_err(|e| PlanError::InvalidInput(e.to_string()))?;
+            let path = resolved
+                .audio
+                .or(resolved.metadata)
+                .ok_or_else(|| PlanError::InvalidInput("context input unresolved".into()))?;
+            return Ok(vd_meeting::InputSource {
+                role: self.role,
+                path,
+                url: None,
+                participant: self.participant.clone(),
+                purposes: self.purposes.clone(),
+                subtitles: None,
+                provider: None,
+            });
+        }
+
+        if wire.as_url().is_some() {
+            return Ok(vd_meeting::InputSource {
+                role: self.role,
+                path: PathBuf::new(),
+                url: wire.url.clone(),
+                participant: self.participant.clone(),
+                purposes: self.purposes.clone(),
+                subtitles: self.subtitles.clone(),
+                provider: self.provider.clone(),
+            });
+        }
+
+        let boxed = lookup(store);
+        let lookup_ref = boxed
+            .as_ref()
+            .map(|b| b.as_ref() as &dyn Fn(&str) -> Result<PathBuf, String>);
+        let resolved = resolve(&wire, &ResolveContext::new(data_dir), lookup_ref)
+            .map_err(|e| PlanError::InvalidInput(e.to_string()))?;
         Ok(vd_meeting::InputSource {
             role: self.role,
-            path: self.to_source().resolve(data_dir, store)?,
+            path: resolved
+                .require_audio()
+                .map_err(|e| PlanError::InvalidInput(e.to_string()))?
+                .clone(),
+            url: None,
             participant: self.participant.clone(),
             purposes: self.purposes.clone(),
+            subtitles: None,
+            provider: None,
         })
     }
 }
@@ -189,7 +219,6 @@ pub struct MeetingPlanRequest {
     pub meeting: MeetingModel,
     #[serde(default)]
     pub output: MeetingOutput,
-    /// Convenience: single room input when `inputs` is empty.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub audio: Option<InputSource>,
     #[serde(default)]
@@ -236,7 +265,7 @@ fn materialize_meeting(
 
     let mut inputs = Vec::with_capacity(request.inputs.len().max(1));
     for input in &request.inputs {
-        inputs.push(input.resolve(data_dir, store)?);
+        inputs.push(input.to_meeting_source(data_dir, store)?);
     }
     if inputs.is_empty() {
         let audio = request.audio.as_ref().ok_or_else(|| {
@@ -244,12 +273,39 @@ fn materialize_meeting(
                 "meeting requires inputs, audio, document, or meeting_yaml".into(),
             )
         })?;
-        inputs.push(vd_meeting::InputSource {
-            role: InputRole::Room,
-            path: audio.resolve(data_dir, store)?,
-            participant: None,
-            purposes: Vec::new(),
-        });
+        audio
+            .validate_xor()
+            .map_err(|e| PlanError::InvalidInput(e.to_string()))?;
+        if let Some(url) = audio.as_url() {
+            inputs.push(vd_meeting::InputSource {
+                role: InputRole::Room,
+                path: PathBuf::new(),
+                url: Some(url.to_string()),
+                participant: None,
+                purposes: Vec::new(),
+                subtitles: None,
+                provider: None,
+            });
+        } else {
+            let boxed = lookup(store);
+            let lookup_ref = boxed
+                .as_ref()
+                .map(|b| b.as_ref() as &dyn Fn(&str) -> Result<PathBuf, String>);
+            let resolved = resolve(audio, &ResolveContext::new(data_dir), lookup_ref)
+                .map_err(|e| PlanError::InvalidInput(e.to_string()))?;
+            inputs.push(vd_meeting::InputSource {
+                role: InputRole::Room,
+                path: resolved
+                    .require_audio()
+                    .map_err(|e| PlanError::InvalidInput(e.to_string()))?
+                    .clone(),
+                url: None,
+                participant: None,
+                purposes: Vec::new(),
+                subtitles: None,
+                provider: None,
+            });
+        }
     }
 
     Ok((
@@ -287,7 +343,6 @@ fn parse_meeting_document(raw: &str) -> Result<(MeetingRequest, Option<BuildOpti
     Ok((doc.into_request(), build))
 }
 
-/// `execute` (default true) with `run` as alias.
 pub fn wants_execute(params: &serde_json::Value) -> bool {
     params
         .get("execute")

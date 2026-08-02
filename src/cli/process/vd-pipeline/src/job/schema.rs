@@ -228,6 +228,7 @@ pub enum Capability {
     MeetingMerge,
     Preprocess,
     Postprocess,
+    ImportUrl,
 }
 
 impl Capability {
@@ -243,6 +244,7 @@ impl Capability {
             Self::MeetingMerge => "meeting-merge",
             Self::Preprocess => "preprocess",
             Self::Postprocess => "postprocess",
+            Self::ImportUrl => "import-url",
         }
     }
 
@@ -263,6 +265,7 @@ impl Capability {
             Self::MeetingMerge => "meeting",
             Self::Preprocess => "media",
             Self::Postprocess => "derived",
+            Self::ImportUrl => "audio",
         }
     }
 }

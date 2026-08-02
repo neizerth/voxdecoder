@@ -25,8 +25,90 @@ impl Binder for SubprocessBinder {
             Capability::MeetingMerge => run_meeting_merge(req),
             Capability::Preprocess => run_preprocess(req),
             Capability::Postprocess => run_postprocess(req),
+            Capability::ImportUrl => run_import_url(req),
         }
     }
+}
+
+fn run_import_url(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
+    let bin = find_bin("vd-url")?;
+    let url = req
+        .options
+        .get("url")
+        .and_then(ArgValue::as_string)
+        .or_else(|| {
+            let s = req.input.to_string_lossy();
+            if s.starts_with("http://") || s.starts_with("https://") {
+                Some(s.into_owned())
+            } else {
+                None
+            }
+        })
+        .ok_or_else(|| {
+            ExecError::Step("import-url requires options.url or http(s) input".into())
+        })?;
+
+    let out_dir = req
+        .output_dir
+        .clone()
+        .or_else(|| req.output.as_ref().and_then(|p| p.parent().map(Path::to_path_buf)))
+        .unwrap_or_else(|| req.working_dir.join("import"));
+
+    let mut args = vec![
+        "run".into(),
+        "-q".into(),
+        "-i".into(),
+        url,
+        "--output-dir".into(),
+        out_dir.display().to_string(),
+        "--overwrite".into(),
+    ];
+
+    if let Some(s) = req.options.get("subtitles").and_then(ArgValue::as_string) {
+        args.push("--subtitles".into());
+        args.push(s);
+    }
+    if let Some(p) = req.options.get("provider").and_then(ArgValue::as_string) {
+        args.push("--provider".into());
+        args.push(p);
+    }
+    if req.options.get("metadata_only").and_then(ArgValue::as_bool) == Some(true)
+        || req.options.get("metadata-only").and_then(ArgValue::as_bool) == Some(true)
+    {
+        args.push("--metadata-only".into());
+    }
+
+    run_cmd(&bin, &args, &req.working_dir)?;
+
+    let audio = ["audio.m4a", "audio.wav", "audio.mp3", "audio.ogg", "audio.opus"]
+        .iter()
+        .map(|n| out_dir.join(n))
+        .find(|p| p.is_file());
+    let metadata = out_dir.join("metadata.yaml");
+    let subtitle = out_dir.join("subtitles.vtt");
+
+    let primary = audio
+        .clone()
+        .or_else(|| metadata.is_file().then_some(metadata.clone()))
+        .ok_or_else(|| ExecError::Step("import-url produced no artifacts".into()))?;
+
+    let mut outputs = BTreeMap::new();
+    if metadata.is_file() {
+        outputs.insert("metadata".into(), metadata);
+    }
+    if subtitle.is_file() {
+        outputs.insert("subtitle".into(), subtitle);
+    }
+    if let Some(a) = audio {
+        if a != primary {
+            outputs.insert("audio".into(), a);
+        }
+    }
+
+    Ok(InvokeResult {
+        primary_output: primary,
+        outputs,
+    })
 }
 
 fn run_preprocess(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {

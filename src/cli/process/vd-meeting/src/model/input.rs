@@ -64,10 +64,21 @@ impl InputRole {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InputSource {
     pub role: InputRole,
+    /// Local media / docs path. Empty when [`Self::url`] is set.
+    #[serde(default)]
     pub path: PathBuf,
+    /// Online media — planner inserts `import-url`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub participant: Option<String>,
     /// Empty = planner fills defaults from role + sibling inputs + diarization policy.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub purposes: Vec<InputPurpose>,
+    /// Subtitle policy for URL imports (`ignore` | `prefer` | `require`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subtitles: Option<String>,
+    /// Optional URL resolver hint (`stub` · `youtube` · `direct` · …).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
 }

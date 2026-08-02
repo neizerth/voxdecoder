@@ -98,7 +98,15 @@ pub fn build_job(
                 .iter()
                 .find(|i| i.role == InputRole::Participant)
         })
-        .map(|i| i.path.clone());
+        .and_then(|i| {
+            if i.url.is_some() {
+                None
+            } else if i.path.as_os_str().is_empty() {
+                None
+            } else {
+                Some(i.path.clone())
+            }
+        });
 
     Ok(Job {
         version: 1,

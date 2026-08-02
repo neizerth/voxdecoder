@@ -108,8 +108,11 @@ fn assemble_request(args: &RunArgs) -> Result<(MeetingRequest, Option<BuildOptio
         request.inputs.push(InputSource {
             role: InputRole::Context,
             path: ctx.clone(),
+            url: None,
             participant: None,
             purposes: Vec::new(),
+            subtitles: None,
+            provider: None,
         });
     }
     if let Some(dir) = &args.output_dir {
@@ -124,8 +127,10 @@ fn assemble_request(args: &RunArgs) -> Result<(MeetingRequest, Option<BuildOptio
 fn parse_input_spec(spec: &str) -> Result<InputSource, CliError> {
     let mut role = None;
     let mut path = None;
+    let mut url = None;
     let mut participant = None;
     let mut purposes = Vec::new();
+    let mut subtitles = None;
     for part in spec.split(',') {
         let (k, v) = part
             .split_once('=')
@@ -138,7 +143,9 @@ fn parse_input_spec(spec: &str) -> Result<InputSource, CliError> {
                 );
             }
             "path" => path = Some(PathBuf::from(v.trim())),
+            "url" => url = Some(v.trim().to_string()),
             "participant" => participant = Some(v.trim().to_string()),
+            "subtitles" => subtitles = Some(v.trim().to_string()),
             "purposes" => {
                 for p in v.split('|') {
                     let p = p.trim();
@@ -159,11 +166,21 @@ fn parse_input_spec(spec: &str) -> Result<InputSource, CliError> {
             }
         }
     }
+    let path = path.unwrap_or_default();
+    if path.as_os_str().is_empty() && url.is_none() {
+        return Err(CliError::usage("--input needs path=… or url=…"));
+    }
+    if !path.as_os_str().is_empty() && url.is_some() {
+        return Err(CliError::usage("--input must not set both path and url"));
+    }
     Ok(InputSource {
         role: role.ok_or_else(|| CliError::usage("--input needs role=…"))?,
-        path: path.ok_or_else(|| CliError::usage("--input needs path=…"))?,
+        path,
+        url,
         participant,
         purposes,
+        subtitles,
+        provider: None,
     })
 }
 

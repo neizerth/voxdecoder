@@ -120,10 +120,11 @@ fn id_schema() -> Value {
 fn input_source_schema() -> Value {
     json!({
         "type": "object",
-        "description": "Exactly one of path, uri, artifact, or blob.",
+        "description": "Exactly one of path, uri, url, artifact, or blob.",
         "properties": {
             "path": {"type":"string"},
             "uri": {"type":"string"},
+            "url": {"type":"string","description":"Online media (http/https); Planning inserts import-url"},
             "artifact": {"type":"string"},
             "blob": {"type":"string"}
         }
@@ -146,6 +147,15 @@ fn audio_schema() -> Value {
                 "minimum": 0.25,
                 "maximum": 4.0,
                 "description":"Preprocess playback speed (e.g. 1.5, 2, 2.2). Speeds up ASR; timestamps remapped via TimeMap."
+            },
+            "subtitles": {
+                "type":"string",
+                "enum":["ignore","prefer","require"],
+                "description":"Subtitle policy for audio.url import-url (default ignore)."
+            },
+            "provider": {
+                "type":"string",
+                "description":"Optional import-url resolver hint (auto|youtube|direct|…)."
             },
             "overwrite": {
                 "type":"boolean",
@@ -179,8 +189,10 @@ fn meeting_schema() -> Value {
                         },
                         "path": {"type":"string"},
                         "uri": {"type":"string"},
+                        "url": {"type":"string"},
                         "artifact": {"type":"string"},
                         "blob": {"type":"string"},
+                        "subtitles": {"type":"string","enum":["ignore","prefer","require"]},
                         "participant": {"type":"string","description":"Speaker id/name when role is participant"},
                         "purposes": {"type":"array","items":{"type":"string"}}
                     }

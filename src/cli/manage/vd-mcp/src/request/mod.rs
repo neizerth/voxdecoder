@@ -11,6 +11,8 @@ pub struct InputSource {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub uri: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub artifact: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub blob: Option<String>,
@@ -27,6 +29,12 @@ pub struct AudioRequest {
     pub device: Option<String>,
     #[serde(default)]
     pub flash: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speed: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subtitles: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub docs: Option<PathBuf>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

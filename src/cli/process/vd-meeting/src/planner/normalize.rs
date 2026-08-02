@@ -29,6 +29,8 @@ pub struct ResolvedMeeting {
 pub struct ResolvedInput {
     pub role: InputRole,
     pub path: PathBuf,
+    pub url: Option<String>,
+    pub subtitles: Option<String>,
     pub participant: Option<String>,
     pub purposes: Vec<InputPurpose>,
     /// Stable branch id (alice, bob, room, track-0, …).
@@ -64,7 +66,17 @@ pub fn normalize(request: &MeetingRequest) -> Result<ResolvedMeeting, PlanError>
 
     for (i, src) in request.inputs.iter().enumerate() {
         validate_source(src)?;
-        let path = resolve_path(&working_dir, &src.path);
+        let url = src
+            .url
+            .as_deref()
+            .map(str::trim)
+            .filter(|u| !u.is_empty())
+            .map(str::to_string);
+        let path = if url.is_some() {
+            PathBuf::new()
+        } else {
+            resolve_path(&working_dir, &src.path)
+        };
         let purposes = resolve_purposes(src, has_participant, diarization)?;
 
         let branch_id = match src.role {
@@ -77,9 +89,13 @@ pub fn normalize(request: &MeetingRequest) -> Result<ResolvedMeeting, PlanError>
                     .participant
                     .clone()
                     .or_else(|| {
-                        path.file_stem()
-                            .and_then(|s| s.to_str())
-                            .map(str::to_string)
+                        if let Some(u) = &url {
+                            Some(slugify(u))
+                        } else {
+                            path.file_stem()
+                                .and_then(|s| s.to_str())
+                                .map(str::to_string)
+                        }
                     })
                     .unwrap_or_else(|| {
                         let id = format!("track-{track_idx}");
@@ -104,6 +120,8 @@ pub fn normalize(request: &MeetingRequest) -> Result<ResolvedMeeting, PlanError>
         inputs.push(ResolvedInput {
             role: src.role,
             path,
+            url,
+            subtitles: src.subtitles.clone(),
             participant: src.participant.clone(),
             purposes,
             branch_id,
@@ -181,6 +199,9 @@ fn resolve_purposes(
 /// Fail if audio / context paths are missing (CLI run / e2e).
 pub fn require_paths(resolved: &ResolvedMeeting) -> Result<(), PlanError> {
     for src in &resolved.inputs {
+        if src.url.is_some() {
+            continue;
+        }
         if !src.path.exists() {
             return Err(PlanError::NotFound(format!(
                 "input missing: {}",
@@ -192,8 +213,29 @@ pub fn require_paths(resolved: &ResolvedMeeting) -> Result<(), PlanError> {
 }
 
 fn validate_source(src: &InputSource) -> Result<(), PlanError> {
-    if src.path.as_os_str().is_empty() {
-        return Err(PlanError::Usage("input path is empty".into()));
+    let has_url = src
+        .url
+        .as_deref()
+        .map(str::trim)
+        .is_some_and(|u| !u.is_empty());
+    let has_path = !src.path.as_os_str().is_empty();
+    match (has_path, has_url) {
+        (true, false) | (false, true) => {}
+        (false, false) => {
+            return Err(PlanError::Usage(
+                "input needs path=… or url=…".into(),
+            ));
+        }
+        (true, true) => {
+            return Err(PlanError::Usage(
+                "input must not set both path and url".into(),
+            ));
+        }
+    }
+    if has_url && src.role == InputRole::Context {
+        return Err(PlanError::Usage(
+            "context inputs cannot use url".into(),
+        ));
     }
     if src.role == InputRole::Context && !src.purposes.is_empty() {
         return Err(PlanError::Usage(

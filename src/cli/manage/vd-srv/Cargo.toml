@@ -33,6 +33,7 @@ vd-artifact = { path = "../../../crates/vd-artifact" }
 vd-progress = { path = "../../../crates/vd-progress" }
 vd-pipeline = { path = "../../process/vd-pipeline" }
 vd-meeting = { path = "../../process/vd-meeting" }
+vd-input = { path = "../../../crates/vd-input" }
 directories = "6"
 
 [build-dependencies]

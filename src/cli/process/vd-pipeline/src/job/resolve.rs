@@ -156,7 +156,8 @@ fn preview_input(
         | Capability::FixTerms
         | Capability::FixLayout
         | Capability::MeetingMerge
-        | Capability::Postprocess => Ok(None),
+        | Capability::Postprocess
+        | Capability::ImportUrl => Ok(None),
     }
 }
 
@@ -452,6 +453,15 @@ pub fn exec_input(
                 .as_ref()
                 .ok_or_else(|| JobError::Usage("missing context.docs".into()))?;
             Ok(resolve_against(working_dir, docs))
+        }
+        Capability::ImportUrl => {
+            if let Some(url) = step.options.get("url").and_then(ArgValue::as_string) {
+                Ok(PathBuf::from(url))
+            } else {
+                Err(JobError::Usage(
+                    "import-url needs options.url (or step.input http(s) URL)".into(),
+                ))
+            }
         }
         Capability::FixCasing
         | Capability::FixAsr

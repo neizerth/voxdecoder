@@ -1,0 +1,27 @@
+[package]
+name = "vd-input"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Input resolution: InputSource → ResolvedInput (ADR 0008)"
+publish = false
+
+[lib]
+name = "vd_input"
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+vd-url = { path = "../../cli/process/vd-url" }
+
+[dev-dependencies]
+tempfile = "3"
+
+[[test]]
+name = "unit"
+path = "tests/unit/mod.rs"
