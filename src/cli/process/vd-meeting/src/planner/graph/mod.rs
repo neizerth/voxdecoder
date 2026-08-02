@@ -2,6 +2,7 @@
 
 mod diarize;
 mod merge;
+mod preprocess;
 mod transcript;
 
 use vd_pipeline::{
@@ -110,9 +111,21 @@ pub fn build_job(
         },
         continue_on_error: options.executor.continue_on_error,
         max_parallel: options.executor.max_parallel.or(Some(4)),
-        resources: options.executor.resources.clone(),
+        resources: default_meeting_resources(&options.executor.resources),
         steps: root,
     })
+}
+
+fn default_meeting_resources(
+    explicit: &std::collections::BTreeMap<String, u32>,
+) -> std::collections::BTreeMap<String, u32> {
+    let mut resources = explicit.clone();
+    #[cfg(target_os = "macos")]
+    {
+        // Parallel transcript branches share one Metal slot (Executor + srv Resource Manager).
+        resources.entry("metal_gpu".into()).or_insert(1);
+    }
+    resources
 }
 
 fn should_diarize(resolved: &ResolvedMeeting) -> bool {

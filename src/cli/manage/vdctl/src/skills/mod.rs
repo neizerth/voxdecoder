@@ -1,7 +1,9 @@
-//! Skill discovery, validation, and install into AI clients.
+//! Skill discovery, validation, and sync into `$VD_HOME/skills`.
 //!
 //! Skills are platform assets under `skills/<id>/skill.md`.
-//! `vdctl` owns the lifecycle; `vd-mcp` never discovers or installs Skills.
+//! `vdctl mcp install|update` owns the lifecycle (mirror sync + app link).
+//! `vdctl skills` is read-only / diagnostic.
+//! `vd-mcp` never discovers or installs Skills.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -14,6 +16,15 @@ use crate::error::Error;
 use crate::resolve::Platform;
 
 const SKILL_FILE: &str = "skill.md";
+const RUNTIME_CONTRACT_HEADING: &str = "## Runtime Contract";
+const RUNTIME_CONTRACT_PARTS: &[&str] = &[
+    "Execution",
+    "Progress",
+    "Results",
+    "Cancellation",
+    "Failures",
+    "Recovery",
+];
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Skill {
@@ -150,6 +161,7 @@ fn load_skill(id: &str, dir: &Path, skill_md: &Path) -> Result<Skill, String> {
     if body.trim().is_empty() {
         diagnostics.push("skill.md is empty".into());
     }
+    diagnostics.extend(validate_runtime_contract(&body));
     let (name, description) = parse_title_and_blurb(&body);
     let name = name.unwrap_or_else(|| id.to_string());
     let valid = diagnostics.is_empty();
@@ -164,6 +176,84 @@ fn load_skill(id: &str, dir: &Path, skill_md: &Path) -> Result<Skill, String> {
         valid,
         diagnostics,
     })
+}
+
+/// Require `## Runtime Contract` and the six standard subsections.
+fn validate_runtime_contract(body: &str) -> Vec<String> {
+    let mut diagnostics = Vec::new();
+    if !has_heading(body, "Runtime Contract") {
+        diagnostics.push(format!(
+            "missing required `{RUNTIME_CONTRACT_HEADING}` section (see skills/TEMPLATE.md)"
+        ));
+        return diagnostics;
+    }
+    for part in RUNTIME_CONTRACT_PARTS {
+        if !has_contract_part(body, part) {
+            diagnostics.push(format!(
+                "Runtime Contract missing `{part}` (required: {})",
+                RUNTIME_CONTRACT_PARTS.join(", ")
+            ));
+        }
+    }
+    diagnostics
+}
+
+fn has_heading(body: &str, title: &str) -> bool {
+    let want = title.to_ascii_lowercase();
+    body.lines().any(|line| {
+        let t = line.trim().trim_start_matches('#').trim();
+        t.eq_ignore_ascii_case(title)
+            || t.to_ascii_lowercase() == want
+            || t.to_ascii_lowercase().starts_with(&format!("{want} "))
+    })
+}
+
+fn has_contract_part(body: &str, part: &str) -> bool {
+    let want = part.to_ascii_lowercase();
+    body.lines().any(|line| {
+        let raw = line.trim();
+        let t = raw
+            .trim_start_matches('#')
+            .trim()
+            .trim_matches('*')
+            .trim();
+        t.eq_ignore_ascii_case(part)
+            || t.to_ascii_lowercase() == want
+            || t.to_ascii_lowercase().starts_with(&format!("{want} "))
+    })
+}
+
+#[cfg(test)]
+mod contract_tests {
+    use super::{validate_runtime_contract, RUNTIME_CONTRACT_PARTS};
+
+    #[test]
+    fn accepts_full_contract() {
+        let body = r#"
+# Demo
+## Runtime Contract
+### Execution
+- x
+### Progress
+- y
+### Results
+- z
+### Cancellation
+- c
+### Failures
+- f
+### Recovery
+- r
+"#;
+        assert!(validate_runtime_contract(body).is_empty());
+    }
+
+    #[test]
+    fn rejects_missing_parts() {
+        let body = "## Runtime Contract\n### Execution\n";
+        let diags = validate_runtime_contract(body);
+        assert!(diags.len() >= RUNTIME_CONTRACT_PARTS.len() - 1);
+    }
 }
 
 fn parse_title_and_blurb(body: &str) -> (Option<String>, String) {
@@ -389,14 +479,30 @@ pub fn skill_linked_in_app(adapter: &AgentAdapter, skill_id: &str) -> bool {
         .any(|root| root.join(skill_id).join(SKILL_FILE).is_file())
 }
 
-/// Copy selected Skills into `$VD_HOME/skills` (shared platform install).
-pub fn sync_to_home(platform: &Platform, skills: &[Skill], dry_run: bool) -> Result<(), Error> {
+/// Mirror selected Skills into `$VD_HOME/skills` (shared platform install).
+///
+/// When `prune` is true (full catalog sync — no `--skills` filter), skill
+/// directories present under `$VD_HOME/skills` but absent from `skills` are removed.
+pub fn sync_to_home(
+    platform: &Platform,
+    skills: &[Skill],
+    prune: bool,
+    dry_run: bool,
+) -> Result<(), Error> {
     let dest_root = installed_root();
     if dry_run {
-        eprintln!("  [dry-run] would sync {} skill(s) → {}", skills.len(), dest_root.display());
+        eprintln!(
+            "  [dry-run] would sync {} skill(s) → {}{}",
+            skills.len(),
+            dest_root.display(),
+            if prune { " (prune stale)" } else { "" }
+        );
         return Ok(());
     }
     fs::create_dir_all(&dest_root).map_err(|e| Error::Message(e.to_string()))?;
+    let keep: std::collections::HashSet<_> =
+        skills.iter().map(|s| s.id.to_ascii_lowercase()).collect();
+
     for skill in skills {
         let src = PathBuf::from(&skill.path);
         let dest = dest_root.join(&skill.id);
@@ -406,6 +512,42 @@ pub fn sync_to_home(platform: &Platform, skills: &[Skill], dry_run: bool) -> Res
         copy_dir_recursive(&src, &dest)?;
         println!("  ✔ {} → {}", skill.id, dest.display());
         let _ = platform;
+    }
+
+    if prune {
+        prune_stale_home_skills(&dest_root, &keep)?;
+    }
+    Ok(())
+}
+
+fn prune_stale_home_skills(
+    dest_root: &Path,
+    keep: &std::collections::HashSet<String>,
+) -> Result<(), Error> {
+    let Ok(entries) = fs::read_dir(dest_root) else {
+        return Ok(());
+    };
+    for ent in entries.flatten() {
+        let path = ent.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let id = path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_string();
+        if id.is_empty() || id.starts_with('.') {
+            continue;
+        }
+        if !path.join(SKILL_FILE).is_file() {
+            continue;
+        }
+        if keep.contains(&id.to_ascii_lowercase()) {
+            continue;
+        }
+        fs::remove_dir_all(&path).map_err(|e| Error::Message(e.to_string()))?;
+        println!("  − removed stale {id}");
     }
     Ok(())
 }

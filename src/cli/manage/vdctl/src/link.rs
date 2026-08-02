@@ -84,9 +84,13 @@ pub fn link_vdctl(source: &Path) -> Result<LinkResult, Error> {
     })
 }
 
-pub fn resolve_source(workspace: Option<&Path>) -> PathBuf {
+pub fn resolve_source(workspace: Option<&Path>, prefer: Option<&str>) -> PathBuf {
     if let Some(ws) = workspace {
-        for profile in ["debug", "release"] {
+        let order = match prefer {
+            Some("release") | Some("prod") => ["release", "debug"],
+            _ => ["debug", "release"],
+        };
+        for profile in order {
             let candidate = ws.join("target").join(profile).join(if cfg!(windows) {
                 "vdctl.exe"
             } else {

@@ -22,7 +22,7 @@ pub mod plan;
 pub mod schedule;
 pub mod store;
 
-pub use engine::{Engine, EngineError};
+pub use engine::{Engine, EngineError, TransportEndpoint, TransportStatus};
 pub use schedule::{pick_job, ResourceManager};
 pub use store::{JobRecord, JobStatus, JobStore, NodeStatus, Priority, RestartPolicy, StoreError};
 

@@ -8,6 +8,7 @@ pub fn normalize(text: &str, language: Language) -> String {
     out = normalize_quotes(&out, language);
     out = tidy_punct_spacing(&out);
     out = capitalize_sentences(&out);
+    out = collapse_duplicate_periods(&out);
     ensure_terminal_punct(&out)
 }
 
@@ -130,6 +131,32 @@ fn capitalize_sentences(s: &str) -> String {
         if matches!(ch, '.' | '!' | '?' | '…') {
             capitalize_next = true;
         }
+    }
+    out
+}
+
+/// Collapse accidental `..` (and longer ASCII runs) without inventing new terminals.
+/// `...` / longer → ellipsis `…`; bare `..` → single `.`.
+fn collapse_duplicate_periods(s: &str) -> String {
+    let chars: Vec<char> = s.chars().collect();
+    let mut out = String::with_capacity(s.len());
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == '.' {
+            let mut n = 0usize;
+            while i + n < chars.len() && chars[i + n] == '.' {
+                n += 1;
+            }
+            if n >= 3 {
+                out.push('…');
+            } else {
+                out.push('.');
+            }
+            i += n;
+            continue;
+        }
+        out.push(chars[i]);
+        i += 1;
     }
     out
 }

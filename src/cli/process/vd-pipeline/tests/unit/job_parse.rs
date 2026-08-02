@@ -9,7 +9,7 @@ fn yaml_and_json_round_trip_default() {
     let from_json = load_job_file(&fixture("jobs/default.json")).unwrap();
     assert_eq!(from_yaml, from_json);
     assert_eq!(from_yaml.version, 1);
-    assert_eq!(from_yaml.leaf_count(), 6);
+    assert_eq!(from_yaml.leaf_count(), 7);
     assert_eq!(from_yaml.leaf_steps()[0].r#use, Capability::Preprocess);
     assert_eq!(from_yaml.leaf_steps()[0].id.as_deref(), Some("prepared"));
     assert!(from_yaml.leaf_steps()[0].options.contains_key("filters"));

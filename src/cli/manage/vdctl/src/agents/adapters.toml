@@ -1,16 +1,18 @@
 # Built-in AI client adapters for `vdctl discover` / `mcp list` / `mcp install`.
 # Override: place `agents.toml` next to `vdctl.toml` (same config dir).
 #
-# Top-level fields apply on every OS; `[agent.macos|linux|windows]` add OS-specific
-# paths (merged). Path tokens: `~`, `$HOME`, `$XDG_CONFIG_HOME`,
-# `%APPDATA%`, `%LOCALAPPDATA%`, `%USERPROFILE%`.
+# kind: desktop | cli | custom
+#   desktop → install MCP Bundle / JSON config
+#   cli     → register via app MCP CLI (e.g. `claude mcp add`)
 #
-# mcp_format: mcp_servers | servers | none
-# skill_dirs: where `skills/<id>/skill.md` is installed for that AI client
+# mcp_format (desktop): mcp_servers | servers | none
+# skill_dirs: where `skills/<id>/skill.md` is linked for that client
+# Path tokens: `~`, `$HOME`, `$XDG_CONFIG_HOME`, `%APPDATA%`, `%LOCALAPPDATA%`, `%USERPROFILE%`.
 
 [[agent]]
-id = "claude"
+id = "claude-desktop"
 name = "Claude Desktop"
+kind = "desktop"
 mcp_format = "mcp_servers"
 skill_dirs = ["~/.claude/skills"]
 
@@ -45,8 +47,24 @@ config_paths = [
 skill_dirs = ["%USERPROFILE%/.claude/skills"]
 
 [[agent]]
+id = "claude-code"
+name = "Claude Code"
+kind = "cli"
+bins = ["claude"]
+mcp_server_name = "voxdecoder"
+mcp_scope = "user"
+skill_dirs = ["~/.claude/skills"]
+config_paths = ["~/.claude.json"]
+
+[agent.windows]
+bins = ["claude.exe"]
+skill_dirs = ["%USERPROFILE%/.claude/skills"]
+config_paths = ["%USERPROFILE%/.claude.json"]
+
+[[agent]]
 id = "cursor"
 name = "Cursor"
+kind = "desktop"
 mcp_format = "mcp_servers"
 marker_dirs = ["~/.cursor"]
 config_paths = ["~/.cursor/mcp.json"]
@@ -82,6 +100,7 @@ skill_dirs = ["%USERPROFILE%/.cursor/skills"]
 [[agent]]
 id = "chatgpt"
 name = "ChatGPT Desktop"
+kind = "desktop"
 mcp_format = "none"
 skill_dirs = ["~/.voxdecoder/skills/chatgpt"]
 
@@ -107,6 +126,7 @@ skill_dirs = ["%USERPROFILE%/.voxdecoder/skills/chatgpt"]
 [[agent]]
 id = "vscode"
 name = "VS Code"
+kind = "desktop"
 mcp_format = "servers"
 bins = ["code"]
 skill_dirs = ["~/.vscode/skills"]
@@ -146,11 +166,12 @@ skill_dirs = ["%USERPROFILE%/.vscode/skills"]
 [[agent]]
 id = "codex"
 name = "Codex CLI"
-mcp_format = "none"
+kind = "cli"
 bins = ["codex"]
 marker_dirs = ["~/.codex"]
 config_paths = ["~/.codex/config.toml"]
 skill_dirs = ["~/.codex/skills"]
+# No MCP CLI adapter yet — detection only.
 
 [agent.windows]
 marker_dirs = ["%USERPROFILE%/.codex"]

@@ -87,6 +87,7 @@ pub fn execute(args: RunArgs) -> Result<(), CliError> {
             model: args.model.clone(),
             device: args.device.clone(),
             flash: args.flash,
+            speed: None,
             docs: args.docs.clone(),
             output_dir: args.output_dir.clone(),
             working_dir: args.working_dir.clone(),
@@ -117,6 +118,7 @@ pub fn execute(args: RunArgs) -> Result<(), CliError> {
     let executor = Executor {
         binder: SubprocessBinder,
         progress: args.effective_progress(file.progress.as_deref()),
+        progress_snapshot: None,
     };
     match executor.run(&resolved) {
         Ok(outcome) => {

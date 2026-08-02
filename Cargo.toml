@@ -17,6 +17,7 @@ members = [
     "src/cli/fix/vd-fix-casing",
     "src/cli/fix/vd-fix-asr",
     "src/cli/fix/vd-fix-terms",
+    "src/cli/fix/vd-fix-layout",
 ]
 default-members = [
     "src/crates/vd-artifact",
@@ -35,6 +36,7 @@ default-members = [
     "src/cli/fix/vd-fix-casing",
     "src/cli/fix/vd-fix-asr",
     "src/cli/fix/vd-fix-terms",
+    "src/cli/fix/vd-fix-layout",
 ]
 
 

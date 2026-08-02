@@ -1,6 +1,7 @@
 //! Job Executor — recursive workflow (`sequence` / `parallel`) over capability leaves.
 
 mod bind;
+mod resources;
 mod subprocess;
 mod timemap;
 
@@ -20,6 +21,8 @@ use crate::report::{
     StepReport, StepReportStatus,
 };
 use crate::status;
+
+use resources::{resolve_job_capacity, step_resource_need, ResourcePool};
 
 pub use bind::{Binder, InvokeRequest, InvokeResult};
 pub use subprocess::SubprocessBinder;
@@ -72,6 +75,8 @@ impl std::error::Error for ExecFailure {}
 pub struct Executor<B: Binder> {
     pub binder: B,
     pub progress: ProgressMode,
+    /// When set, step progress is snapshotted here for Runtime observe (`get_job`).
+    pub progress_snapshot: Option<PathBuf>,
 }
 
 struct RunState {
@@ -87,7 +92,10 @@ struct RunState {
 
 impl<B: Binder + Sync> Executor<B> {
     pub fn run(&self, resolved: &ResolvedJob) -> Result<ExecOutcome, ExecFailure> {
-        let progress = Progress::new(self.progress);
+        let progress = match &self.progress_snapshot {
+            Some(path) => Progress::with_snapshot(self.progress, path.clone()),
+            None => Progress::new(self.progress),
+        };
         let total = resolved.steps.len() as u32;
         let audio = resolved.job.input.audio.as_deref();
         let model = status::engine_from_steps(&resolved.steps);
@@ -97,6 +105,7 @@ impl<B: Binder + Sync> Executor<B> {
         let started = Instant::now();
         let max_parallel = resolved.job.max_parallel.unwrap_or(1).max(1);
         let continue_on_error = resolved.job.continue_on_error;
+        let pool = Arc::new(ResourcePool::new(resolve_job_capacity(&resolved.job)));
 
         let mut state = RunState {
             artifacts: ArtifactRegistry::new(),
@@ -115,6 +124,7 @@ impl<B: Binder + Sync> Executor<B> {
             total,
             max_parallel,
             continue_on_error,
+            &pool,
             &mut state,
         ) {
             let report = finish_report(resolved, wall_start, started, state.step_reports, true);
@@ -148,11 +158,12 @@ impl<B: Binder + Sync> Executor<B> {
         total: u32,
         max_parallel: u32,
         continue_on_error: bool,
+        pool: &Arc<ResourcePool>,
         state: &mut RunState,
     ) -> Result<(), ExecError> {
         match plan {
             WorkflowPlan::Leaf(idx) => {
-                self.run_leaf(*idx, resolved, progress, total, continue_on_error, state)
+                self.run_leaf(*idx, resolved, progress, total, continue_on_error, pool, state)
             }
             WorkflowPlan::Sequence(kids) => {
                 for kid in kids {
@@ -163,17 +174,25 @@ impl<B: Binder + Sync> Executor<B> {
                         total,
                         max_parallel,
                         continue_on_error,
+                        pool,
                         state,
                     )?;
                 }
                 Ok(())
             }
-            WorkflowPlan::Parallel(kids) => {
-                self.run_parallel(kids, resolved, total, max_parallel, continue_on_error, state)
-            }
+            WorkflowPlan::Parallel(kids) => self.run_parallel(
+                kids,
+                resolved,
+                total,
+                max_parallel,
+                continue_on_error,
+                pool,
+                state,
+            ),
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn run_parallel(
         &self,
         kids: &[WorkflowPlan],
@@ -181,6 +200,7 @@ impl<B: Binder + Sync> Executor<B> {
         total: u32,
         max_parallel: u32,
         continue_on_error: bool,
+        pool: &Arc<ResourcePool>,
         state: &mut RunState,
     ) -> Result<(), ExecError> {
         if kids.is_empty() {
@@ -207,6 +227,7 @@ impl<B: Binder + Sync> Executor<B> {
                     let branch_regs = Arc::clone(&branch_regs);
                     let branch_last = Arc::clone(&branch_last);
                     let any_failed = Arc::clone(&any_failed);
+                    let pool = Arc::clone(pool);
                     scope.spawn(move || {
                         let quiet = Progress::new(ProgressMode::None);
                         let mut branch = RunState {
@@ -225,6 +246,7 @@ impl<B: Binder + Sync> Executor<B> {
                             total,
                             max_parallel,
                             continue_on_error,
+                            &pool,
                             &mut branch,
                         );
                         reports.lock().unwrap().extend(branch.step_reports);
@@ -268,6 +290,7 @@ impl<B: Binder + Sync> Executor<B> {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn run_leaf(
         &self,
         idx: usize,
@@ -275,6 +298,7 @@ impl<B: Binder + Sync> Executor<B> {
         progress: &Progress,
         total: u32,
         continue_on_error: bool,
+        pool: &Arc<ResourcePool>,
         state: &mut RunState,
     ) -> Result<(), ExecError> {
         let step = &resolved.steps[idx];
@@ -350,6 +374,15 @@ impl<B: Binder + Sync> Executor<B> {
                 return Err(err);
             }
         }
+        if step.capability == Capability::FixLayout
+            && options.get("use_timemap").and_then(ArgValue::as_bool) != Some(false)
+        {
+            if let Some(tm) = &state.active_timemap {
+                options
+                    .entry("timemap".into())
+                    .or_insert_with(|| ArgValue::String(tm.display().to_string()));
+            }
+        }
 
         let req = InvokeRequest {
             capability: step.capability,
@@ -360,6 +393,10 @@ impl<B: Binder + Sync> Executor<B> {
             context_assets: resolved.job.context.assets.clone(),
             options,
         };
+
+        // Contended classes (metal_gpu, …) serialize even when parallel branches fan out.
+        let need = step_resource_need(step, job_step);
+        let _lease = pool.acquire(&need);
 
         let queued_at = SystemTime::now();
         let step_t0 = Instant::now();

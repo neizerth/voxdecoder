@@ -7,8 +7,9 @@ use std::process::Command;
 
 use serde::Serialize;
 
-use crate::config::{AutoBuild, PlatformConfig};
+use crate::config::{AutoBuild, BuildProfile, PlatformConfig};
 use crate::error::Error;
+use crate::paths;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -30,10 +31,12 @@ impl Mode {
 pub struct Platform {
     pub mode: Mode,
     pub workspace: Option<PathBuf>,
+    pub build: BuildProfile,
     pub bin_dir: PathBuf,
     pub data_dir: PathBuf,
     pub socket: PathBuf,
     pub tcp: Option<String>,
+    pub http: Option<String>,
     pub transport: String,
 }
 
@@ -63,10 +66,11 @@ pub fn detect(config: &PlatformConfig) -> Result<Platform, Error> {
         Mode::Installed
     };
 
+    let build = resolve_build_profile(config);
     let bin_dir = match mode {
         Mode::Workspace => {
             let root = workspace.as_ref().expect("workspace mode");
-            workspace_bin_dir(root)
+            workspace_bin_dir(root, build)
         }
         Mode::Installed => installed_bin_dir()?,
     };
@@ -87,6 +91,11 @@ pub fn detect(config: &PlatformConfig) -> Result<Platform, Error> {
         .clone()
         .or_else(|| env::var(crate::paths::ENV_TCP).ok());
 
+    let http = config
+        .http
+        .clone()
+        .or_else(|| env::var(crate::paths::ENV_HTTP).ok());
+
     let socket = config
         .socket
         .clone()
@@ -96,15 +105,30 @@ pub fn detect(config: &PlatformConfig) -> Result<Platform, Error> {
     Ok(Platform {
         mode,
         workspace,
+        build,
         bin_dir,
         data_dir,
         socket,
         tcp,
+        http,
         transport,
     })
 }
 
-pub fn ensure_runtime_built(platform: &Platform, auto_build: AutoBuild) -> Result<(), Error> {
+fn resolve_build_profile(config: &PlatformConfig) -> BuildProfile {
+    if let Ok(raw) = env::var(paths::ENV_BUILD) {
+        if let Some(p) = BuildProfile::parse(&raw) {
+            return p;
+        }
+    }
+    config.build
+}
+
+pub fn ensure_runtime_built(
+    platform: &Platform,
+    auto_build: AutoBuild,
+    build: BuildProfile,
+) -> Result<(), Error> {
     if platform.mode != Mode::Workspace {
         return Ok(());
     }
@@ -121,15 +145,34 @@ pub fn ensure_runtime_built(platform: &Platform, auto_build: AutoBuild) -> Resul
     if !need {
         return Ok(());
     }
-    eprintln!("vdctl: building workspace packages (vd-srv, vd-mcp)…");
-    let status = Command::new("cargo")
-        .args(["build", "-p", "vd-srv", "-p", "vd-mcp"])
+    build_workspace(root, build)
+}
+
+/// Build workspace Runtime packages for the selected profile (`scripts/build.sh`).
+pub fn build_workspace(root: &Path, build: BuildProfile) -> Result<(), Error> {
+    let script = root.join("scripts/build.sh");
+    if !script.is_file() {
+        return Err(Error::Message(format!(
+            "build script missing: {}",
+            script.display()
+        )));
+    }
+    let profile_flag = match build {
+        BuildProfile::Debug => "--debug",
+        BuildProfile::Release => "--release",
+    };
+    eprintln!(
+        "vdctl: building workspace ({}) via scripts/build.sh {profile_flag}…",
+        build.as_str()
+    );
+    let status = Command::new(&script)
+        .arg(profile_flag)
         .current_dir(root)
         .status()
-        .map_err(|e| Error::Message(format!("cargo build failed to start: {e}")))?;
+        .map_err(|e| Error::Message(format!("build.sh failed to start: {e}")))?;
     if !status.success() {
         return Err(Error::Message(format!(
-            "cargo build failed with status {status}"
+            "build.sh failed with status {status}"
         )));
     }
     Ok(())
@@ -165,17 +208,8 @@ fn find_workspace(start: &Path) -> Option<PathBuf> {
     None
 }
 
-fn workspace_bin_dir(root: &Path) -> PathBuf {
-    // Prefer debug for developer `vdctl up`; release if only that exists.
-    let debug = root.join("target/debug");
-    let release = root.join("target/release");
-    if debug.join(bin_name("vd-srv")).is_file() {
-        debug
-    } else if release.join(bin_name("vd-srv")).is_file() {
-        release
-    } else {
-        debug
-    }
+fn workspace_bin_dir(root: &Path, build: BuildProfile) -> PathBuf {
+    root.join("target").join(build.target_dir_name())
 }
 
 fn installed_bin_dir() -> Result<PathBuf, Error> {
@@ -205,5 +239,18 @@ mod tests {
         assert!(ws.join("Cargo.toml").is_file());
         let body = fs::read_to_string(ws.join("Cargo.toml")).unwrap();
         assert!(body.contains("[workspace]"));
+    }
+
+    #[test]
+    fn workspace_bin_dir_respects_profile() {
+        let root = PathBuf::from("/tmp/ws");
+        assert_eq!(
+            workspace_bin_dir(&root, BuildProfile::Debug),
+            PathBuf::from("/tmp/ws/target/debug")
+        );
+        assert_eq!(
+            workspace_bin_dir(&root, BuildProfile::Release),
+            PathBuf::from("/tmp/ws/target/release")
+        );
     }
 }

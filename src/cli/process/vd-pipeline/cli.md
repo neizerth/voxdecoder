@@ -212,6 +212,7 @@ Independent ready steps may run together up to `max_parallel` and free resource 
 | `fix-casing` | `vd-fix-casing` | [cli](../../fix/vd-fix-casing/cli.md) |
 | `fix-asr` | `vd-fix-asr` | [cli](../../fix/vd-fix-asr/cli.md) |
 | `fix-terms` | `vd-fix-terms` | [cli](../../fix/vd-fix-terms/cli.md) |
+| `fix-layout` | `vd-fix-layout` | [cli](../../fix/vd-fix-layout/cli.md) |
 | `diarize` | `vd-diarize` | [README](../vd-diarize/README.md) |
 | `meeting-merge` | merge stub (in-process) | writes `meeting.json`; real merge later |
 | `postprocess` | `vd-postprocess` | [README](../vd-postprocess/README.md) |
@@ -259,6 +260,7 @@ steps:
     input: transcript
   - use: fix-asr
   - use: fix-terms
+  - use: fix-layout
 ```
 
 `context.docs` defaults to `.` when `--docs` is omitted. If that root has no text/Office/PDF sources, the binder writes an empty `.voxdecoder/` and continues (fix-* still run).

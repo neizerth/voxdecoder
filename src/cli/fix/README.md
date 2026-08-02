@@ -1,17 +1,26 @@
 # Text cleaning CLIs
 
-Local post-processing for transcripts and other text artifacts. Three tools, almost no overlap, one natural pipeline:
+Local post-processing for long-form text artifacts. Four tools, almost no overlap, one natural pipeline:
 
 ```text
-vd-fix-casing  →  vd-fix-asr  →  vd-fix-terms
-   (form)           (words)          (terminology)
+vd-fix-casing  →  vd-fix-asr  →  vd-fix-terms  →  vd-fix-layout
+   (form)           (words)          (terminology)       (layout)
 ```
+
+Relative to recipes:
+
+```text
+transcribe → fix-* → fix-layout → postprocess
+```
+
+`vd-fix-layout` also runs on long-form outputs **after** `vd-postprocess` (e.g. `summary.md`).
 
 | CLI | Changes | Spec |
 |-----|---------|------|
 | `vd-fix-casing` | Presentation only | [vd-fix-casing/](vd-fix-casing/) ([cli](vd-fix-casing/cli.md)) |
 | `vd-fix-asr` | Words / meaning | [vd-fix-asr/](vd-fix-asr/) ([cli](vd-fix-asr/cli.md)) |
 | `vd-fix-terms` | Canonical terminology | [vd-fix-terms/](vd-fix-terms/) ([cli](vd-fix-terms/cli.md)) |
+| `vd-fix-layout` | Layout / paragraphs (v1) | [vd-fix-layout/](vd-fix-layout/) ([cli](vd-fix-layout/cli.md)) |
 
 Project assets (default `.voxdecoder/` with `md/` + `terms.yml`) for `--context` / `--terms`: [`vd-assets`](../process/vd-assets/) ([cli](../process/vd-assets/cli.md)). Override via `$VD_PROJECT_DIR` or `VD_PROJECT_DIR=` in `.voxdecoder/env` / `.env`.
 
@@ -21,47 +30,41 @@ Queue / background runs: [`vd-srv`](../vd-srv/).
 
 ## Shared contract
 
-All three CLIs share the same I/O contract so they can be chained in any order (recommended order above):
+All `vd-fix-*` CLIs share the same I/O contract so they can be chained:
 
 - Accept **any text artifact**: `txt`, `json`, `jsonl`, `srt`, `vtt`, `md`, and `vd-*` native artifacts.
 - **Input type == output type** (`txt→txt`, `json→json`, `srt→srt`, …).
-- Default output: `{stem}.fixed.{ext}` (never `.cased.` / `.clean.`).
+- Default output: `{stem}.fixed.{ext}`.
 - Shared UX: `run` / `config`, `--dry-run`, `--progress=json`, `--language`, priority CLI > config > default.
-- When a CLI can use downloadable assets: **`install` / `remove` / `list` / `info`** (same shape as `vd-gigaam`). Packs are **optional** if processing works with a builtin/default — do not force `install` before `run`.
+- Optional packs: **`install` / `remove` / `list` / `info`** (same shape as `vd-gigaam`). Do not force `install` before `run` when a builtin exists.
 
-`vd-fix-casing` already supports optional language packs (`install ru` / `en`) and runs without them. Other fix CLIs should follow the same pattern when they grow models or dictionaries.
-
-Each binary documents an explicit **Guarantees** section (what it never changes). That contract is more important than the option list: it makes the pipeline safe to chain.
-
-How they differ is only **Behavior** — each has one core rule:
+Each binary documents an explicit **Guarantees** section. That contract is more important than the option list.
 
 | CLI | Behavior | Core rule |
 |-----|----------|-----------|
 | `vd-fix-casing` | changes presentation only | Never changes words |
 | `vd-fix-asr` | changes words only | Changes words only to restore meaning |
 | `vd-fix-terms` | changes canonical terminology only | Never guesses |
+| `vd-fix-layout` | changes layout only | **Never changes lexical content** |
 
 ---
 
 ## Shared crates (Rust)
 
-Workspace libs live under [`../../crates/`](../../crates/) (`src/crates/`, not under `src/cli/fix/`).
-
 | Crate | Path | Use when developing |
 |-------|------|---------------------|
 | **`vd-artifact`** | [`vd-artifact`](../../crates/vd-artifact/) | Artifact load/walk/write, shared types, `paths` helpers |
-| **`vd-output`** | [`vd-output`](../../crates/vd-output/) | `-o` / `-d` / `--in-place`; caller-supplied naming (`.fixed.` for fix CLIs) |
-| **`vd-progress`** | [`vd-progress`](../../crates/vd-progress/) | Stderr progress (`start` / `phase` / `done` / `error`) |
+| **`vd-output`** | [`vd-output`](../../crates/vd-output/) | `-o` / `-d` / `--in-place`; `.fixed.` naming |
+| **`vd-progress`** | [`vd-progress`](../../crates/vd-progress/) | Stderr progress |
 
-Backends (`casing/` / `asr/` / `terms/`), pack install UX, clap, and config stay **per binary**.
-
-Overview: [src/crates/README.md](../../crates/README.md). Each CLI’s STRUCTURE has a **Shared crates?** section.
+Backends stay **per binary** (`casing/` / `asr/` / `terms/` / `layout/`).
 
 ```bash
 cargo test -p vd-artifact -p vd-output -p vd-progress
 cargo test -p vd-fix-casing
 cargo test -p vd-fix-asr
 cargo test -p vd-fix-terms
+cargo test -p vd-fix-layout
 ```
 
 ---
@@ -96,49 +99,50 @@ Normalizes **canonical terminology** to a single form. Spec: [vd-fix-terms/](vd-
 
 **Core rule:** never guesses — every replacement must be backed by shipping lexicon, `--terms`, or an explicit rule.
 
-Works from dictionaries and rules — it does not “guess.”
+---
 
-**Fixes**
+## `vd-fix-layout`
 
-- product names
-- libraries
-- APIs
-- companies
-- project names
-- abbreviations
-- English identifiers
+Applies **layout** (v1: paragraph breaks) to readable long-form text. Spec: [vd-fix-layout/](vd-fix-layout/) ([cli](vd-fix-layout/cli.md)).
 
-**Examples**
+**Status: docs / planned.**
+
+**Primary guarantee:**
 
 ```text
-кубернетис   →  Kubernetes
-си плюс плюс →  C++
-чат джипити  →  ChatGPT
-рест апи     →  REST API
+Never changes lexical content.
 ```
 
-**Sources**
-
-- `terms.yml` / `terms.json`
-- Markdown / README / docs
-- user glossary
-
-**Example (end of pipeline)**
+Only whitespace / paragraph boundaries may change. Optional TimeMap structural hints; fully usable without TimeMap. `--language ru` \| `en` \| `auto`.
 
 ```text
-Мы обсуждали кубернетес и сейф тензорс.
-        ↓ vd-fix-terms
-Мы обсуждали Kubernetes и SafeTensors.
+v1 implements paragraph layout only.
+Future layout transformations keep the same guarantee.
+```
+
+```text
+… сплошной поток предложений …
+        ↓ vd-fix-layout --language auto
+… абзац 1 …
+
+… абзац 2 …
+```
+
+Also:
+
+```text
+summary.md
+        ↓ vd-fix-layout
+summary with readable paragraphs
 ```
 
 ---
 
 ## Why this split
 
-Each tool owns one layer of the text:
+1. **Form** — `vd-fix-casing`
+2. **Sense** — `vd-fix-asr`
+3. **Terminology** — `vd-fix-terms`
+4. **Layout** — `vd-fix-layout`
 
-1. **Form** — make it readable (`vd-fix-casing`)
-2. **Sense** — fix what was misheard (`vd-fix-asr`)
-3. **Terminology** — lock vocabulary to the project dictionary (`vd-fix-terms`)
-
-Together: **presentation → meaning → terminology**. That covers almost all local transcript cleanup while keeping each binary small, clear, and independent.
+Together: **presentation → meaning → terminology → layout**, then optional **postprocess** recipes — while each binary stays small and independent.

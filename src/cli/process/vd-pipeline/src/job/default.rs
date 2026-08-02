@@ -1,7 +1,7 @@
 //! CLI flags → default Job.
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use super::schema::{
     ArgValue, Capability, Job, JobContext, JobInput, JobOutput, Step, TranscribeEngine,
@@ -15,6 +15,8 @@ pub struct DefaultJobArgs {
     pub model: Option<String>,
     pub device: Option<String>,
     pub flash: bool,
+    /// Optional preprocess `speed` factor (e.g. 2.0–2.2). Remapped via TimeMap.
+    pub speed: Option<f64>,
     pub docs: Option<PathBuf>,
     pub output_dir: Option<PathBuf>,
     pub working_dir: Option<PathBuf>,
@@ -22,18 +24,53 @@ pub struct DefaultJobArgs {
     pub overwrite: bool,
 }
 
+/// True when the path looks like a video container (preprocess should extract audio).
+pub fn is_video_path(path: &Path) -> bool {
+    matches!(
+        path.extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_ascii_lowercase())
+            .as_deref(),
+        Some(
+            "mp4" | "mkv" | "mov" | "webm" | "avi" | "m4v" | "mpeg" | "mpg" | "flv" | "wmv"
+        )
+    )
+}
+
+/// Default ASR preprocess filter chain. Video inputs get `extract-audio` first (ffmpeg).
+pub fn default_preprocess_filters(input: &Path, speed: Option<f64>) -> (String, Vec<ArgValue>) {
+    let video = is_video_path(input);
+    let mut filters = Vec::new();
+    if video {
+        filters.push(filter_type("extract-audio", &[]));
+    }
+    filters.push(filter_type(
+        "resample",
+        &[("rate", ArgValue::Number(16_000.0))],
+    ));
+    filters.push(filter_type("mono", &[]));
+    if let Some(factor) = speed {
+        filters.push(filter_type(
+            "speed",
+            &[("factor", ArgValue::Number(factor))],
+        ));
+    }
+    filters.push(filter_type("trim-silence", &[]));
+    filters.push(filter_type("normalize", &[]));
+    let provider = if video {
+        "ffmpeg".into()
+    } else {
+        "stub".into()
+    };
+    (provider, filters)
+}
+
 pub fn default_job(args: &DefaultJobArgs) -> Job {
+    let (provider, filters) = default_preprocess_filters(&args.audio, args.speed);
+
     let mut preprocess_opts = BTreeMap::new();
-    preprocess_opts.insert("provider".into(), ArgValue::String("stub".into()));
-    preprocess_opts.insert(
-        "filters".into(),
-        ArgValue::List(vec![
-            filter_type("resample", &[("rate", ArgValue::Number(16_000.0))]),
-            filter_type("mono", &[]),
-            filter_type("trim-silence", &[]),
-            filter_type("normalize", &[]),
-        ]),
-    );
+    preprocess_opts.insert("provider".into(), ArgValue::String(provider));
+    preprocess_opts.insert("filters".into(), ArgValue::List(filters));
     if args.overwrite {
         preprocess_opts.insert("overwrite".into(), ArgValue::Bool(true));
     }
@@ -46,8 +83,9 @@ pub fn default_job(args: &DefaultJobArgs) -> Job {
     if let Some(m) = &args.model {
         options.insert("model".into(), ArgValue::String(m.clone()));
     }
-    if let Some(d) = &args.device {
-        options.insert("device".into(), ArgValue::String(d.clone()));
+    let device = args.device.clone().or_else(default_transcribe_device);
+    if let Some(d) = device {
+        options.insert("device".into(), ArgValue::String(d));
     }
     if args.flash {
         options.insert("flash".into(), ArgValue::Bool(true));
@@ -98,6 +136,13 @@ pub fn default_job(args: &DefaultJobArgs) -> Job {
         }
         .into(),
     );
+    steps.push(
+        Step {
+            options: overwrite_opts(args.overwrite),
+            ..Step::new(Capability::FixLayout)
+        }
+        .into(),
+    );
 
     Job {
         version: 1,
@@ -117,6 +162,18 @@ pub fn default_job(args: &DefaultJobArgs) -> Job {
         max_parallel: None,
         resources: BTreeMap::new(),
         steps,
+    }
+}
+
+/// On macOS prefer Metal for ASR when the caller did not set `device`.
+fn default_transcribe_device() -> Option<String> {
+    #[cfg(target_os = "macos")]
+    {
+        Some("metal".into())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        None
     }
 }
 

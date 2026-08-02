@@ -18,6 +18,7 @@ fn default_without_docs_still_invokes_prepare_context() {
         model: None,
         device: None,
         flash: false,
+        speed: None,
         docs: None,
         output_dir: None,
         working_dir: Some(PathBuf::from("/work")),
@@ -33,6 +34,7 @@ fn default_without_docs_still_invokes_prepare_context() {
     let exec = Executor {
         binder: &binder,
         progress: ProgressMode::None,
+        progress_snapshot: None,
     };
     exec.run(&resolved).unwrap();
     assert!(binder
@@ -52,6 +54,7 @@ fn default_with_docs_invokes_prepare_context() {
         model: None,
         device: None,
         flash: false,
+        speed: None,
         docs: Some(PathBuf::from("docs")),
         output_dir: None,
         working_dir: Some(PathBuf::from("/work")),
@@ -67,6 +70,7 @@ fn default_with_docs_invokes_prepare_context() {
     let exec = Executor {
         binder: &binder,
         progress: ProgressMode::None,
+        progress_snapshot: None,
     };
     exec.run(&resolved).unwrap();
     assert!(binder

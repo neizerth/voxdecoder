@@ -5,7 +5,9 @@
 
 use serde::Serialize;
 use std::cell::Cell;
+use std::fs;
 use std::io::{self, IsTerminal, Write};
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProgressMode {
@@ -126,6 +128,8 @@ impl<'a> ProgressEvent<'a> {
 pub struct Progress {
     mode: ProgressMode,
     phase_open: Cell<bool>,
+    /// Optional atomic snapshot file (`{"percent":N,"phase":"…"}`) for Runtime/agents.
+    snapshot: Option<PathBuf>,
 }
 
 impl Progress {
@@ -133,6 +137,16 @@ impl Progress {
         Self {
             mode,
             phase_open: Cell::new(false),
+            snapshot: None,
+        }
+    }
+
+    /// Also write a small JSON snapshot on each event (for `get_job` / live UI).
+    pub fn with_snapshot(mode: ProgressMode, path: impl Into<PathBuf>) -> Self {
+        Self {
+            mode,
+            phase_open: Cell::new(false),
+            snapshot: Some(path.into()),
         }
     }
 
@@ -143,7 +157,31 @@ impl Progress {
         }
     }
 
+    fn write_snapshot(&self, event: &ProgressEvent<'_>) {
+        let Some(path) = &self.snapshot else {
+            return;
+        };
+        let (percent, phase): (Option<u8>, Option<&str>) = match event {
+            ProgressEvent::Start { .. } => (Some(0), Some("start")),
+            ProgressEvent::Phase { phase, percent, .. } => (*percent, Some(*phase)),
+            ProgressEvent::Done { .. } => (Some(100), Some("done")),
+            ProgressEvent::Error { .. } => (None, Some("error")),
+        };
+        let body = serde_json::json!({
+            "percent": percent,
+            "phase": phase,
+        });
+        let Ok(raw) = serde_json::to_vec_pretty(&body) else {
+            return;
+        };
+        let tmp = path.with_extension("json.tmp");
+        if fs::write(&tmp, raw).is_ok() {
+            let _ = fs::rename(&tmp, path);
+        }
+    }
+
     pub fn emit(&self, event: &ProgressEvent<'_>) {
+        self.write_snapshot(event);
         match self.mode {
             ProgressMode::None => {}
             ProgressMode::Json => {

@@ -9,6 +9,9 @@ use directories::ProjectDirs;
 /// Default project assets directory name (dot-prefixed so it stays out of the way).
 pub const DEFAULT_PROJECT_DIR_NAME: &str = ".voxdecoder";
 
+/// Subdirectory under `.voxdecoder/` for Job intermediates (prepared media, transcripts, fixed text).
+pub const DEFAULT_WORK_SUBDIR: &str = "work";
+
 /// Process-env / project-env key for overriding the project assets directory.
 pub const ENV_PROJECT_DIR: &str = "VD_PROJECT_DIR";
 
@@ -46,6 +49,32 @@ pub fn project_dir(start: &Path) -> PathBuf {
     env::current_dir()
         .unwrap_or_else(|_| PathBuf::from("."))
         .join(DEFAULT_PROJECT_DIR_NAME)
+}
+
+/// Job intermediates for an input file: `{input_parent}/.voxdecoder/work`.
+///
+/// Keeps prepared media / transcripts / `.fixed` outputs out of the source folder.
+/// Project assets (`md/`, `terms.yml`) stay in `.voxdecoder/` itself.
+///
+/// If `input` is already under `.voxdecoder/work/`, returns that work directory
+/// (does not nest another `.voxdecoder/work`).
+pub fn work_dir_for_input(input: &Path) -> PathBuf {
+    let parent = input.parent().unwrap_or_else(|| Path::new("."));
+    if is_work_dir(parent) {
+        return parent.to_path_buf();
+    }
+    parent
+        .join(DEFAULT_PROJECT_DIR_NAME)
+        .join(DEFAULT_WORK_SUBDIR)
+}
+
+fn is_work_dir(path: &Path) -> bool {
+    path.file_name().and_then(|s| s.to_str()) == Some(DEFAULT_WORK_SUBDIR)
+        && path
+            .parent()
+            .and_then(|p| p.file_name())
+            .and_then(|s| s.to_str())
+            == Some(DEFAULT_PROJECT_DIR_NAME)
 }
 
 /// Like [`project_dir`], but only when the directory already exists.
@@ -155,16 +184,28 @@ mod tests {
     }
 
     #[test]
-    fn process_env_wins() {
-        let _g = ENV_LOCK.lock().unwrap();
+    fn work_dir_is_under_dot_voxdecoder() {
         let dir = tempfile::TempDir::new().unwrap();
-        let via_env = dir.path().join("from-env");
-        fs::create_dir(&via_env).unwrap();
-        env::set_var(ENV_PROJECT_DIR, &via_env);
-        let input = dir.path().join("a.txt");
+        let input = dir.path().join("meeting.ogg");
         fs::write(&input, "x").unwrap();
-        let got = project_dir_if_present(&input);
-        env::remove_var(ENV_PROJECT_DIR);
-        assert_eq!(got.as_deref(), Some(via_env.as_path()));
+        assert_eq!(
+            work_dir_for_input(&input),
+            dir.path()
+                .join(DEFAULT_PROJECT_DIR_NAME)
+                .join(DEFAULT_WORK_SUBDIR)
+        );
+    }
+
+    #[test]
+    fn work_dir_does_not_nest() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let work = dir
+            .path()
+            .join(DEFAULT_PROJECT_DIR_NAME)
+            .join(DEFAULT_WORK_SUBDIR);
+        fs::create_dir_all(&work).unwrap();
+        let input = work.join("meeting.prepared.mp3");
+        fs::write(&input, "x").unwrap();
+        assert_eq!(work_dir_for_input(&input), work);
     }
 }

@@ -1,5 +1,8 @@
 //! In-process execution engine (store + scheduler + workers).
 
+mod observe;
+mod transports;
+
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
@@ -10,7 +13,7 @@ use std::thread;
 use std::time::Duration;
 
 use vd_pipeline::progress::ProgressMode;
-use vd_pipeline::{resolve_job, Executor, SubprocessBinder};
+use vd_pipeline::{resolve_job, Executor};
 
 use crate::config::ServerConfig;
 use crate::schedule::{job_resource_need, pick_job, ResourceManager};
@@ -18,6 +21,10 @@ use crate::store::{
     now_rfc3339, ArtifactEntry, EventRecord, JobRecord, JobStatus, JobStore, NodeStatus, Priority,
     RestartPolicy, StoreError,
 };
+
+pub use transports::{TransportEndpoint, TransportStatus};
+
+use observe::ObservingBinder;
 
 #[derive(Debug, thiserror::Error)]
 pub enum EngineError {
@@ -45,6 +52,7 @@ struct Inner {
     /// job_id → leased resources
     leases: HashMap<String, BTreeMap<String, u32>>,
     stop: Arc<AtomicBool>,
+    transports: TransportStatus,
 }
 
 #[derive(Clone)]
@@ -67,6 +75,7 @@ impl Engine {
                 running: HashSet::new(),
                 leases: HashMap::new(),
                 stop: Arc::clone(&stop),
+                transports: TransportStatus::default(),
             })),
         };
 
@@ -79,6 +88,19 @@ impl Engine {
         });
 
         Ok(engine)
+    }
+
+    pub fn set_transports(&self, transports: TransportStatus) {
+        if let Ok(mut inner) = self.inner.lock() {
+            inner.transports = transports;
+        }
+    }
+
+    pub fn transports(&self) -> TransportStatus {
+        self.inner
+            .lock()
+            .map(|i| i.transports.clone())
+            .unwrap_or_default()
     }
 
     pub fn stop(&self) {
@@ -127,7 +149,9 @@ impl Engine {
             .inner
             .lock()
             .map_err(|e| EngineError::Other(e.to_string()))?;
-        Ok(inner.store.load(id)?)
+        let mut rec = inner.store.load(id)?;
+        merge_progress_snapshot(&inner.store.job_dir(id), &mut rec);
+        Ok(rec)
     }
 
     pub fn list(&self) -> Result<Vec<JobRecord>, EngineError> {
@@ -135,7 +159,11 @@ impl Engine {
             .inner
             .lock()
             .map_err(|e| EngineError::Other(e.to_string()))?;
-        Ok(inner.store.list()?)
+        let mut jobs = inner.store.list()?;
+        for rec in &mut jobs {
+            merge_progress_snapshot(&inner.store.job_dir(&rec.id), rec);
+        }
+        Ok(jobs)
     }
 
     pub fn events(&self, id: &str) -> Result<Vec<crate::store::EventRecord>, EngineError> {
@@ -144,6 +172,49 @@ impl Engine {
             .lock()
             .map_err(|e| EngineError::Other(e.to_string()))?;
         Ok(inner.store.read_events(id)?)
+    }
+
+    pub fn append_event(&self, id: &str, event: EventRecord) -> Result<(), EngineError> {
+        let inner = self
+            .inner
+            .lock()
+            .map_err(|e| EngineError::Other(e.to_string()))?;
+        Ok(inner.store.append_event(id, event)?)
+    }
+
+    /// Pick a Ready node with matching capability, mark Running, return node id.
+    pub fn mark_node_started(&self, job_id: &str, capability: &str) -> Option<String> {
+        let inner = self.inner.lock().ok()?;
+        let mut rec = inner.store.load(job_id).ok()?;
+        let node = rec.nodes.iter_mut().find(|n| {
+            n.capability == capability && matches!(n.status, NodeStatus::Ready | NodeStatus::Pending)
+        })?;
+        node.status = NodeStatus::Running;
+        node.started_at = Some(now_rfc3339());
+        let id = node.id.clone();
+        let _ = inner.store.save(&rec);
+        Some(id)
+    }
+
+    pub fn mark_node_finished(
+        &self,
+        job_id: &str,
+        node_id: &str,
+        status: NodeStatus,
+        error: Option<String>,
+    ) -> Result<(), EngineError> {
+        let inner = self
+            .inner
+            .lock()
+            .map_err(|e| EngineError::Other(e.to_string()))?;
+        let mut rec = inner.store.load(job_id)?;
+        if let Some(n) = rec.nodes.iter_mut().find(|n| n.id == node_id) {
+            n.status = status;
+            n.finished_at = Some(now_rfc3339());
+            n.error = error;
+        }
+        inner.store.save(&rec)?;
+        Ok(())
     }
 
     pub fn artifacts(&self, id: &str) -> Result<Vec<ArtifactEntry>, EngineError> {
@@ -211,6 +282,16 @@ impl Engine {
         self.inner.lock().map(|i| i.cfg.workers).unwrap_or(1)
     }
 
+    /// Shared Operator health payload (all transports).
+    pub fn health_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "workers_busy": self.workers_busy(),
+            "workers": self.workers_total(),
+            "resources": self.resources_snapshot(),
+            "data_dir": self.data_dir(),
+        })
+    }
+
     fn tick(&self) -> Result<(), EngineError> {
         let (job_id, job, lease, job_dir) = {
             let mut inner = self
@@ -244,13 +325,15 @@ impl Engine {
             }
             rec.status = JobStatus::Running;
             rec.started_at = Some(now_rfc3339());
+            rec.progress = Some(0);
+            rec.phase = Some("starting".into());
+            // Leave nodes Ready — ObservingBinder advances them per leaf.
             for n in &mut rec.nodes {
                 if matches!(
                     n.status,
-                    NodeStatus::Ready | NodeStatus::WaitingDependencies | NodeStatus::Pending
+                    NodeStatus::WaitingDependencies | NodeStatus::Pending
                 ) {
-                    n.status = NodeStatus::Running;
-                    n.started_at = rec.started_at.clone();
+                    n.status = NodeStatus::Ready;
                 }
             }
             inner.store.save(&rec)?;
@@ -272,7 +355,7 @@ impl Engine {
 
         let engine = self.clone();
         thread::spawn(move || {
-            let result = run_job(&job, &job_dir);
+            let result = run_job(&engine, &job_id, &job, &job_dir);
             let _ = engine.finish_job(&job_id, result, lease);
         });
         Ok(())
@@ -299,6 +382,8 @@ impl Engine {
             Ok(out) => {
                 rec.status = JobStatus::Completed;
                 rec.exit_code = Some(0);
+                rec.progress = Some(100);
+                rec.phase = Some("done".into());
                 for n in &mut rec.nodes {
                     if !n.status.is_terminal() || matches!(n.status, NodeStatus::Running) {
                         n.status = NodeStatus::Completed;
@@ -312,13 +397,25 @@ impl Engine {
                     producer: Some("executor".into()),
                 }];
                 inner.store.write_artifacts(id, &arts)?;
+                let msg = Some(out.display().to_string());
+                inner.store.append_event(
+                    id,
+                    EventRecord {
+                        ts: finished.clone(),
+                        kind: "JobFinished".into(),
+                        node_id: None,
+                        message: msg.clone(),
+                        fields: Default::default(),
+                    },
+                )?;
+                // ADR 0007 alias for HTTP/gRPC SSE clients.
                 inner.store.append_event(
                     id,
                     EventRecord {
                         ts: finished,
-                        kind: "JobFinished".into(),
+                        kind: "JobCompleted".into(),
                         node_id: None,
-                        message: Some(out.display().to_string()),
+                        message: msg,
                         fields: Default::default(),
                     },
                 )?;
@@ -327,8 +424,9 @@ impl Engine {
                 rec.status = JobStatus::Failed;
                 rec.exit_code = Some(1);
                 rec.error = Some(err.clone());
+                rec.phase = Some("error".into());
                 for n in &mut rec.nodes {
-                    if matches!(n.status, NodeStatus::Running) {
+                    if matches!(n.status, NodeStatus::Running | NodeStatus::Ready) {
                         n.status = NodeStatus::Failed;
                         n.finished_at = Some(finished.clone());
                         n.error = Some(err.clone());
@@ -352,11 +450,18 @@ impl Engine {
     }
 }
 
-fn run_job(job: &vd_pipeline::Job, job_dir: &Path) -> Result<PathBuf, String> {
+fn run_job(
+    engine: &Engine,
+    job_id: &str,
+    job: &vd_pipeline::Job,
+    job_dir: &Path,
+) -> Result<PathBuf, String> {
     let resolved = resolve_job(job.clone()).map_err(|e| e.to_string())?;
+    let binder = ObservingBinder::new(engine.clone(), job_id.to_string());
     let executor = Executor {
-        binder: SubprocessBinder,
+        binder: &binder,
         progress: ProgressMode::None,
+        progress_snapshot: Some(job_dir.join("progress.json")),
     };
     match executor.run(&resolved) {
         Ok(out) => {
@@ -367,6 +472,32 @@ fn run_job(job: &vd_pipeline::Job, job_dir: &Path) -> Result<PathBuf, String> {
             let _ = write_metrics(job_dir, &fail.report);
             Err(fail.to_string())
         }
+    }
+}
+
+/// Overlay live Executor snapshot onto the Job record for `job.status` / `get_job`.
+fn merge_progress_snapshot(job_dir: &Path, rec: &mut JobRecord) {
+    if matches!(
+        rec.status,
+        JobStatus::Completed | JobStatus::Failed | JobStatus::Cancelled
+    ) {
+        if rec.progress.is_none() && matches!(rec.status, JobStatus::Completed) {
+            rec.progress = Some(100);
+        }
+        return;
+    }
+    let path = job_dir.join("progress.json");
+    let Ok(body) = fs::read_to_string(&path) else {
+        return;
+    };
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(&body) else {
+        return;
+    };
+    if let Some(p) = v.get("percent").and_then(|x| x.as_u64()) {
+        rec.progress = Some(p.min(100) as u8);
+    }
+    if let Some(ph) = v.get("phase").and_then(|x| x.as_str()) {
+        rec.phase = Some(ph.to_string());
     }
 }
 

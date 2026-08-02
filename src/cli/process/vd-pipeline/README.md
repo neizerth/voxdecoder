@@ -13,6 +13,18 @@ Workspace member: `src/cli/process/vd-pipeline`.
 **Progress** (`vd-progress`): live UI on stderr — no timings.  
 **Report** (`--report` / `--report-dir`): durable `ExecutionReport` JSON with per-step `duration_ms`.
 
+## Artifact placement
+
+By default, Job intermediates land next to the source under:
+
+```text
+{source_dir}/.voxdecoder/work/
+```
+
+Examples: `*.prepared.*`, transcripts, `.fixed.*`, diarization JSON, TimeMap sidecars.  
+Project knowledge assets stay in `{source_dir}/.voxdecoder/` (`md/`, `terms.yml`) — not under `work/`.  
+Override with Job `output.dir` / CLI `-d`.
+
 ## Core rule
 
 ```text
@@ -62,6 +74,7 @@ The binary is still named `vd-pipeline` for familiarity; the product is the **Ex
 | `fix-casing` | Presentation | `vd-fix-casing` |
 | `fix-asr` | Wording / ASR repair | `vd-fix-asr` |
 | `fix-terms` | Canonical terminology | `vd-fix-terms` |
+| `fix-layout` | Paragraph / block layout | `vd-fix-layout` |
 | `diarize` | Who spoke when | [`vd-diarize`](../vd-diarize/) |
 | `meeting-merge` | Build Meeting Artifact from transcripts + timeline | stub binder in [`vd-pipeline`](.) (real merge later) |
 | `postprocess` | Derived artifacts via **user recipes** + execution provider | [`vd-postprocess`](../vd-postprocess/) (default `stub`; LLM/process backends TBD) |

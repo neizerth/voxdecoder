@@ -19,6 +19,7 @@ run_all() {
   cargo test -p vd-fix-casing
   cargo test -p vd-fix-asr
   cargo test -p vd-fix-terms
+  cargo test -p vd-fix-layout
 }
 
 case "${1:-all}" in
@@ -67,8 +68,11 @@ case "${1:-all}" in
   vd-fix-terms)
     cargo test -p vd-fix-terms "${@:2}"
     ;;
+  vd-fix-layout)
+    cargo test -p vd-fix-layout "${@:2}"
+    ;;
   *)
-    echo "usage: $0 [all|vd-gigaam|crates|vd-assets|vd-diarize|vd-meeting|vd-preprocess|vd-postprocess|vd-pipeline|vd-srv|vd-mcp|vdctl|vd-fix-casing|vd-fix-asr|vd-fix-terms] [cargo test args...]" >&2
+    echo "usage: $0 [all|vd-gigaam|crates|vd-assets|vd-diarize|vd-meeting|vd-preprocess|vd-postprocess|vd-pipeline|vd-srv|vd-mcp|vdctl|vd-fix-casing|vd-fix-asr|vd-fix-terms|vd-fix-layout] [cargo test args...]" >&2
     exit 2
     ;;
 esac

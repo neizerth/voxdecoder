@@ -19,8 +19,21 @@ pub fn up(platform: &Platform, config: &PlatformConfig) -> Result<(), Error> {
         eprintln!("Runtime already running");
         return Ok(());
     }
+    start_runtime(platform, config)
+}
 
-    resolve::ensure_runtime_built(platform, config.auto_build)?;
+/// Ensure Runtime is ready: no-op if already running, otherwise start it.
+pub fn ensure(platform: &Platform, config: &PlatformConfig) -> Result<(), Error> {
+    if client::reachable(platform) {
+        eprintln!("Runtime ready");
+        return Ok(());
+    }
+    eprintln!("Runtime not running — starting…");
+    start_runtime(platform, config)
+}
+
+fn start_runtime(platform: &Platform, config: &PlatformConfig) -> Result<(), Error> {
+    resolve::ensure_runtime_built(platform, config.auto_build, platform.build)?;
     let bin = platform.vd_srv();
     if !bin.is_file() {
         return Err(Error::Message(format!(
@@ -49,6 +62,9 @@ pub fn up(platform: &Platform, config: &PlatformConfig) -> Result<(), Error> {
         .stderr(Stdio::from(log_err));
     if let Some(tcp) = &platform.tcp {
         cmd.arg("--tcp").arg(tcp);
+    }
+    if let Some(http) = &platform.http {
+        cmd.arg("--http").arg(http);
     }
 
     let child = cmd
@@ -96,14 +112,17 @@ pub fn status(platform: &Platform, json: bool) -> Result<(), Error> {
     let pid = read_pid(&paths::runtime_pid_path(&platform.data_dir));
     let value = json!({
         "mode": platform.mode.as_str(),
+        "build": platform.build.as_str(),
         "running": running,
         "pid": pid,
         "socket": platform.socket.display().to_string(),
         "data_dir": platform.data_dir.display().to_string(),
+        "bin_dir": platform.bin_dir.display().to_string(),
         "bin": platform.vd_srv().display().to_string(),
     });
     crate::output::emit_value(json, value, |v| {
         println!("Mode        {}", v["mode"].as_str().unwrap_or(""));
+        println!("Build       {}", v["build"].as_str().unwrap_or(""));
         println!(
             "Runtime     {}",
             if running { "Running" } else { "Stopped" }
@@ -113,6 +132,7 @@ pub fn status(platform: &Platform, json: bool) -> Result<(), Error> {
         }
         println!("Socket      {}", platform.socket.display());
         println!("Data        {}", platform.data_dir.display());
+        println!("Bin         {}", platform.bin_dir.display());
     })
 }
 

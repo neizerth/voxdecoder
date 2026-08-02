@@ -88,25 +88,26 @@ pub fn handle(engine: &Engine, req: Request) -> Option<Response> {
 }
 
 fn health(engine: &Engine) -> Value {
-    json!({
-        "workers_busy": engine.workers_busy(),
-        "workers": engine.workers_total(),
-        "resources": engine.resources_snapshot(),
-        "data_dir": engine.data_dir(),
-    })
+    engine.health_json()
 }
 
 fn server_info(engine: &Engine) -> Value {
+    let transports = engine.transports();
     json!({
         "name": "vd-srv",
         "version": env!("CARGO_PKG_VERSION"),
         "api_version": "0.1",
+        "runtime": {
+            "version": env!("CARGO_PKG_VERSION"),
+            "api_version": "0.1",
+        },
         "planners": ["audio", "meeting"],
         "capabilities": ["preprocess", "transcribe", "prepare_context", "fix_casing", "fix_asr", "fix_terms", "diarize", "meeting"],
         "models": [],
         "runners": [],
         "resource_classes": [],
         "health": health(engine),
+        "transports": transports,
     })
 }
 

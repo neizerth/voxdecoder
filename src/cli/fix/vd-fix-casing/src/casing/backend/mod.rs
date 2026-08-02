@@ -36,30 +36,45 @@ fn effective_language(language: Language) -> Language {
     }
 }
 
-/// Raw ASR: little punctuation, mostly lowercase, no quotes yet.
+/// Raw ASR: little/no punctuation, mostly lowercase, no quotes/dashes yet.
+///
+/// Already-punctuated transcripts (GigaAM and similar) must take the
+/// `normalize` path — `restore_asr` strips affix punctuation and re-predicts
+/// only a small trail set, which destroys commas/periods/dashes.
 fn looks_like_raw_asr(text: &str) -> bool {
-    if text
-        .chars()
-        .any(|ch| matches!(ch, '"' | '«' | '»' | '“' | '”' | '„'))
-    {
+    if text.chars().any(|ch| {
+        matches!(
+            ch,
+            '"' | '«' | '»' | '“' | '”' | '„' | '—' | '–'
+        )
+    }) {
         return false;
     }
 
     let mut letters = 0usize;
     let mut upper = 0usize;
-    let mut punct = 0usize;
+    let mut sentence_ends = 0usize;
+    let mut other_punct = 0usize;
     for ch in text.chars() {
         if ch.is_alphabetic() {
             letters += 1;
             if ch.is_uppercase() {
                 upper += 1;
             }
-        } else if matches!(ch, '.' | '!' | '?' | ',' | ';' | ':' | '…') {
-            punct += 1;
+        } else if matches!(ch, '.' | '!' | '?' | '…') {
+            sentence_ends += 1;
+        } else if matches!(ch, ',' | ';' | ':') {
+            other_punct += 1;
         }
     }
+    let punct = sentence_ends + other_punct;
     if letters < 8 {
-        return !text.ends_with(['.', '!', '?', '…']);
+        return sentence_ends == 0;
     }
-    punct * 25 < letters && upper * 8 < letters
+    // Multiple sentences or several commas → already punctuated prose.
+    if sentence_ends >= 2 || other_punct >= 2 {
+        return false;
+    }
+    // Sparse punct + mostly lowercase → ASR restore path.
+    punct * 20 < letters && upper * 8 < letters
 }

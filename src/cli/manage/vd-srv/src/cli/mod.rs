@@ -55,6 +55,10 @@ pub struct ServeArgs {
     pub data_dir: Option<PathBuf>,
     pub socket: Option<PathBuf>,
     pub tcp: Option<String>,
+    /// Optional HTTP transport bind (`127.0.0.1:7701`). Enables ADR 0006 HTTP when set.
+    pub http: Option<String>,
+    /// Optional gRPC transport bind (`127.0.0.1:7702`). Enables ADR 0007 gRPC when set.
+    pub grpc: Option<String>,
     pub transport: Option<api::TransportKind>,
     pub workers: Option<u32>,
     pub foreground: bool,
@@ -140,6 +144,12 @@ enum RootCommand {
         /// Optional TCP listen address (also enables a secondary listener when primary is IPC)
         #[arg(long = "tcp")]
         tcp: Option<String>,
+        /// Optional HTTP transport bind (ADR 0006); e.g. 127.0.0.1:7701
+        #[arg(long = "http")]
+        http: Option<String>,
+        /// Optional gRPC transport bind (ADR 0007); e.g. 127.0.0.1:7702
+        #[arg(long = "grpc")]
+        grpc: Option<String>,
         /// auto | uds | pipe | tcp
         #[arg(long = "transport")]
         transport: Option<String>,
@@ -236,6 +246,8 @@ where
             data_dir,
             socket,
             tcp,
+            http,
+            grpc,
             transport,
             workers,
             foreground,
@@ -251,6 +263,8 @@ where
                 data_dir,
                 socket,
                 tcp,
+                http,
+                grpc,
                 transport,
                 workers,
                 foreground,
@@ -549,6 +563,24 @@ fn config_cmd(args: ConfigArgs) -> Result<(), CliError> {
                     .map(|p| p.display().to_string())
                     .unwrap_or_default(),
                 "tcp" => cfg.raw.tcp.clone().unwrap_or_default(),
+                "http" => {
+                    if cfg.raw.http.enabled {
+                        cfg.raw.http.bind.clone()
+                    } else {
+                        String::new()
+                    }
+                }
+                "http.enabled" => cfg.raw.http.enabled.to_string(),
+                "http.bind" => cfg.raw.http.bind.clone(),
+                "grpc" => {
+                    if cfg.raw.grpc.enabled {
+                        cfg.raw.grpc.bind.clone()
+                    } else {
+                        String::new()
+                    }
+                }
+                "grpc.enabled" => cfg.raw.grpc.enabled.to_string(),
+                "grpc.bind" => cfg.raw.grpc.bind.clone(),
                 "transport" => format!("{:?}", cfg.raw.transport).to_ascii_lowercase(),
                 other => {
                     return Err(CliError::usage(format!("unknown key: {other}")));
@@ -574,6 +606,28 @@ fn config_cmd(args: ConfigArgs) -> Result<(), CliError> {
                 "data_dir" => cfg.raw.data_dir = Some(PathBuf::from(value)),
                 "socket" => cfg.raw.socket = Some(PathBuf::from(value)),
                 "tcp" => cfg.raw.tcp = Some(value),
+                "http" => {
+                    cfg.raw.http.enabled = true;
+                    cfg.raw.http.bind = value;
+                }
+                "http.enabled" => {
+                    cfg.raw.http.enabled = matches!(
+                        value.to_ascii_lowercase().as_str(),
+                        "1" | "true" | "yes" | "on"
+                    );
+                }
+                "http.bind" => cfg.raw.http.bind = value,
+                "grpc" => {
+                    cfg.raw.grpc.enabled = true;
+                    cfg.raw.grpc.bind = value;
+                }
+                "grpc.enabled" => {
+                    cfg.raw.grpc.enabled = matches!(
+                        value.to_ascii_lowercase().as_str(),
+                        "1" | "true" | "yes" | "on"
+                    );
+                }
+                "grpc.bind" => cfg.raw.grpc.bind = value,
                 "transport" => {
                     cfg.raw.transport = api::TransportKind::parse(&value)
                         .ok_or_else(|| CliError::usage(format!("unknown transport: {value}")))?;

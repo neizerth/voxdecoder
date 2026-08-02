@@ -122,6 +122,12 @@ Typical uses:
 
 The Job protocol must remain identical.
 
+**HTTP transport (ADR 0006):** optional separate listener (`--http` / `[http]`). Disabled by default. REST, OpenAPI (`/openapi.json`), and live SSE map to the same Planning / Execution / Operator methods as JSON-RPC — not a second API. See [ADR 0006](../../../../docs/adr/0006-http-transport-for-runtime-api.md).
+
+**gRPC transport (ADR 0007):** optional listener (`--grpc` / `[grpc]`, default bind `127.0.0.1:7702`). Disabled by default. Services: `PlanningService`, `ExecutionService`, `OperatorService` (includes **Health**), `EventService` (WatchJob stream). See [ADR 0007](../../../../docs/adr/0007-runtime-api-transports.md).
+
+**Transport umbrella (ADR 0007):** Runtime API is transport-independent; optional HTTP and gRPC expose identical Planning / Execution / Operator / Event semantics. Health is required on every transport. MCP is not a Runtime transport (`vd-mcp` is a client).
+
 ---
 
 ## JSON-RPC

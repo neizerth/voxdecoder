@@ -84,12 +84,18 @@ pub fn env_cmd(platform: &Platform, export: bool) -> Result<(), Error> {
         if let Some(tcp) = &platform.tcp {
             println!("VD_TCP={tcp}");
         }
+        if let Some(http) = &platform.http {
+            println!("VD_HTTP={http}");
+        }
     } else {
         for (k, v) in pairs {
             println!("{k:<16} {v}");
         }
         if let Some(tcp) = &platform.tcp {
             println!("{:<16} {tcp}", "VD_TCP");
+        }
+        if let Some(http) = &platform.http {
+            println!("{:<16} {http}", "VD_HTTP");
         }
     }
     Ok(())
@@ -111,6 +117,7 @@ pub fn discover(platform: &Platform, json: bool) -> Result<(), Error> {
             "bin": platform.vd_mcp().display().to_string(),
         },
         "agents": agents,
+        "applications": agents,
         "skills": skills,
         "models": [],
         "assets": [],
@@ -121,7 +128,6 @@ pub fn discover(platform: &Platform, json: bool) -> Result<(), Error> {
         println!("Applications");
         println!();
         crate::agents::print_agents_human(&crate::agents::discover_agents());
-        println!();
         println!("Skills");
         println!();
         let report = crate::skills::discover(platform);

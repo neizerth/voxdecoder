@@ -7,9 +7,12 @@ use directories::ProjectDirs;
 pub const ENV_CONFIG: &str = "VDCTL_CONFIG";
 pub const ENV_TRANSPORT: &str = "VD_TRANSPORT";
 pub const ENV_TCP: &str = "VD_TCP";
+pub const ENV_HTTP: &str = "VD_HTTP";
 pub const ENV_SOCKET: &str = "VD_SOCKET";
 pub const ENV_HOME: &str = "VD_HOME";
 pub const ENV_MODELS_DIR: &str = "VD_MODELS_DIR";
+/// Workspace build profile override: `debug`|`dev`|`release`|`prod`.
+pub const ENV_BUILD: &str = "VD_BUILD";
 
 const APP: &str = "voxdecoder";
 

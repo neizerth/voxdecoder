@@ -39,6 +39,7 @@ fn artifact_id_wires_path() {
     let exec = Executor {
         binder: &binder,
         progress: ProgressMode::None,
+        progress_snapshot: None,
     };
     exec.run(&resolved).unwrap();
     let calls = binder.calls.lock().unwrap();

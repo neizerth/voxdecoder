@@ -27,6 +27,9 @@ fn config_set_roundtrip() {
     config::set(&mut cfg, "auto_build", "never").unwrap();
     assert_eq!(cfg.auto_build, AutoBuild::Never);
     assert_eq!(config::get(&cfg, "auto_build").as_deref(), Some("never"));
+    config::set(&mut cfg, "build", "prod").unwrap();
+    assert_eq!(cfg.build, vdctl::config::BuildProfile::Release);
+    assert_eq!(config::get(&cfg, "build").as_deref(), Some("release"));
 }
 
 #[test]
@@ -45,18 +48,22 @@ fn detects_workspace_mode_from_crate() {
 fn discover_agents_returns_known_ids() {
     let agents = vdctl::agents::discover_agents();
     let ids: Vec<_> = agents.iter().map(|a| a.id.as_str()).collect();
-    assert!(ids.contains(&"claude"));
+    assert!(ids.contains(&"claude-desktop"));
+    assert!(ids.contains(&"claude-code"));
     assert!(ids.contains(&"cursor"));
     assert!(ids.contains(&"chatgpt"));
     assert!(ids.contains(&"vscode"));
     assert!(ids.contains(&"codex"));
+    let code = agents.iter().find(|a| a.id == "claude-code").unwrap();
+    assert_eq!(code.kind, vdctl::agents::AppKind::Cli);
 }
 
 #[test]
 fn builtin_agent_adapters_parse() {
     let file = vdctl::agents::builtin_adapters();
     assert!(!file.agent.is_empty());
-    assert!(file.agent.iter().any(|a| a.id == "claude"));
+    assert!(file.agent.iter().any(|a| a.id == "claude-desktop"));
+    assert!(file.agent.iter().any(|a| a.id == "claude-code"));
 }
 
 #[test]

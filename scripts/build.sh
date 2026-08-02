@@ -33,6 +33,7 @@ packages=(
   -p vd-fix-casing
   -p vd-fix-asr
   -p vd-fix-terms
+  -p vd-fix-layout
 )
 
 extra=()

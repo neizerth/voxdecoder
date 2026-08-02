@@ -1,7 +1,8 @@
-//! One transcript branch: transcribe → fix-casing → fix-asr → fix-terms.
+//! One transcript branch: (preprocess?) → transcribe → fix-casing → fix-asr → fix-terms.
 
 use vd_pipeline::{Capability, Step};
 
+use super::preprocess::media_input_ref;
 use super::{overwrite_opt, transcribe_options};
 use crate::model::BuildOptions;
 use crate::planner::normalize::ResolvedInput;
@@ -14,12 +15,12 @@ pub fn append_branch(
     options: &BuildOptions,
 ) -> Result<String, PlanError> {
     let bid = &src.branch_id;
-    let path = src.path.display().to_string();
+    let media = media_input_ref(steps, src, options)?;
 
     let tid = format!("{bid}.transcript");
     let mut t = Step::new(Capability::Transcribe);
     t.id = Some(tid.clone());
-    t.input = Some(path);
+    t.input = Some(media);
     t.options = transcribe_options(options);
     steps.push(t);
 

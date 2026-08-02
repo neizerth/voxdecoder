@@ -59,11 +59,29 @@ fn capitalizes_and_punctuates() {
 }
 
 #[test]
-fn identity_already_clean() {
-    let (_dir, fixer) = fixer(Language::En);
-    let result = fixer.fix("Hello world.", FixOptions::default()).unwrap();
-    assert!(!result.changed);
-    assert_eq!(result.text, "Hello world.");
+fn collapses_duplicate_periods() {
+    let (_dir, fixer) = fixer(Language::Ru);
+    let result = fixer
+        .fix(
+            "Первое предложение.. Второе тоже.. И третье...",
+            FixOptions::default(),
+        )
+        .unwrap();
+    assert!(!result.text.contains(".."));
+    assert!(result.text.contains('…') || result.text.contains("третье."));
+    assert!(result.text.contains("предложение."));
+}
+
+#[test]
+fn does_not_add_period_when_present() {
+    let (_dir, fixer) = fixer(Language::Ru);
+    let input = "Баня очень похожа на сауну, но имеет свои особенности. Каждый турист должен сходить в баню.";
+    let result = fixer.fix(input, FixOptions::default()).unwrap();
+    assert!(!result.text.contains(".."));
+    assert_eq!(
+        result.text.matches('.').count(),
+        input.matches('.').count()
+    );
 }
 
 #[test]
@@ -175,6 +193,34 @@ fn long_ru_asr_gets_sentence_breaks() {
             result.text
         );
     }
+}
+
+#[test]
+fn preserves_punctuation_on_already_punctuated_ru() {
+    let (_dir, fixer) = fixer(Language::Ru);
+    let input = "Баня. Баня — это место, куда русские люди ходят, чтобы расслабиться. \
+Каждый турист должен сходить в баню.";
+    let result = fixer.fix(input, FixOptions::default()).unwrap();
+    assert!(
+        result.text.contains(','),
+        "commas must survive: {}",
+        result.text
+    );
+    assert!(
+        result.text.contains('—'),
+        "em dash must survive: {}",
+        result.text
+    );
+    assert!(
+        result.text.matches('.').count() >= 2,
+        "sentence periods must survive: {}",
+        result.text
+    );
+    assert!(
+        !result.text.contains("Баня баня это место куда"),
+        "must not strip into ASR-restore mush: {}",
+        result.text
+    );
 }
 
 #[test]

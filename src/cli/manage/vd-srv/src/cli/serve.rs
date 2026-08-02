@@ -9,7 +9,7 @@ use std::time::Duration;
 use crate::api;
 use crate::cli::{CliError, ServeArgs};
 use crate::config;
-use crate::engine::Engine;
+use crate::engine::{Engine, TransportEndpoint, TransportStatus};
 use crate::paths;
 
 pub fn run(args: ServeArgs) -> Result<(), CliError> {
@@ -39,8 +39,38 @@ pub fn run(args: ServeArgs) -> Result<(), CliError> {
         })
     };
 
+    let http_bind = cfg.raw.http.listen_addr(args.http.as_deref());
+    let grpc_bind = cfg.raw.grpc.listen_addr(args.grpc.as_deref());
+
     let engine = Engine::start(data.clone(), cfg.raw.clone())
         .map_err(|e| CliError::with_code(1, e.to_string()))?;
+
+    let mut transports = TransportStatus::default();
+    match &primary {
+        api::Endpoint::Uds(p) => {
+            transports.uds = Some(TransportEndpoint::on(format!("unix://{}", p.display())));
+        }
+        api::Endpoint::Tcp(a) => {
+            transports.tcp = Some(TransportEndpoint::on(format!("tcp://{a}")));
+        }
+        api::Endpoint::Pipe(p) => {
+            transports.uds = Some(TransportEndpoint::on(format!("pipe://{p}")));
+        }
+    }
+    if let Some(ref sec) = secondary {
+        if let api::Endpoint::Tcp(a) = sec {
+            transports.tcp = Some(TransportEndpoint::on(format!("tcp://{a}")));
+        }
+    }
+    transports.http = Some(match &http_bind {
+        Some(b) => TransportEndpoint::on(format!("http://{b}")),
+        None => TransportEndpoint::off(),
+    });
+    transports.grpc = Some(match &grpc_bind {
+        Some(b) => TransportEndpoint::on(format!("grpc://{b}")),
+        None => TransportEndpoint::off(),
+    });
+    engine.set_transports(transports);
 
     fs::write(paths::pid_path(&data), std::process::id().to_string())
         .map_err(|e| CliError::with_code(1, e.to_string()))?;
@@ -53,6 +83,12 @@ pub fn run(args: ServeArgs) -> Result<(), CliError> {
     );
     if let Some(ref sec) = secondary {
         eprintln!("vd-srv also listening on {}", sec.display());
+    }
+    if let Some(ref http) = http_bind {
+        eprintln!("vd-srv HTTP transport on http://{http}");
+    }
+    if let Some(ref grpc) = grpc_bind {
+        eprintln!("vd-srv gRPC transport on grpc://{grpc}");
     }
 
     let stop_serve = Arc::new(AtomicBool::new(false));
@@ -72,6 +108,16 @@ pub fn run(args: ServeArgs) -> Result<(), CliError> {
         let stop_flag = Arc::clone(&stop_serve);
         let eng = engine.clone();
         handles.push(thread::spawn(move || api::serve(&sec, eng, stop_flag)));
+    }
+    if let Some(bind) = http_bind {
+        let stop_flag = Arc::clone(&stop_serve);
+        let eng = engine.clone();
+        handles.push(thread::spawn(move || api::http::serve(&bind, eng, stop_flag)));
+    }
+    if let Some(bind) = grpc_bind {
+        let stop_flag = Arc::clone(&stop_serve);
+        let eng = engine.clone();
+        handles.push(thread::spawn(move || api::grpc::serve(&bind, eng, stop_flag)));
     }
 
     while !engine.is_stopped() && !stop_serve.load(Ordering::SeqCst) {

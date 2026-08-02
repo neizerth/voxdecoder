@@ -19,6 +19,7 @@ pub fn submit_job(job: Job, progress: ProgressMode) -> Result<std::path::PathBuf
     let exec = Executor {
         binder: SubprocessBinder,
         progress,
+        progress_snapshot: None,
     };
     exec.run(&resolved)
         .map(|o| o.output)

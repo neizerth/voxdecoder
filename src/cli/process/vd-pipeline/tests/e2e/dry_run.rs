@@ -27,13 +27,14 @@ fn dry_run_default_json() {
         .clone();
     let v: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
     let steps = v["steps"].as_array().unwrap();
-    assert_eq!(steps.len(), 6);
+    assert_eq!(steps.len(), 7);
     assert_eq!(steps[0]["use"], "preprocess");
     assert_eq!(steps[0]["id"], "prepared");
     assert_eq!(steps[1]["use"], "transcribe");
     assert_eq!(steps[1]["id"], "transcript");
     assert_eq!(steps[2]["use"], "prepare-context");
     assert_eq!(steps[3]["use"], "fix-casing");
+    assert_eq!(steps[6]["use"], "fix-layout");
     assert_eq!(v["context"]["docs"], ".");
 }
 
@@ -98,7 +99,21 @@ fn cli_equals_file_shape() {
         .clone();
     let cli_v: serde_json::Value = serde_json::from_slice(&cli_out).unwrap();
 
-    let file_job = vd_pipeline::load_job_file(&fixture("jobs/default.yaml")).unwrap();
+    let mut file_job = vd_pipeline::load_job_file(&fixture("jobs/default.yaml")).unwrap();
+    #[cfg(target_os = "macos")]
+    {
+        // macOS defaults transcribe device to metal when unset (same as default_job).
+        for node in &mut file_job.steps {
+            if let vd_pipeline::WorkflowNode::Step(step) = node {
+                if step.r#use == vd_pipeline::Capability::Transcribe {
+                    step.options.insert(
+                        "device".into(),
+                        vd_pipeline::ArgValue::String("metal".into()),
+                    );
+                }
+            }
+        }
+    }
     let file_v = serde_json::to_value(&file_job).unwrap();
 
     assert_eq!(cli_v["steps"], file_v["steps"]);

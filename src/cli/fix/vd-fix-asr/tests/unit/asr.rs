@@ -38,7 +38,7 @@ fn repairs_githap_to_githab() {
 }
 
 #[test]
-fn does_not_invent_without_support() {
+fn neighbor_does_not_strip_case_ending() {
     let fixer = AsrFixer::load(AsrLoadOptions {
         language: Language::Ru,
         context_paths: vec![],
@@ -46,12 +46,21 @@ fn does_not_invent_without_support() {
     })
     .unwrap();
     let mats = fixer.materials();
-    let input = "обычная фраза без ошибок";
+    // Neighbor "друг" must not rewrite inflected "друга".
+    let before = vec!["друг".to_string()];
+    let ctx = SpanContext {
+        neighbors_before: &before,
+        neighbors_after: &[],
+        materials: mats,
+    };
     let result = fixer
-        .fix_text(input, empty_ctx(mats), FixOptions::default())
+        .fix_text("массажировать им друг друга", ctx, FixOptions::default())
         .unwrap();
-    assert!(!result.changed);
-    assert_eq!(result.text, input);
+    assert!(
+        result.text.contains("друга"),
+        "expected inflected form kept, got {}",
+        result.text
+    );
 }
 
 #[test]

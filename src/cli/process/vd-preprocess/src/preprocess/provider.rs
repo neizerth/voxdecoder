@@ -178,7 +178,14 @@ fn ffmpeg_args(
     ];
     match filter.operation.as_str() {
         "extract-audio" => {
-            args.extend(["-vn".into(), "-acodec".into(), "pcm_s16le".into()]);
+            // Drop video; write PCM WAV (output path should use .wav).
+            args.extend([
+                "-vn".into(),
+                "-acodec".into(),
+                "pcm_s16le".into(),
+                "-f".into(),
+                "wav".into(),
+            ]);
         }
         "convert" => {
             // container/codec from extension; leave ffmpeg defaults

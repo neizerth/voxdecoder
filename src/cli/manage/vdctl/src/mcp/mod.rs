@@ -3,6 +3,7 @@
 mod bundle;
 
 use std::fs;
+use std::io::{self, Write};
 use std::process::{Command, Stdio};
 
 use serde_json::{json, Map};
@@ -15,6 +16,16 @@ use crate::resolve::Platform;
 use crate::skills;
 
 pub use bundle::{bundle_installed, bundle_path, build as build_bundle};
+
+fn say(msg: &str) {
+    println!("{msg}");
+    let _ = io::stdout().flush();
+}
+
+fn say_detail(msg: &str) {
+    println!("    · {msg}");
+    let _ = io::stdout().flush();
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct InstallOpts {
@@ -115,7 +126,7 @@ pub fn install(platform: &Platform, opts: &InstallOpts) -> Result<(), Error> {
         )));
     }
 
-    println!("Discovering Skills...");
+    say("Discovering Skills...");
     println!();
     let report = skills::discover(platform);
     let selected_skills = if opts.no_skills {
@@ -139,19 +150,21 @@ pub fn install(platform: &Platform, opts: &InstallOpts) -> Result<(), Error> {
     }
     println!();
 
-    if !opts.no_skills && !selected_skills.is_empty() {
-        println!("Installing Skills → {}", paths::skills_dir().display());
-        skills::sync_to_home(platform, &selected_skills, opts.dry_run)?;
+    if !opts.no_skills {
+        say(&format!(
+            "Synchronizing Skills → {}",
+            paths::skills_dir().display()
+        ));
+        if selected_skills.is_empty() {
+            println!("  (none)");
+        } else {
+            let prune = opts.skills.is_none();
+            skills::sync_to_home(platform, &selected_skills, prune, opts.dry_run)?;
+        }
         println!();
     }
 
-    println!("Building MCP Bundle...");
-    let bundle = bundle::build(platform, opts.dry_run)?;
-    if !opts.dry_run {
-        println!("✔ {}", bundle.display());
-    }
-    println!();
-
+    say("Probing AI applications (desktop + CLI)…");
     let apps = agents::filter_installed_adapters(opts.apps.as_deref())?;
     if apps.is_empty() {
         return Err(Error::Message(
@@ -159,12 +172,24 @@ pub fn install(platform: &Platform, opts: &InstallOpts) -> Result<(), Error> {
         ));
     }
 
-    println!("Detecting AI applications...");
+    let needs_bundle = apps.iter().any(|a| a.kind.uses_bundle());
+
+    println!();
+    say("Detected:");
     println!();
     for a in &apps {
-        println!("✔ {}", a.name);
+        println!("✔ {} ({})", a.name, a.kind.as_str());
     }
     println!();
+
+    if needs_bundle {
+        say("Building MCP Bundle (packaging/mcp → .mcpb)…");
+        let bundle = bundle::build(platform, opts.dry_run)?;
+        if !opts.dry_run {
+            println!("✔ {}", bundle.display());
+        }
+        println!();
+    }
 
     let mut env = Map::new();
     env.insert("VD_TRANSPORT".into(), json!(platform.transport));
@@ -172,28 +197,51 @@ pub fn install(platform: &Platform, opts: &InstallOpts) -> Result<(), Error> {
         "VD_SOCKET".into(),
         json!(platform.socket.display().to_string()),
     );
+    if let Some(http) = &platform.http {
+        env.insert("VD_HTTP".into(), json!(http));
+    }
     let spec = McpServerSpec {
         command: mcp_bin.display().to_string(),
         args: vec![],
         env,
     };
 
-    println!("Installing Bundle...");
+    say("Installing integrations…");
     println!();
-    for app in &apps {
-        println!("{}", app.name);
-        match agents::install_mcp(app, &spec, opts.dry_run) {
-            Ok(()) => println!("    ✔ Bundle / Gateway"),
-            Err(e) => {
-                if app.mcp_format.supports_json_mcp() {
-                    println!("    ✘ Bundle ({e})");
-                } else {
-                    println!("    · Bundle (MCP format unsupported — skipped)");
+    let total = apps.len();
+    for (i, app) in apps.iter().enumerate() {
+        say(&format!("[{}/{}] {}", i + 1, total, app.name));
+        if app.has_cli_mcp() {
+            match agents::install_cli_mcp(app, &spec, opts.dry_run) {
+                Ok(()) => println!("    ✔ MCP registered (CLI)"),
+                Err(e) => println!("    ✘ MCP register ({e})"),
+            }
+        } else if app.kind.uses_bundle() {
+            if app.mcp_format.supports_json_mcp() {
+                say_detail("writing MCP / Bundle config…");
+            }
+            match agents::install_mcp(app, &spec, opts.dry_run) {
+                Ok(()) => {
+                    if app.mcp_format.supports_json_mcp() {
+                        println!("    ✔ Bundle installed");
+                    } else {
+                        println!("    · Bundle (MCP format unsupported — skipped)");
+                    }
+                }
+                Err(e) => {
+                    if app.mcp_format.supports_json_mcp() {
+                        println!("    ✘ Bundle ({e})");
+                    } else {
+                        println!("    · Bundle (MCP format unsupported — skipped)");
+                    }
                 }
             }
+        } else {
+            println!("    · no MCP installer for this adapter yet");
         }
         if !opts.no_skills {
             for skill in &selected_skills {
+                say_detail(&format!("linking skill {}…", skill.id));
                 match skills::link_skill_to_app(app, skill, opts.dry_run) {
                     Ok(()) => println!("    ✔ {}", skill.id),
                     Err(e) => println!("    ✘ {} ({e})", skill.id),
@@ -203,12 +251,14 @@ pub fn install(platform: &Platform, opts: &InstallOpts) -> Result<(), Error> {
         println!();
     }
 
+    say("Verifying integrations…");
+    println!();
     verify_inner(platform, opts, &selected_skills, &apps)?;
     Ok(())
 }
 
 pub fn update(platform: &Platform, opts: &InstallOpts) -> Result<(), Error> {
-    println!("Updating MCP Bundle + Skills...");
+    println!("Updating MCP (synchronize Skills → rebuild Bundle → apps → verify)…");
     println!();
     install(platform, opts)
 }
@@ -235,9 +285,16 @@ pub fn uninstall(_platform: &Platform, opts: &InstallOpts) -> Result<(), Error> 
     for app in &apps {
         println!("{}", app.name);
         if strip_bundle {
-            match agents::uninstall_mcp(app, opts.dry_run) {
-                Ok(()) => println!("    ✔ Bundle uninstalled"),
-                Err(e) => println!("    ✘ Bundle ({e})"),
+            if app.has_cli_mcp() {
+                match agents::uninstall_cli_mcp(app, opts.dry_run) {
+                    Ok(()) => println!("    ✔ MCP unregistered (CLI)"),
+                    Err(e) => println!("    ✘ MCP unregister ({e})"),
+                }
+            } else if app.kind.uses_bundle() {
+                match agents::uninstall_mcp(app, opts.dry_run) {
+                    Ok(()) => println!("    ✔ Bundle uninstalled"),
+                    Err(e) => println!("    ✘ Bundle ({e})"),
+                }
             }
         }
         for skill in &selected_skills {
@@ -257,24 +314,39 @@ pub fn verify(platform: &Platform, json: bool) -> Result<(), Error> {
         println!("Bundle       {}", check_mark(v["bundle_installed"].as_bool()));
         println!("Gateway bin  {}", check_mark(v["gateway_installed"].as_bool()));
         println!("Runtime      {}", check_mark(v["runtime_reachable"].as_bool()));
-        println!(
-            "Skills home  {}",
-            check_mark(v["skills_installed"].as_bool())
-        );
+        let skills_n = v["skills_count"].as_u64().unwrap_or(0);
+        if v["skills_installed"].as_bool().unwrap_or(false) {
+            println!("Skills       ✔ ({skills_n} installed)");
+        } else {
+            println!("Skills       ✘");
+        }
         if let Some(apps) = v["apps"].as_array() {
             println!();
             for a in apps {
-                let mark = if a["bundle_configured"].as_bool().unwrap_or(false) {
-                    "✔"
-                } else if a["installed"].as_bool().unwrap_or(false) {
-                    "✘"
-                } else {
-                    "·"
-                };
-                println!(
-                    "{mark} {}",
-                    a["name"].as_str().unwrap_or(a["id"].as_str().unwrap_or(""))
-                );
+                if !a["installed"].as_bool().unwrap_or(false) {
+                    continue;
+                }
+                println!("{}", a["name"].as_str().unwrap_or(""));
+                println!();
+                if let Some(checks) = a["checks"].as_array() {
+                    for c in checks {
+                        let ok = c["ok"].as_bool().unwrap_or(false);
+                        println!(
+                            "    {} {}",
+                            if ok { "✔" } else { "✘" },
+                            c["label"].as_str().unwrap_or("")
+                        );
+                    }
+                }
+                if let Some(hint) = a["hint"].as_str() {
+                    if !a["ok"].as_bool().unwrap_or(true) {
+                        println!();
+                        for line in hint.lines() {
+                            println!("    {line}");
+                        }
+                    }
+                }
+                println!();
             }
         }
         if let Some(issues) = v["issues"].as_array() {
@@ -298,46 +370,88 @@ fn verify_inner(
     selected_skills: &[skills::Skill],
     apps: &[agents::AgentAdapter],
 ) -> Result<(), Error> {
-    println!("Verification...");
-    println!();
-    let agents_now = agents::discover_agents();
     for app in apps {
-        let configured = agents_now
-            .iter()
-            .find(|a| a.id == app.id)
-            .map(|a| a.configured)
-            .unwrap_or(false);
-        let mcp_mark = if app.mcp_format.supports_json_mcp() {
-            if configured || opts.dry_run {
-                "✔"
-            } else {
-                "✘"
+        say(&app.name);
+        println!();
+        if app.has_cli_mcp() {
+            say_detail("checking CLI on PATH…");
+            let cli_ok = which_ok(app) || opts.dry_run;
+            say_detail("checking MCP registration in config…");
+            let reg_ok = opts.dry_run || agents::cli_mcp_registered(app);
+            println!("    {} CLI found", if cli_ok { "✔" } else { "✘" });
+            println!(
+                "    {} MCP registered",
+                if reg_ok { "✔" } else { "✘" }
+            );
+            if reg_ok {
+                println!("    ✔ Server visible");
+            } else if !opts.dry_run {
+                println!("    ✘ Server visible");
+                println!();
+                println!(
+                    "    VoxDecoder MCP server is not registered in {}.",
+                    app.name
+                );
+                println!();
+                println!("    Run:");
+                println!();
+                println!("        vdctl mcp install --apps {}", app.id);
             }
-        } else {
-            "·"
-        };
-        println!("{}  Bundle {mcp_mark}", app.name);
+        } else if app.kind.uses_bundle() {
+            say_detail("checking Bundle / MCP config…");
+            let installed = opts.dry_run
+                || agents::discover_agents()
+                    .iter()
+                    .find(|a| a.id == app.id)
+                    .map(|a| a.configured)
+                    .unwrap_or(false)
+                || !app.mcp_format.supports_json_mcp();
+            if app.mcp_format.supports_json_mcp() {
+                println!(
+                    "    {} Bundle installed",
+                    if installed { "✔" } else { "✘" }
+                );
+                println!(
+                    "    {} Bundle active",
+                    if installed { "✔" } else { "✘" }
+                );
+            } else {
+                println!("    · Bundle (unsupported)");
+            }
+        }
         if !opts.no_skills {
             for skill in selected_skills {
                 let ok = opts.dry_run || skills::skill_linked_in_app(app, &skill.id);
-                println!("         {} {}", if ok { "✔" } else { "✘" }, skill.id);
+                println!("    {} {}", if ok { "✔" } else { "✘" }, skill.id);
             }
         }
-    }
-    println!();
-    if bundle_installed() || opts.dry_run {
-        println!("✔ Bundle artifact");
-    } else {
-        println!("✘ Bundle artifact missing");
+        println!();
     }
     if client::reachable(platform) {
         println!("✔ Runtime reachable");
     } else {
-        println!("· Runtime not running (start with `vdctl up`)");
+        println!("· Runtime not running (start with `vdctl ensure`)");
     }
     println!();
     println!("Verification complete.");
     Ok(())
+}
+
+fn which_ok(app: &agents::AgentAdapter) -> bool {
+    app.resolve_for_host().bins.iter().any(|b| {
+        let (cmd, arg) = if cfg!(windows) {
+            ("where", b.as_str())
+        } else {
+            ("which", b.as_str())
+        };
+        Command::new(cmd)
+            .arg(arg)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    })
 }
 
 fn verify_report(platform: &Platform) -> Result<serde_json::Value, Error> {
@@ -345,27 +459,18 @@ fn verify_report(platform: &Platform) -> Result<serde_json::Value, Error> {
     let bundle = bundle_installed();
     let runtime = client::reachable(platform);
     let skills_home = paths::skills_dir();
-    let skills_ok = skills_home.is_dir()
-        && fs::read_dir(&skills_home)
-            .map(|rd| {
-                rd.flatten().any(|e| {
-                    e.path().is_dir() && e.path().join("skill.md").is_file()
-                })
-            })
-            .unwrap_or(false);
+    let skills_count = fs::read_dir(&skills_home)
+        .map(|rd| {
+            rd.flatten()
+                .filter(|e| e.path().is_dir() && e.path().join("skill.md").is_file())
+                .count()
+        })
+        .unwrap_or(0);
+    let skills_ok = skills_count > 0;
 
     let mut issues = Vec::new();
     if !gateway {
         issues.push("vd-mcp binary missing".into());
-    }
-    if !bundle {
-        issues.push("voxdecoder.mcpb missing (run `vdctl mcp build`)".into());
-    }
-    if !skills_ok {
-        issues.push(format!(
-            "no Skills under {} (run `vdctl mcp install`)",
-            skills_home.display()
-        ));
     }
 
     let bundle_meta = bundle::read_bundle_manifest().ok().flatten();
@@ -375,20 +480,77 @@ fn verify_report(platform: &Platform) -> Result<serde_json::Value, Error> {
         .and_then(|v| v.as_str())
         .map(str::to_string);
 
-    let agents = agents::discover_agents();
-    let apps: Vec<_> = agents
-        .iter()
-        .map(|a| {
-            json!({
-                "id": a.id,
-                "name": a.name,
-                "installed": a.installed,
-                "bundle_configured": a.configured,
-            })
-        })
-        .collect();
+    let adapters = agents::adapters();
+    let discovered = agents::discover_agents();
+    let mut apps = Vec::new();
+    let mut integration_ok = true;
 
-    let ok = gateway && bundle;
+    for agent in &discovered {
+        if !agent.installed {
+            continue;
+        }
+        let adapter = adapters.iter().find(|a| a.id == agent.id);
+        let mut checks = Vec::new();
+        let mut ok = true;
+        let mut hint = None;
+
+        if let Some(ad) = adapter {
+            if ad.has_cli_mcp() {
+                let cli = which_ok(ad);
+                checks.push(json!({"label": "CLI found", "ok": cli}));
+                let reg = agent.configured;
+                checks.push(json!({"label": "MCP registered", "ok": reg}));
+                checks.push(json!({"label": "Server visible", "ok": reg}));
+                ok = cli && reg;
+                if !reg {
+                    hint = Some(format!(
+                        "VoxDecoder MCP server is not registered in {}.\n\nRun:\n\n    vdctl mcp install --apps {}",
+                        ad.name, ad.id
+                    ));
+                    integration_ok = false;
+                    issues.push(format!("{}: MCP not registered", ad.name));
+                }
+            } else if ad.kind.uses_bundle() {
+                if ad.mcp_format.supports_json_mcp() {
+                    checks.push(json!({"label": "Bundle installed", "ok": agent.configured}));
+                    checks.push(json!({"label": "Bundle active", "ok": agent.configured}));
+                    ok = agent.configured;
+                    if !agent.configured {
+                        hint = Some(format!(
+                            "Bundle not active in {}.\n\nRun:\n\n    vdctl mcp install --apps {}",
+                            ad.name, ad.id
+                        ));
+                        // Desktop not configured is a soft fail for overall ok only if we require all apps
+                    }
+                } else {
+                    checks.push(json!({"label": "Bundle (unsupported)", "ok": true}));
+                }
+            } else {
+                checks.push(json!({"label": "detected", "ok": true}));
+            }
+        }
+
+        apps.push(json!({
+            "id": agent.id,
+            "name": agent.name,
+            "kind": agent.kind,
+            "installed": agent.installed,
+            "configured": agent.configured,
+            "ok": ok,
+            "checks": checks,
+            "hint": hint,
+        }));
+    }
+
+    if !skills_ok {
+        issues.push(format!(
+            "no Skills under {} (run `vdctl mcp install`)",
+            skills_home.display()
+        ));
+    }
+
+    // Overall: gateway required; CLI integrations that are installed must be registered.
+    let ok = gateway && integration_ok;
 
     Ok(json!({
         "ok": ok,
@@ -399,6 +561,7 @@ fn verify_report(platform: &Platform) -> Result<serde_json::Value, Error> {
         "gateway_bin": platform.vd_mcp().display().to_string(),
         "runtime_reachable": runtime,
         "skills_installed": skills_ok,
+        "skills_count": skills_count,
         "skills_dir": skills_home.display().to_string(),
         "apps": apps,
         "issues": issues,

@@ -4,6 +4,9 @@
 
 mod client;
 mod dispatch;
+pub mod grpc;
+pub mod http;
+pub mod openapi;
 pub mod rpc;
 pub mod transport;
 

@@ -55,19 +55,24 @@ vd-pipeline / vd-meeting / MCP  ──pipe──▶  vd-srv submit -
 | `vd-srv profile` | Aggregated time share |
 | `vd-srv config` | Server defaults |
 
-HTTP (when enabled): `GET /live` · `GET /ready` · `POST /jobs` · `GET /jobs` · `GET /jobs/:id` · `POST /jobs/:id/cancel` · `GET /jobs/:id/events` · `GET /jobs/:id/logs` · `GET /metrics` (future).
+HTTP transport (ADR 0006 / 0007, **disabled by default**): `--http 127.0.0.1:7701` or `[http] enabled = true`. Routes forward to the same Runtime APIs:
+
+- Planning: `POST /planning/audio` · `POST /planning/meeting`
+- Execution: `POST /jobs` · `GET /jobs` · `GET /jobs/:id` · `POST /jobs/:id/cancel` · `GET /jobs/:id/events` (live SSE)
+- Operator: `GET /health` · `GET /ready` · `GET /doctor` · `GET /server_info` · `GET /live` · `GET /openapi.json` · `GET /docs`
+
+gRPC transport (ADR 0007, **disabled by default**): `--grpc 127.0.0.1:7702` or `[grpc] enabled = true`. Services: `PlanningService`, `ExecutionService`, `OperatorService` (**Health** required), `EventService.WatchJob`.
+
+Health is available on **every** transport (`server.health` / `GET /health` / `OperatorService.Health`).
 
 ---
 
 ## Serve
 
 ```bash
-vd-srv serve
-vd-srv serve --data-dir ~/.local/share/voxdecoder/srv
-vd-srv serve --socket /tmp/vd-srv.sock
-vd-srv serve --transport uds
-vd-srv serve --tcp 127.0.0.1:7701
-vd-srv serve --workers 2
+vd-srv serve --http 127.0.0.1:7701
+vd-srv serve --grpc 127.0.0.1:7702
+vd-srv serve --tcp 127.0.0.1:7700 --http 127.0.0.1:7701 --grpc 127.0.0.1:7702
 ```
 
 | Argument | Default | Description |
@@ -75,11 +80,13 @@ vd-srv serve --workers 2
 | `--data-dir` | platform data dir | Durable root |
 | `--socket` | under data-dir | Unix domain socket path (IPC) |
 | `--tcp` | off | TCP bind; also adds a secondary listener when primary is IPC |
+| `--http` | off | HTTP transport bind (ADR 0006); REST/SSE/OpenAPI → Runtime API |
+| `--grpc` | off | gRPC transport bind (ADR 0007); includes OperatorService.Health |
 | `--transport` | `auto` | `auto` · `uds` · `pipe` · `tcp` — see [TRANSPORT.md](TRANSPORT.md) |
 | `--workers` | config / `1` | Worker Pool size |
 | `--foreground` | on | Stay attached |
 
-Control plane: JSON-RPC 2.0 (newline-framed) over the selected transport.
+Control plane: JSON-RPC 2.0 (newline-framed) over the selected IPC/TCP transport. Optional HTTP and gRPC listeners (ADR 0006 / 0007) — see above.
 
 Resource Class capacities come from config (`resource_classes`), not only CLI one-offs.
 

@@ -9,3 +9,4 @@
 src/cli/transcribe/vd-gigaam/models/
 src/cli/transcribe/vd-gigaam/scripts/.venv/
 **/fixtures/golden/
+.voxdecoder/

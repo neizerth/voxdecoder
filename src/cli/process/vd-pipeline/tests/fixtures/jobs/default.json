@@ -40,6 +40,9 @@
     },
     {
       "use": "fix-terms"
+    },
+    {
+      "use": "fix-layout"
     }
   ]
 }

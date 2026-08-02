@@ -15,9 +15,9 @@ pub use exec::{
     SubprocessBinder,
 };
 pub use job::{
-    default_job, load_job_file, resolve_job, ArgValue, ArtifactRef, Capability, DefaultJobArgs,
-    Job, JobContext, JobError, JobInput, JobOutput, ResolvedJob, ResolvedStep, Step,
-    TranscribeEngine, WorkflowNode, WorkflowPlan,
+    default_job, default_preprocess_filters, is_video_path, load_job_file, resolve_job, ArgValue,
+    ArtifactRef, Capability, DefaultJobArgs, Job, JobContext, JobError, JobInput, JobOutput,
+    ResolvedJob, ResolvedStep, Step, TranscribeEngine, WorkflowNode, WorkflowPlan,
 };
 pub use report::{
     backend_from_options, format_rfc3339, model_from_options, ArtifactStat, ExecutionReport,

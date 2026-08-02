@@ -63,7 +63,7 @@ Compact surface — nothing else for the normal user:
 
 ```text
 Platform        install · update · uninstall
-Runtime         up · down · restart · status
+Runtime         up · ensure · down · restart · status
 MCP             mcp …
 Skills          skills …
 Assets          assets …
@@ -119,6 +119,7 @@ Remove the platform. Default may prompt `Keep data? (Y/n)`; `--purge` removes da
 
 ```bash
 vdctl up
+vdctl ensure
 vdctl down
 vdctl restart
 vdctl status
@@ -126,6 +127,8 @@ vdctl wait
 ```
 
 Start / stop / observe the Runtime belonging to this installation. Same commands in Workspace and Installed modes — only binary resolution differs.
+
+`vdctl ensure` starts the Runtime only if it is not already reachable (preferred suggestion for Skills).
 
 ---
 
@@ -136,7 +139,9 @@ vdctl mcp start | stop | restart | status
 vdctl mcp build | install | update | uninstall | verify | list
 ```
 
-Default `mcp install` ([ADR 0005](../../../../docs/adr/0005-mcp-bundle-and-skill-distribution.md)): sync Skills → `$VD_HOME/skills`, build `voxdecoder.mcpb`, install Bundle into AI apps, verify. Filters: `--apps`, `--skills`, `--exclude`, `--no-skills`, `--dry-run`.
+Default `mcp install` ([ADR 0005](../../../../docs/adr/0005-mcp-bundle-and-skill-distribution.md)): **synchronize Skills** → `$VD_HOME/skills` (prune stale on full sync) → build `voxdecoder.mcpb` → install Bundle into AI apps → verify. Filters: `--apps`, `--skills`, `--exclude`, `--no-skills`, `--dry-run`.
+
+`vdctl mcp update` re-runs the same pipeline so edited Skills land immediately.
 
 ---
 
@@ -150,20 +155,20 @@ Runtime  ≠  MCP Bundle  ≠  Skills
 |-----------|----------------|
 | **skills/** | Skill definitions (`skills/<id>/skill.md`) |
 | **packaging/mcp/** | MCP Bundle source (`manifest.json`) |
-| **vdctl** | Bundle Builder, Skill lifecycle, AI installers |
+| **vdctl** | Bundle Builder; Skill sync via `mcp install\|update`; AI installers |
 | **vd-mcp** | Gateway only (never discovers/installs Skills) |
 | **vd-srv** | Runtime |
 
 ```bash
 vdctl discover
-vdctl skills list | inspect <id> | validate | status
+vdctl skills list | inspect <id> | validate | status   # read-only
 vdctl mcp build
-vdctl mcp install
-vdctl mcp install --apps cursor --skills vd-audio --dry-run
+vdctl mcp install | update                              # Skill lifecycle + Bundle
+vdctl mcp install --apps claude-code
 vdctl mcp verify
 ```
 
-Skills install to `$VD_HOME/skills` (shared). Bundle is independent of Skills.
+After editing `skills/*/skill.md`: `vdctl mcp update`. Skills must include `## Runtime Contract` with Recovery (see `skills/TEMPLATE.md`).
 
 AI adapters: [`adapters.toml`](src/agents/adapters.toml). See [ADR 0005](../../../../docs/adr/0005-mcp-bundle-and-skill-distribution.md).
 
@@ -227,9 +232,12 @@ Optional: `vdctl dev init` registers **one** workspace path and symlinks the bui
 
 ```toml
 workspace = "/Users/me/projects/voxdecoder"
+build = "debug"           # debug|dev | release|prod  (also VD_BUILD)
 auto_build = "missing"    # always | missing | never
 auto_start_mcp = false
 ```
+
+Select the workspace binary tree with `vdctl config set build release` (or `prod`), then `vdctl build` / `vdctl up`. Override once with `VD_BUILD=release`.
 
 ### Installed
 

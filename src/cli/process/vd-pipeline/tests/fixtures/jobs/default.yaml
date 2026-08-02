@@ -24,3 +24,4 @@ steps:
     input: transcript
   - use: fix-asr
   - use: fix-terms
+  - use: fix-layout

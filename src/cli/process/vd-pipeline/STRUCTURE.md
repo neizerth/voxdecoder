@@ -115,6 +115,7 @@ pub enum Capability {
     FixCasing,
     FixAsr,
     FixTerms,
+    FixLayout,
     Diarize,        // → vd-diarize
     MeetingMerge,   // stub binder → meeting.json
     Postprocess,    // → vd-postprocess (recipes required)

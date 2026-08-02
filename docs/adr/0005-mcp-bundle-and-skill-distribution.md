@@ -101,6 +101,62 @@ Repository layout mirrors install layout (`skills/<id>/skill.md`).
 
 Skills stay out of the Bundle so they can update independently, be shared across AI apps, and keep the Bundle minimal.
 
+### Lifecycle (owned by MCP commands)
+
+```text
+Every `vdctl mcp install` / `vdctl mcp update`:
+
+  discover applications
+        ↓
+  synchronize Skills  (workspace/skills → $VD_HOME/skills, prune stale on full sync)
+        ↓
+  build / rebuild MCP Bundle
+        ↓
+  install into AI applications (+ link Skills)
+        ↓
+  verify
+```
+
+Workspace `skills/` is the source of truth in development. `$VD_HOME/skills` is the source after install. Removed skill directories are pruned from `$VD_HOME/skills` on a full sync (no `--skills` filter).
+
+`vdctl skills list|inspect|validate|status` is **read-only**. Users never copy Skill files by hand; after editing `skill.md` run `vdctl mcp update`.
+
+### Runtime Contract (mandatory template)
+
+Every Skill that starts a long-running Job **must** follow the official layout:
+
+```text
+Skill
+├── Purpose
+├── Workflow
+├── Runtime Contract
+│     ├── Execution
+│     ├── Progress
+│     ├── Results
+│     ├── Cancellation
+│     └── Failures
+├── Examples
+└── Notes
+```
+
+`## Runtime Contract` always describes a single lifecycle:
+
+```text
+submit tool → job_id → get_job → list_artifacts
+                 └→ cancel_job
+```
+
+Rules encoded in the contract:
+
+- **Execution** — which MCP tool starts the Job;
+- **Progress** — `get_job` only; no HTTP/`curl`/socket probing; no spam-poll; wait via wakeup/schedule (30–120s+) then recheck; bare long `sleep` without a status check is forbidden;
+- **Results** — `list_artifacts` after `completed`;
+- **Cancellation** — `cancel_job`; never start a second Job instead;
+- **Failures** — report Runtime error; no automatic retry.
+
+Canonical stub: [`skills/TEMPLATE.md`](../../skills/TEMPLATE.md).  
+`vdctl skills validate` rejects Skills missing `## Runtime Contract` or any of the five subsections.
+
 ---
 
 ## Repository layout
@@ -177,7 +233,7 @@ vdctl discover [--json]
 vdctl mcp verify
 ```
 
-Checks: Bundle present · Gateway launches · Runtime reachable · API compatible · MCP tools visible · Skills installed.
+Checks: Bundle present · Gateway launches · Runtime reachable · Skills synchronized (`Skills ✔ (N installed)`) · Applications updated / MCP registered.
 
 ---
 

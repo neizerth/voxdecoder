@@ -38,6 +38,7 @@ fn options_forwarded_untouched() {
     let exec = Executor {
         binder: &binder,
         progress: ProgressMode::None,
+        progress_snapshot: None,
     };
     exec.run(&resolved).unwrap();
     assert_eq!(binder.calls.lock().unwrap()[0].options, options);

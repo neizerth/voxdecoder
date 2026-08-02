@@ -154,6 +154,7 @@ fn preview_input(
         Capability::FixCasing
         | Capability::FixAsr
         | Capability::FixTerms
+        | Capability::FixLayout
         | Capability::MeetingMerge
         | Capability::Postprocess => Ok(None),
     }
@@ -300,6 +301,7 @@ fn schedule_leaf_order(job: &Job, n: usize) -> Result<Vec<usize>, JobError> {
                 Capability::FixCasing
                     | Capability::FixAsr
                     | Capability::FixTerms
+                    | Capability::FixLayout
                     | Capability::MeetingMerge
             )
             && !step.skip
@@ -454,6 +456,7 @@ pub fn exec_input(
         Capability::FixCasing
         | Capability::FixAsr
         | Capability::FixTerms
+        | Capability::FixLayout
         | Capability::MeetingMerge
         | Capability::Postprocess => prev.cloned().ok_or_else(|| {
             JobError::Usage(format!(

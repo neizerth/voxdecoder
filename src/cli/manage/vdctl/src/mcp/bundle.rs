@@ -67,15 +67,21 @@ pub fn build(platform: &Platform, dry_run: bool) -> Result<PathBuf, Error> {
             .as_object()
             .cloned()
             .unwrap_or_default();
+        let mut env = serde_json::Map::new();
+        env.insert("VD_TRANSPORT".into(), json!(platform.transport));
+        env.insert(
+            "VD_SOCKET".into(),
+            json!(platform.socket.display().to_string()),
+        );
+        if let Some(http) = &platform.http {
+            env.insert("VD_HTTP".into(), json!(http));
+        }
         server.insert(
             "mcp_config".into(),
             json!({
                 "command": mcp_bin.display().to_string(),
                 "args": [],
-                "env": {
-                    "VD_TRANSPORT": platform.transport,
-                    "VD_SOCKET": platform.socket.display().to_string(),
-                }
+                "env": env,
             }),
         );
         obj.insert("server".into(), Value::Object(server));

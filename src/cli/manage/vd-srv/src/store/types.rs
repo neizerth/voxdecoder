@@ -157,6 +157,12 @@ pub struct JobRecord {
     pub exit_code: Option<i32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// 0–100 from Executor snapshot while running; 100 when completed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub progress: Option<u8>,
+    /// Current phase label (e.g. `step_start:transcribe`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phase: Option<String>,
     pub job: Job,
     pub nodes: Vec<NodeRecord>,
     #[serde(default)]

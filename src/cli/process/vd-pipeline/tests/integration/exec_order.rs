@@ -47,6 +47,7 @@ fn steps_run_in_order() {
     let exec = Executor {
         binder: &binder,
         progress: ProgressMode::None,
+        progress_snapshot: None,
     };
     exec.run(&resolved).unwrap();
     let caps: Vec<_> = binder.calls.lock().unwrap().iter().map(|c| c.capability).collect();
@@ -84,6 +85,7 @@ fn skip_does_not_invoke() {
     let exec = Executor {
         binder: &binder,
         progress: ProgressMode::None,
+        progress_snapshot: None,
     };
     exec.run(&resolved).unwrap();
     let caps: Vec<_> = binder.calls.lock().unwrap().iter().map(|c| c.capability).collect();

@@ -84,6 +84,9 @@ pub struct AudioRequest {
     pub device: Option<String>,
     #[serde(default)]
     pub flash: bool,
+    /// Preprocess playback speed (e.g. 2.0–2.2). Timestamps remapped via TimeMap.
+    #[serde(default)]
+    pub speed: Option<f64>,
     #[serde(default)]
     pub docs: Option<PathBuf>,
     #[serde(default)]
@@ -92,8 +95,13 @@ pub struct AudioRequest {
     pub working_dir: Option<PathBuf>,
     #[serde(default)]
     pub continue_on_error: bool,
-    #[serde(default)]
+    /// When unset, Runtime defaults to overwriting outputs next to the source.
+    #[serde(default = "default_true")]
     pub overwrite: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 pub fn plan_audio(
@@ -102,6 +110,13 @@ pub fn plan_audio(
     store: Option<&JobStore>,
 ) -> Result<Job, PlanError> {
     let audio = request.audio.resolve(data_dir, store)?;
+    if let Some(speed) = request.speed {
+        if !(0.25..=4.0).contains(&speed) {
+            return Err(PlanError::InvalidInput(format!(
+                "speed must be between 0.25 and 4.0 (got {speed})"
+            )));
+        }
+    }
     Ok(default_job(&DefaultJobArgs {
         audio,
         engine: match request.engine.as_deref() {
@@ -113,6 +128,7 @@ pub fn plan_audio(
         model: request.model.clone(),
         device: request.device.clone(),
         flash: request.flash,
+        speed: request.speed,
         docs: request.docs.clone(),
         output_dir: request.output_dir.clone(),
         working_dir: request.working_dir.clone(),

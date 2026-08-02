@@ -5,7 +5,7 @@ use std::env;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::job::{ArgValue, Capability};
+use crate::job::{is_video_path, ArgValue, Capability};
 
 use super::{Binder, ExecError, InvokeRequest, InvokeResult};
 
@@ -20,6 +20,7 @@ impl Binder for SubprocessBinder {
             Capability::FixCasing => run_fix(req, "vd-fix-casing"),
             Capability::FixAsr => run_fix(req, "vd-fix-asr"),
             Capability::FixTerms => run_fix(req, "vd-fix-terms"),
+            Capability::FixLayout => run_fix(req, "vd-fix-layout"),
             Capability::Diarize => run_diarize(req),
             Capability::MeetingMerge => run_meeting_merge(req),
             Capability::Preprocess => run_preprocess(req),
@@ -47,9 +48,10 @@ fn run_preprocess(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
         args.push(chain);
     } else if let Some(list) = req.options.get("filters").and_then(ArgValue::as_list) {
         let yaml = filters_list_to_yaml(list)?;
-        let path = req.working_dir.join(format!(
-            ".vd-preprocess-filters-{}.yaml",
-            std::process::id()
+        let path = env::temp_dir().join(format!(
+            "vd-preprocess-filters-{}-{}.yaml",
+            std::process::id(),
+            unique_suffix()
         ));
         std::fs::write(&path, yaml).map_err(|e| ExecError::Step(e.to_string()))?;
         args.push("--chain".into());
@@ -60,37 +62,16 @@ fn run_preprocess(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
         ));
     }
 
-    if let Some(d) = &req.output_dir {
-        args.push("-d".into());
-        args.push(d.display().to_string());
-    }
-    if let Some(o) = &req.output {
-        args.push("-o".into());
-        args.push(o.display().to_string());
-    }
+    // Always pass an explicit output path so binder and CLI agree.
+    // Default: `{input_parent}/.voxdecoder/work/` (keeps source folder clean).
+    let primary = infer_preprocess_output(req);
+    args.push("-o".into());
+    args.push(primary.display().to_string());
     if req.options.get("overwrite").and_then(ArgValue::as_bool) == Some(true) {
         args.push("--overwrite".into());
     }
 
     run_cmd(&bin, &args, &req.working_dir)?;
-
-    let primary = req.output.clone().unwrap_or_else(|| {
-        let stem = req
-            .input
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("prepared");
-        let ext = req
-            .input
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("wav");
-        let name = format!("{stem}.prepared.{ext}");
-        req.output_dir
-            .clone()
-            .unwrap_or_else(|| req.working_dir.clone())
-            .join(name)
-    });
 
     let mut outputs = BTreeMap::new();
     let timemap = {
@@ -109,6 +90,56 @@ fn run_preprocess(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
         primary_output: primary,
         outputs,
     })
+}
+
+fn infer_preprocess_output(req: &InvokeRequest) -> PathBuf {
+    if let Some(o) = &req.output {
+        return o.clone();
+    }
+    let stem = req
+        .input
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("prepared");
+    // Video / extract-audio always yields WAV — keep container ext only for pure audio copy-through.
+    let ext = if filters_include_extract_audio(req) || is_video_path(&req.input) {
+        "wav"
+    } else {
+        req.input
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("wav")
+    };
+    let name = format!("{stem}.prepared.{ext}");
+    if let Some(d) = &req.output_dir {
+        return d.join(name);
+    }
+    default_work_dir(&req.input).join(name)
+}
+
+fn filters_include_extract_audio(req: &InvokeRequest) -> bool {
+    let Some(list) = req.options.get("filters").and_then(ArgValue::as_list) else {
+        return false;
+    };
+    list.iter().any(|f| {
+        f.as_map()
+            .and_then(|m| m.get("type").or_else(|| m.get("operation")))
+            .and_then(ArgValue::as_string)
+            .as_deref()
+            == Some("extract-audio")
+    })
+}
+
+/// `{input_parent}/.voxdecoder/work` — Job intermediates next to the source tree.
+fn default_work_dir(input: &Path) -> PathBuf {
+    vd_artifact::paths::work_dir_for_input(input)
+}
+
+fn unique_suffix() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0)
 }
 
 fn filters_list_to_yaml(list: &[ArgValue]) -> Result<String, ExecError> {
@@ -347,11 +378,14 @@ fn arg_to_json(v: &ArgValue) -> serde_json::Value {
 
 fn run_diarize(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
     let bin = find_bin("vd-diarize")?;
+    let primary = infer_diarize_output(req);
     let mut args = vec![
         "run".into(),
         "-i".into(),
         req.input.display().to_string(),
         "-q".into(),
+        "-o".into(),
+        primary.display().to_string(),
     ];
 
     let (provider, model) = diarize_backend(&req.options);
@@ -370,17 +404,10 @@ fn run_diarize(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
     if req.options.get("overwrite").and_then(ArgValue::as_bool) == Some(true) {
         args.push("--overwrite".into());
     }
-    if let Some(o) = &req.output {
-        args.push("-o".into());
-        args.push(o.display().to_string());
-    } else if let Some(d) = &req.output_dir {
-        args.push("-d".into());
-        args.push(d.display().to_string());
-    }
 
     run_cmd(&bin, &args, &req.working_dir)?;
     Ok(InvokeResult {
-        primary_output: infer_diarize_output(req),
+        primary_output: primary,
         outputs: BTreeMap::new(),
     })
 }
@@ -409,13 +436,11 @@ fn infer_diarize_output(req: &InvokeRequest) -> PathBuf {
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("out");
+    let name = format!("{stem}.diarization.json");
     if let Some(d) = &req.output_dir {
-        return d.join(format!("{stem}.diarization.json"));
+        return d.join(name);
     }
-    req.input
-        .parent()
-        .unwrap_or_else(|| Path::new("."))
-        .join(format!("{stem}.diarization.json"))
+    default_work_dir(&req.input).join(name)
 }
 
 fn run_transcribe(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
@@ -436,11 +461,14 @@ fn run_transcribe(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
     }
 
     let bin = find_bin("vd-gigaam")?;
+    let out = infer_gigaam_output(req);
     let mut args = vec![
         "run".into(),
         "-i".into(),
         req.input.display().to_string(),
         "-q".into(),
+        "-o".into(),
+        out.display().to_string(),
     ];
     if let Some(m) = req.options.get("model").and_then(ArgValue::as_string) {
         args.push("-m".into());
@@ -468,16 +496,8 @@ fn run_transcribe(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
         args.push("--format".into());
         args.push(fmt);
     }
-    if let Some(o) = &req.output {
-        args.push("-o".into());
-        args.push(o.display().to_string());
-    } else if let Some(d) = &req.output_dir {
-        args.push("-d".into());
-        args.push(d.display().to_string());
-    }
 
     run_cmd(&bin, &args, &req.working_dir)?;
-    let out = infer_gigaam_output(req);
     let mut outputs = BTreeMap::new();
     let seg = segments_sidecar_for(&out);
     if seg.is_file() {
@@ -507,13 +527,11 @@ fn infer_gigaam_output(req: &InvokeRequest) -> PathBuf {
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("out");
+    let name = format!("{stem}.txt");
     if let Some(d) = &req.output_dir {
-        return d.join(format!("{stem}.txt"));
+        return d.join(name);
     }
-    req.input
-        .parent()
-        .unwrap_or_else(|| Path::new("."))
-        .join(format!("{stem}.txt"))
+    default_work_dir(&req.input).join(name)
 }
 
 fn run_prepare_context(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
@@ -602,19 +620,15 @@ fn docs_have_sources(root: &Path) -> bool {
 
 fn run_fix(req: &InvokeRequest, bin_name: &str) -> Result<InvokeResult, ExecError> {
     let bin = find_bin(bin_name)?;
+    let primary = infer_fix_output(req);
     let mut args = vec![
         "run".into(),
         "-i".into(),
         req.input.display().to_string(),
         "-q".into(),
+        "-o".into(),
+        primary.display().to_string(),
     ];
-    if let Some(o) = &req.output {
-        args.push("-o".into());
-        args.push(o.display().to_string());
-    } else if let Some(d) = &req.output_dir {
-        args.push("-d".into());
-        args.push(d.display().to_string());
-    }
     if req.options.get("overwrite").and_then(ArgValue::as_bool) == Some(true) {
         args.push("--overwrite".into());
     }
@@ -634,9 +648,21 @@ fn run_fix(req: &InvokeRequest, bin_name: &str) -> Result<InvokeResult, ExecErro
             args.push(ctx.display().to_string());
         }
     }
+    if bin_name == "vd-fix-layout" {
+        if let Some(d) = req.options.get("density").and_then(ArgValue::as_string) {
+            args.push("--density".into());
+            args.push(d);
+        }
+        if req.options.get("use_timemap").and_then(ArgValue::as_bool) == Some(false) {
+            args.push("--no-timemap".into());
+        } else if let Some(tm) = req.options.get("timemap").and_then(ArgValue::as_string) {
+            args.push("--timemap".into());
+            args.push(tm);
+        }
+    }
     run_cmd(&bin, &args, &req.working_dir)?;
     Ok(InvokeResult {
-        primary_output: infer_fix_output(req),
+        primary_output: primary,
         outputs: BTreeMap::new(),
     })
 }
@@ -657,28 +683,41 @@ fn infer_fix_output(req: &InvokeRequest) -> PathBuf {
         .unwrap_or("txt");
     // strip prior .fixed
     let stem = stem.strip_suffix(".fixed").unwrap_or(stem);
+    let name = format!("{stem}.fixed.{ext}");
     if let Some(d) = &req.output_dir {
-        return d.join(format!("{stem}.fixed.{ext}"));
+        return d.join(name);
     }
-    req.input
-        .parent()
-        .unwrap_or_else(|| Path::new("."))
-        .join(format!("{stem}.fixed.{ext}"))
+    default_work_dir(&req.input).join(name)
 }
 
 fn run_cmd(bin: &Path, args: &[String], cwd: &Path) -> Result<(), ExecError> {
-    let status = Command::new(bin)
+    let output = Command::new(bin)
         .args(args)
         .current_dir(cwd)
-        .status()
+        .output()
         .map_err(|e| ExecError::Step(format!("{}: {e}", bin.display())))?;
-    if status.success() {
-        Ok(())
+    if output.status.success() {
+        // Child tools may still print progress/status on stdout when not fully quiet.
+        if !output.stdout.is_empty() {
+            let _ = std::io::Write::write_all(&mut std::io::stdout(), &output.stdout);
+        }
+        return Ok(());
+    }
+    let code = output.status.code().unwrap_or(1);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let detail = stderr.trim();
+    let detail = if detail.is_empty() {
+        stdout.trim()
+    } else {
+        detail
+    };
+    if detail.is_empty() {
+        Err(ExecError::Step(format!("{} exited {code}", bin.display())))
     } else {
         Err(ExecError::Step(format!(
-            "{} exited {}",
-            bin.display(),
-            status.code().unwrap_or(1)
+            "{} exited {code}: {detail}",
+            bin.display()
         )))
     }
 }

@@ -1,8 +1,9 @@
 //! Diarize branch when policy + a timeline-purpose source allow it.
 
-use vd_pipeline::{Capability, Step};
+use vd_pipeline::{is_video_path, Capability, Step};
 
 use super::overwrite_opt;
+use super::preprocess::media_input_ref;
 use crate::model::{BuildOptions, InputPurpose};
 use crate::planner::normalize::ResolvedMeeting;
 use crate::planner::PlanError;
@@ -23,10 +24,22 @@ pub fn append_diarize(
             )
         })?;
 
+    // Same branch may already have `{bid}.prepared` from the transcript path (room alone).
+    let already_prepared = is_video_path(&src.path)
+        && resolved
+            .text_sources
+            .iter()
+            .any(|&i| resolved.inputs[i].branch_id == src.branch_id);
+    let media = if already_prepared {
+        format!("{}.prepared", src.branch_id)
+    } else {
+        media_input_ref(steps, src, options)?
+    };
+
     let id = "timeline".to_string();
     let mut step = Step::new(Capability::Diarize);
     step.id = Some(id.clone());
-    step.input = Some(src.path.display().to_string());
+    step.input = Some(media);
     step.options = overwrite_opt(options);
     steps.push(step);
     Ok(id)

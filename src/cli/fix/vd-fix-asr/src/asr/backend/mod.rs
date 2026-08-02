@@ -130,12 +130,13 @@ fn closest_context_form(lower: &str, ctx: SpanContext<'_>) -> Option<String> {
             return Some(form.clone());
         }
         let dist = edit_distance(lower, &cand);
-        if dist == 1 || (dist == 2 && lower.chars().count() >= 8) {
-            match &best {
-                None => best = Some((dist, form.clone())),
-                Some((d, _)) if dist < *d => best = Some((dist, form.clone())),
-                _ => {}
-            }
+        if !plausible_asr_edit(lower, &cand, dist) {
+            continue;
+        }
+        match &best {
+            None => best = Some((dist, form.clone())),
+            Some((d, _)) if dist < *d => best = Some((dist, form.clone())),
+            _ => {}
         }
     }
     best.map(|(_, s)| s)
@@ -157,16 +158,35 @@ fn closest_neighbor_form(lower: &str, ctx: SpanContext<'_>) -> Option<String> {
             }
             let cand = token.to_lowercase();
             let dist = edit_distance(lower, &cand);
-            if dist == 1 {
-                match &best {
-                    None => best = Some((dist, token.to_string())),
-                    Some((d, _)) if dist < *d => best = Some((dist, token.to_string())),
-                    _ => {}
-                }
+            if !plausible_asr_edit(lower, &cand, dist) {
+                continue;
+            }
+            match &best {
+                None => best = Some((dist, token.to_string())),
+                Some((d, _)) if dist < *d => best = Some((dist, token.to_string())),
+                _ => {}
             }
         }
     }
     best.map(|(_, s)| s)
+}
+
+/// Accept near-miss ASR repairs; reject length-decreasing edits that strip
+/// Russian case endings (e.g. neighbor `друг` must not rewrite `друга`).
+fn plausible_asr_edit(from: &str, to: &str, dist: usize) -> bool {
+    if dist == 0 {
+        return true;
+    }
+    let n = from.chars().count();
+    let m = to.chars().count();
+    if dist == 1 {
+        // substitution (same len) or insertion into ASR token (to longer) only.
+        return m >= n;
+    }
+    if dist == 2 && n >= 8 {
+        return m >= n;
+    }
+    false
 }
 
 fn restore_shape(original: &str, replacement: &str) -> String {

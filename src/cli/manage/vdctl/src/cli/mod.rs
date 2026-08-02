@@ -35,6 +35,8 @@ struct Root {
     #[arg(long, global = true)]
     tcp: Option<String>,
     #[arg(long, global = true)]
+    http: Option<String>,
+    #[arg(long, global = true)]
     socket: Option<PathBuf>,
     #[command(subcommand)]
     command: Command_,
@@ -56,10 +58,18 @@ enum Command_ {
     },
     /// Start Runtime (+ MCP if configured).
     Up,
+    /// Ensure Runtime is ready (start only if not already running).
+    Ensure,
     /// Stop Runtime (and MCP).
     Down,
     /// Restart Runtime.
     Restart,
+    /// Build workspace Runtime packages (`scripts/build.sh`) for the configured profile.
+    Build {
+        /// Override profile for this build only (`debug`|`release`|`prod`).
+        #[arg(long)]
+        profile: Option<String>,
+    },
     /// Runtime status.
     Status,
     /// Wait until Runtime API is ready.
@@ -91,7 +101,7 @@ enum Command_ {
         #[command(subcommand)]
         action: McpAction,
     },
-    /// AI skills (content) — independent from Runtime / MCP.
+    /// AI skills (content) — read-only diagnostics; lifecycle is `vdctl mcp install|update`.
     Skills {
         #[command(subcommand)]
         action: SkillsAction,
@@ -264,8 +274,24 @@ where
         Command_::Update { channel } => update::update(&platform, channel.as_deref()),
         Command_::Uninstall { purge } => update::uninstall(&platform, purge),
         Command_::Up => lifecycle::up(&platform, &cfg),
+        Command_::Ensure => lifecycle::ensure(&platform, &cfg),
         Command_::Down => lifecycle::down(&platform),
         Command_::Restart => lifecycle::restart(&platform, &cfg),
+        Command_::Build { profile } => {
+            let root = platform.workspace.as_ref().ok_or_else(|| {
+                Error::Message("build requires workspace mode (run from repo or set workspace=)".into())
+            })?;
+            let build = if let Some(raw) = profile.as_deref() {
+                config::BuildProfile::parse(raw).ok_or_else(|| {
+                    Error::Usage(format!(
+                        "invalid --profile {raw} (expected debug|dev|release|prod)"
+                    ))
+                })?
+            } else {
+                platform.build
+            };
+            resolve::build_workspace(root, build)
+        }
         Command_::Status => lifecycle::status(&platform, root.json),
         Command_::Wait { timeout } => lifecycle::wait(&platform, timeout),
         Command_::Health => discover::health(&platform, root.json),
@@ -377,6 +403,9 @@ fn apply_overrides(cfg: &mut PlatformConfig, root: &Root) {
     if let Some(v) = &root.tcp {
         cfg.tcp = Some(v.clone());
     }
+    if let Some(v) = &root.http {
+        cfg.http = Some(v.clone());
+    }
     if let Some(v) = &root.socket {
         cfg.socket = Some(v.clone());
     }
@@ -406,10 +435,12 @@ fn config_cmd(
         ConfigAction::List => {
             let value = json!({
                 "workspace": cfg.workspace.as_ref().map(|p| p.display().to_string()),
+                "build": cfg.build.as_str(),
                 "auto_build": cfg.auto_build.as_str(),
                 "auto_start_mcp": cfg.auto_start_mcp,
                 "transport": cfg.transport,
                 "tcp": cfg.tcp,
+                "http": cfg.http,
                 "socket": cfg.socket.as_ref().map(|p| p.display().to_string()),
                 "data_dir": cfg.data_dir.as_ref().map(|p| p.display().to_string()),
             });
@@ -484,7 +515,7 @@ fn link_cmd(workspace: Option<&Path>, cfg: &PlatformConfig) -> Result<(), Error>
         .map(Path::to_path_buf)
         .or_else(|| cfg.workspace.clone())
         .or_else(|| resolve::detect(cfg).ok().and_then(|p| p.workspace));
-    let source = crate::link::resolve_source(ws.as_deref());
+    let source = crate::link::resolve_source(ws.as_deref(), Some(cfg.build.as_str()));
     let result = crate::link::link_vdctl(&source)?;
     if result.changed {
         eprintln!("Linked {} → {}", source.display(), result.dest.display());

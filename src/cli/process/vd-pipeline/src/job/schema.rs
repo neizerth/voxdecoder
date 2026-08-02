@@ -223,6 +223,7 @@ pub enum Capability {
     FixCasing,
     FixAsr,
     FixTerms,
+    FixLayout,
     Diarize,
     MeetingMerge,
     Preprocess,
@@ -237,6 +238,7 @@ impl Capability {
             Self::FixCasing => "fix-casing",
             Self::FixAsr => "fix-asr",
             Self::FixTerms => "fix-terms",
+            Self::FixLayout => "fix-layout",
             Self::Diarize => "diarize",
             Self::MeetingMerge => "meeting-merge",
             Self::Preprocess => "preprocess",
@@ -251,7 +253,11 @@ impl Capability {
     /// Default artifact kind hint for registry typing (Epic 2 / 6).
     pub fn default_artifact_kind(self) -> &'static str {
         match self {
-            Self::Transcribe | Self::FixCasing | Self::FixAsr | Self::FixTerms => "transcript",
+            Self::Transcribe
+            | Self::FixCasing
+            | Self::FixAsr
+            | Self::FixTerms
+            | Self::FixLayout => "transcript",
             Self::PrepareContext => "assets",
             Self::Diarize => "timeline",
             Self::MeetingMerge => "meeting",

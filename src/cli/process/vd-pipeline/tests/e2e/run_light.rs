@@ -14,9 +14,11 @@ use super::{bin, fixture, with_isolation};
 fn run_fix_only() {
     if !(child_available("vd-fix-casing")
         && child_available("vd-fix-asr")
-        && child_available("vd-fix-terms"))
+        && child_available("vd-fix-terms")
+        && child_available("vd-fix-layout"))
     {
         eprintln!("skip run_fix_only: fix CLIs not built");
+        return;
     }
 
     let dir = TempDir::new().unwrap();
@@ -26,7 +28,7 @@ fn run_fix_only() {
     fs::write(
         &job,
         format!(
-            "version: 1\nworking_dir: {}\nsteps:\n  - use: fix-casing\n    input: sample.txt\n    options:\n      overwrite: true\n  - use: fix-asr\n    options:\n      overwrite: true\n  - use: fix-terms\n    options:\n      overwrite: true\n",
+            "version: 1\nworking_dir: {}\nsteps:\n  - use: fix-casing\n    input: sample.txt\n    options:\n      overwrite: true\n  - use: fix-asr\n    options:\n      overwrite: true\n  - use: fix-terms\n    options:\n      overwrite: true\n  - use: fix-layout\n    options:\n      overwrite: true\n",
             dir.path().display()
         ),
     )
@@ -37,7 +39,7 @@ fn run_fix_only() {
     with_isolation(&mut cmd, &cfg);
     cmd.arg(job).arg("-q").assert().success();
 
-    let fixed = dir.path().join("sample.fixed.txt");
+    let fixed = dir.path().join(".voxdecoder/work/sample.fixed.txt");
     assert!(
         fixed.exists(),
         "expected {} after fix chain",
@@ -105,7 +107,9 @@ fn run_diarize_stub() {
     }
     cmd.arg(&job).arg("-q").assert().success();
 
-    let out = dir.path().join("meeting.diarization.json");
+    let out = dir
+        .path()
+        .join(".voxdecoder/work/meeting.diarization.json");
     assert!(out.exists(), "expected {}", out.display());
 }
 
@@ -180,7 +184,7 @@ fn run_full_pipeline_clip(
     fs::write(
         &job,
         format!(
-            "version: 1\nworking_dir: {}\ninput:\n  audio: {audio_name}\nsteps:\n  - use: transcribe\n    options:\n      engine: gigaam\n      model: v3_e2e_ctc\n{device_line}      overwrite: true\n  - use: fix-casing\n    options:\n      overwrite: true\n  - use: fix-asr\n    options:\n      overwrite: true\n  - use: fix-terms\n    options:\n      overwrite: true\n",
+            "version: 1\nworking_dir: {}\ninput:\n  audio: {audio_name}\nsteps:\n  - use: transcribe\n    options:\n      engine: gigaam\n      model: v3_e2e_ctc\n{device_line}      overwrite: true\n  - use: fix-casing\n    options:\n      overwrite: true\n  - use: fix-asr\n    options:\n      overwrite: true\n  - use: fix-terms\n    options:\n      overwrite: true\n  - use: fix-layout\n    options:\n      overwrite: true\n",
             dir.path().display()
         ),
     )
@@ -204,7 +208,10 @@ fn run_full_pipeline_clip(
         .assert()
         .success();
 
-    let out = dir.path().join(format!("{stem}.fixed.txt"));
+    let out = dir
+        .path()
+        .join(".voxdecoder/work")
+        .join(format!("{stem}.fixed.txt"));
     assert!(
         out.is_file(),
         "expected cleaned transcript {}",

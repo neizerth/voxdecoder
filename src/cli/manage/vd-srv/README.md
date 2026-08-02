@@ -2,7 +2,7 @@
 
 Layout: [STRUCTURE.md](STRUCTURE.md).  
 CLI / API surface: [cli.md](cli.md).  
-Transport / RPC: [TRANSPORT.md](TRANSPORT.md).  
+Transport / RPC: [TRANSPORT.md](TRANSPORT.md) · [ADR 0006](../../../../docs/adr/0006-http-transport-for-runtime-api.md) · [ADR 0007](../../../../docs/adr/0007-runtime-api-transports.md).  
 Platform role: [`docs/runtime.md`](../../../../docs/runtime.md).  
 Related: [`vd-pipeline`](../../process/vd-pipeline/) · [`vd-meeting`](../../process/vd-meeting/) · [`vd-postprocess`](../../process/vd-postprocess/) · [`vd-diarize`](../../process/vd-diarize/) · [`vd-mcp`](../vd-mcp/) (planned — MCP Gateway).
 Shared crates: [`vd-artifact`](../../../crates/vd-artifact/), [`vd-progress`](../../../crates/vd-progress/), [`vd-pipeline`](../../process/vd-pipeline/).  
@@ -411,7 +411,7 @@ Live UI: `vd-progress` (no timings). Durable numbers: Job / Event Store.
 | `vd-srv workers` / `worker info <n>` | Pool + single worker detail |
 | `vd-srv metrics` / `profile` | Counters + latency + time share |
 
-HTTP: `/live` · `/ready` · `/jobs` · `/jobs/:id/events` · `/metrics` (future). Details: [cli.md](cli.md).
+HTTP: `--http 127.0.0.1:7701` ([ADR 0006](../../../../docs/adr/0006-http-transport-for-runtime-api.md); umbrella [ADR 0007](../../../../docs/adr/0007-runtime-api-transports.md)). Routes: `/live` · `/ready` · `/health` · `/doctor` · `/server_info` · `/openapi.json` · `/docs` · `/planning/*` · `/jobs` · `/jobs/:id` · `/jobs/:id/events` (live SSE). gRPC: `--grpc 127.0.0.1:7702` (OperatorService.Health required). Details: [cli.md](cli.md).
 
 ---
 

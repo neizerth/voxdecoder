@@ -14,7 +14,7 @@ Job `steps` is a list of [`WorkflowNode`](src/job/schema.rs):
 
 Flat lists of capability steps remain valid (implicit root sequence).
 
-Executor walks `WorkflowPlan` recursively. `parallel` runs children in `thread::scope` batches of `max_parallel`. Branch progress is quiet; parent report still collects leaf timings.
+Executor walks `WorkflowPlan` recursively. `parallel` runs children in `thread::scope` batches of `max_parallel`. **Resource classes** (`Job.resources` + `Step.resource`, with defaults such as `metal_gpu: 1` on macOS) lease around each leaf invoke — contended accelerators serialize even when branches fan out. Branch progress is quiet; parent report still collects leaf timings.
 
 ## Epic 2 — status: scaffold
 
@@ -24,7 +24,7 @@ Executor walks `WorkflowPlan` recursively. `parallel` runs children in `thread::
 
 ## Epic 3 — status: partial
 
-`vd-meeting` Planner emits a workflow tree: optional `prepare-context`, **parallel transcript branches** when multiple text sources, then diarize + merge leaves. Default `max_parallel: 4` when unset.
+`vd-meeting` Planner emits a workflow tree: optional `prepare-context`, **parallel transcript branches** when multiple text sources, then diarize + merge leaves. Default `max_parallel: 4` when unset; on macOS Jobs also declare `metal_gpu: 1` so parallel ASR does not open multiple Metal contexts.
 
 ## Epics 4–7 — status: stubs remain; contracts
 

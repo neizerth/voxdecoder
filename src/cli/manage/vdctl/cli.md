@@ -19,7 +19,7 @@ Not binaries / processes / contexts — the **installation**.
 
 ```text
 Platform     install · update · uninstall
-Runtime      up · down · restart · status
+Runtime      up · ensure · down · restart · status
 MCP          mcp …
 Skills       skills …
 Assets       assets …
@@ -27,7 +27,7 @@ Diagnostics  health · doctor · info
 Config       config …
 ```
 
-**No `service` verb.** How Runtime is supervised is an implementation detail behind `up` / `down`.
+**No `service` verb.** How Runtime is supervised is an implementation detail behind `up` / `ensure` / `down`.
 
 ---
 
@@ -66,11 +66,15 @@ In Workspace → refuse with Git/`cargo build` guidance ([README](README.md#work
 
 ```bash
 vdctl up
+vdctl ensure
 vdctl down
 vdctl restart
 vdctl status
 vdctl wait [--timeout N]
 ```
+
+`ensure` — start Runtime only if it is not already reachable (safe for Skills / agents).
+`up` — same start path; prints “already running” when reachable.
 
 ---
 
@@ -95,19 +99,15 @@ Default `install` (ADR 0005): sync Skills → `$VD_HOME/skills` → build `voxde
 
 ## Skills
 
-Platform assets under `skills/<id>/skill.md` → installed to `$VD_HOME/skills`. **`vdctl` owns the lifecycle**; `vd-mcp` never discovers or installs Skills.
+Platform assets under `skills/<id>/skill.md` → synchronized to `$VD_HOME/skills` by **`vdctl mcp install|update`**. The `skills` command is **read-only** (list / inspect / validate / status). `vd-mcp` never discovers or installs Skills.
+
+Skills that start Jobs must include a `## Runtime Contract` (Execution · Progress · Results · Cancellation · Failures · Recovery). See `skills/TEMPLATE.md`. `vdctl skills validate` enforces this.
+
+After editing `skill.md`:
 
 ```bash
-vdctl skills list [--json]
-vdctl skills inspect vd-audio [--json]
-vdctl skills validate [--json]
-vdctl skills status [--json]
+vdctl mcp update
 ```
-
-```text
-Runtime  ≠  MCP Bundle  ≠  Skills
-```
-
 ---
 
 ## Assets
@@ -128,10 +128,11 @@ vdctl paths | env | version
 vdctl discover | inspect [--json]
 ```
 
-`discover` shows Applications + Skills. Adapters: `src/agents/adapters.toml` (+ OS blocks). Bundle packaging: `packaging/mcp/`.
+`discover` shows Applications (Desktop / CLI) + Skills. Adapters: `src/agents/adapters.toml` (`kind = desktop|cli`). Bundle packaging: `packaging/mcp/`.
 
 ```bash
 vdctl discover --json
+# applications[].kind = "desktop" | "cli"
 ```
 
 ---

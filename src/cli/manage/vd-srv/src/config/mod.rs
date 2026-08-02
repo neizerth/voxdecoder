@@ -14,8 +14,12 @@ pub struct ServerConfig {
     pub workers: u32,
     #[serde(default)]
     pub resource_classes: BTreeMap<String, ResourceClassConfig>,
+    /// Optional HTTP transport (ADR 0006). Disabled by default.
     #[serde(default)]
-    pub http: Option<String>,
+    pub http: HttpConfig,
+    /// Optional gRPC transport (ADR 0007). Disabled by default.
+    #[serde(default)]
+    pub grpc: GrpcConfig,
     /// Optional TCP listen address (`127.0.0.1:7701`). Enables TCP transport when set.
     #[serde(default)]
     pub tcp: Option<String>,
@@ -35,6 +39,76 @@ pub struct ServerConfig {
     pub log_level: String,
     #[serde(default)]
     pub data_dir: Option<PathBuf>,
+}
+
+/// HTTP transport config (`[http]` in toml).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HttpConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_http_bind")]
+    pub bind: String,
+}
+
+impl Default for HttpConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            bind: default_http_bind(),
+        }
+    }
+}
+
+impl HttpConfig {
+    /// CLI `--http ADDR` wins; else enabled config bind.
+    pub fn listen_addr(&self, cli: Option<&str>) -> Option<String> {
+        if let Some(addr) = cli {
+            let t = addr.trim();
+            if !t.is_empty() {
+                return Some(t.to_string());
+            }
+        }
+        if self.enabled {
+            Some(self.bind.clone())
+        } else {
+            None
+        }
+    }
+}
+
+/// gRPC transport config (`[grpc]` in toml).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GrpcConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_grpc_bind")]
+    pub bind: String,
+}
+
+impl Default for GrpcConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            bind: default_grpc_bind(),
+        }
+    }
+}
+
+impl GrpcConfig {
+    /// CLI `--grpc ADDR` wins; else enabled config bind.
+    pub fn listen_addr(&self, cli: Option<&str>) -> Option<String> {
+        if let Some(addr) = cli {
+            let t = addr.trim();
+            if !t.is_empty() {
+                return Some(t.to_string());
+            }
+        }
+        if self.enabled {
+            Some(self.bind.clone())
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -71,10 +145,19 @@ impl Default for ServerConfig {
                 capacity: default_cpu_capacity(),
             },
         );
+        #[cfg(target_os = "macos")]
+        {
+            // Single Metal context — concurrent gigaam Metal loads OOM the GPU.
+            resource_classes.insert(
+                "metal_gpu".into(),
+                ResourceClassConfig { capacity: 1 },
+            );
+        }
         Self {
             workers: default_workers(),
             resource_classes,
-            http: None,
+            http: HttpConfig::default(),
+            grpc: GrpcConfig::default(),
             tcp: None,
             pipe: None,
             transport: crate::api::TransportKind::Auto,
@@ -89,6 +172,12 @@ impl Default for ServerConfig {
 
 fn default_workers() -> u32 {
     1
+}
+fn default_http_bind() -> String {
+    "127.0.0.1:7701".into()
+}
+fn default_grpc_bind() -> String {
+    "127.0.0.1:7702".into()
 }
 fn default_history() -> u32 {
     100
@@ -123,8 +212,24 @@ pub fn load(path: &Path) -> Result<FileConfig, String> {
         });
     }
     let body = fs::read_to_string(path).map_err(|e| e.to_string())?;
-    let raw: ServerConfig = toml::from_str(&body).map_err(|e| e.to_string())?;
+    let mut raw: ServerConfig = toml::from_str(&body).map_err(|e| e.to_string())?;
+    ensure_default_resource_classes(&mut raw);
     Ok(FileConfig { raw })
+}
+
+/// Fill platform Resource Classes missing from older configs (do not overwrite explicit values).
+pub fn ensure_default_resource_classes(cfg: &mut ServerConfig) {
+    cfg.resource_classes.entry("cpu".into()).or_insert_with(|| {
+        ResourceClassConfig {
+            capacity: default_cpu_capacity(),
+        }
+    });
+    #[cfg(target_os = "macos")]
+    {
+        cfg.resource_classes
+            .entry("metal_gpu".into())
+            .or_insert(ResourceClassConfig { capacity: 1 });
+    }
 }
 
 pub fn save(path: &Path, cfg: &ServerConfig) -> Result<(), String> {

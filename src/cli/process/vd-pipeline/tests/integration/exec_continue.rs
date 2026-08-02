@@ -46,6 +46,7 @@ fn failure_stops_by_default() {
     let exec = Executor {
         binder: &binder,
         progress: ProgressMode::None,
+        progress_snapshot: None,
     };
     let fail = exec.run(&resolved).unwrap_err();
     assert_eq!(binder.calls.lock().unwrap().len(), 2);
@@ -63,6 +64,7 @@ fn continue_on_error_runs_rest() {
     let exec = Executor {
         binder: &binder,
         progress: ProgressMode::None,
+        progress_snapshot: None,
     };
     let out = exec.run(&resolved).unwrap();
     assert_eq!(out.output, PathBuf::from("/work/a.txt"));

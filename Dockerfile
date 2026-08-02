@@ -59,6 +59,7 @@ COPY --from=builder /src/target/release/vd-gigaam /usr/local/bin/
 COPY --from=builder /src/target/release/vd-fix-casing /usr/local/bin/
 COPY --from=builder /src/target/release/vd-fix-asr /usr/local/bin/
 COPY --from=builder /src/target/release/vd-fix-terms /usr/local/bin/
+COPY --from=builder /src/target/release/vd-fix-layout /usr/local/bin/
 
 COPY docker/runtime.toml /etc/voxdecoder/runtime.toml
 

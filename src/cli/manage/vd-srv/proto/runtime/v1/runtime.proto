@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package voxdecoder.runtime.v1;
+
+// Runtime API over gRPC (ADR 0007). Payloads mirror HTTP/JSON-RPC JSON.
+
+message Empty {}
+
+message JsonBody {
+  string json = 1;
+}
+
+message JobId {
+  string id = 1;
+}
+
+service PlanningService {
+  rpc PlanAudio(JsonBody) returns (JsonBody);
+  rpc PlanMeeting(JsonBody) returns (JsonBody);
+}
+
+service ExecutionService {
+  rpc SubmitJob(JsonBody) returns (JsonBody);
+  rpc ListJobs(Empty) returns (JsonBody);
+  rpc GetJob(JobId) returns (JsonBody);
+  rpc CancelJob(JobId) returns (JsonBody);
+}
+
+service OperatorService {
+  // Required on every Runtime transport.
+  rpc Health(Empty) returns (JsonBody);
+  rpc Ready(Empty) returns (JsonBody);
+  rpc Live(Empty) returns (JsonBody);
+  rpc Doctor(Empty) returns (JsonBody);
+  rpc ServerInfo(Empty) returns (JsonBody);
+}
+
+service EventService {
+  rpc WatchJob(JobId) returns (stream JsonBody);
+}

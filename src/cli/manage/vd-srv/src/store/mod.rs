@@ -73,6 +73,8 @@ impl JobStore {
             finished_at: None,
             exit_code: None,
             error: None,
+            progress: None,
+            phase: None,
             job,
             nodes,
             working_dir: resolved.working_dir.clone(),
@@ -295,13 +297,16 @@ fn capability_str(c: Capability) -> &'static str {
 
 fn default_resources(c: Capability) -> std::collections::BTreeMap<String, u32> {
     let mut m = std::collections::BTreeMap::new();
+    m.insert("cpu".into(), 1);
     match c {
         Capability::Transcribe | Capability::Diarize => {
-            m.insert("cpu".into(), 1);
+            // Capacity-1 accelerator class — Resource Manager + in-job Executor pool.
+            #[cfg(target_os = "macos")]
+            {
+                m.insert("metal_gpu".into(), 1);
+            }
         }
-        _ => {
-            m.insert("cpu".into(), 1);
-        }
+        _ => {}
     }
     m
 }

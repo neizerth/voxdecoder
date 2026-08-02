@@ -2,6 +2,9 @@
 
 #![allow(clippy::default_trait_access, clippy::field_reassign_with_default)]
 
+mod grpc_observe;
+mod http_observe;
+
 use std::thread;
 use std::time::Duration;
 

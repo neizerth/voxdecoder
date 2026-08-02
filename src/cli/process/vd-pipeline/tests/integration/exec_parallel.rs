@@ -60,6 +60,7 @@ fn parallel_branches_run_concurrently() {
     let exec = Executor {
         binder: &binder,
         progress: ProgressMode::None,
+        progress_snapshot: None,
     };
     let t0 = Instant::now();
     let out = exec.run(&resolved).unwrap();

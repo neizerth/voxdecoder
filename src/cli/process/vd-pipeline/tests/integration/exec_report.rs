@@ -51,6 +51,7 @@ fn report_records_step_order_and_timings() {
     let exec = Executor {
         binder: &binder,
         progress: ProgressMode::None,
+        progress_snapshot: None,
     };
     let out = exec.run(&resolved).unwrap();
     assert_eq!(out.report.status, JobReportStatus::Ok);
@@ -99,6 +100,7 @@ fn report_on_failure_is_partial() {
     let exec = Executor {
         binder: &binder,
         progress: ProgressMode::None,
+        progress_snapshot: None,
     };
     let err = exec.run(&resolved).unwrap_err();
     assert_eq!(err.report.status, JobReportStatus::Failed);

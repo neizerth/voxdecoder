@@ -8,12 +8,12 @@ pub fn list() -> Vec<Value> {
     vec![
         tool(
             "process_audio",
-            "Plan and optionally execute an audio processing Job.",
+            "Plan and optionally execute an audio processing Job. On macOS ASR defaults to Metal. Optional speed (e.g. 2.0–2.2) shortens wall time via preprocess; timestamps stay correct. When execute=true, response includes id and observe hints.",
             audio_schema(),
         ),
         tool(
             "process_meeting",
-            "Plan and optionally execute a meeting Job.",
+            "Plan and optionally execute a meeting Job. When execute=true, response includes id and observe hints for status polling.",
             meeting_schema(),
         ),
         tool(
@@ -21,7 +21,11 @@ pub fn list() -> Vec<Value> {
             "Submit a complete Runtime Job document.",
             json!({"type":"object","properties":{"job":{},"job_yaml":{"type":"string"},"document":{"type":"string"}}}),
         ),
-        tool("get_job", "Get a Job record by id.", id_schema()),
+        tool(
+            "get_job",
+            "Poll Job status by id. Response includes status, progress (0–100), and phase when available.",
+            id_schema(),
+        ),
         tool("cancel_job", "Cancel a Job by id.", id_schema()),
         tool("list_jobs", "List Runtime Jobs.", json!({"type":"object"})),
         tool("list_artifacts", "List artifacts for a Job.", id_schema()),
@@ -41,9 +45,9 @@ pub fn list() -> Vec<Value> {
 
 pub fn call(client: &RuntimeClient, name: &str, arguments: Value) -> Result<Value, String> {
     match name {
-        "process_audio" => client.call("plan.audio", Some(arguments)),
-        "process_meeting" => client.call("plan.meeting", Some(arguments)),
-        "submit_job" => client.call("job.submit", Some(arguments)),
+        "process_audio" => with_observe(client.call("plan.audio", Some(arguments))?),
+        "process_meeting" => with_observe(client.call("plan.meeting", Some(arguments))?),
+        "submit_job" => with_observe(client.call("job.submit", Some(arguments))?),
         "get_job" => client.call("job.status", Some(arguments)),
         "cancel_job" => client.call("job.cancel", Some(arguments)),
         "list_jobs" => client.call("job.list", Some(arguments)),
@@ -59,8 +63,54 @@ pub fn call(client: &RuntimeClient, name: &str, arguments: Value) -> Result<Valu
     }
 }
 
+/// Attach poll hints when a Job id is present (MCP-side; Runtime unchanged).
+fn with_observe(mut value: Value) -> Result<Value, String> {
+    let id = value
+        .get("id")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    if let Some(id) = id {
+        if let Some(obj) = value.as_object_mut() {
+            obj.insert(
+                "observe".into(),
+                json!({
+                    "mcp_tool": "get_job",
+                    "cli": format!(
+                        "vdctl api job.status --params {{\"id\":\"{id}\"}} --json"
+                    ),
+                    "rule": "Poll with MCP get_job until completed|failed|cancelled. Report progress and phase from the response when present. Do not use curl/HTTP when MCP tools are available.",
+                }),
+            );
+        }
+    }
+    Ok(value)
+}
+
 fn tool(name: &str, description: &str, input_schema: Value) -> Value {
     json!({"name": name, "description": description, "inputSchema": input_schema})
+}
+
+#[cfg(test)]
+mod observe_tests {
+    use super::with_observe;
+    use serde_json::json;
+
+    #[test]
+    fn attaches_observe_when_id_present() {
+        let out = with_observe(json!({"id": "job-1", "status": "running"})).unwrap();
+        assert_eq!(out["observe"]["mcp_tool"], "get_job");
+        assert!(out["observe"]["cli"].as_str().unwrap().contains("job-1"));
+        assert!(out["observe"]["rule"]
+            .as_str()
+            .unwrap()
+            .contains("get_job"));
+    }
+
+    #[test]
+    fn skips_observe_without_id() {
+        let out = with_observe(json!({"job": {"version": 1}})).unwrap();
+        assert!(out.get("observe").is_none());
+    }
 }
 
 fn id_schema() -> Value {
@@ -90,8 +140,22 @@ fn audio_schema() -> Value {
             "run": {"type":"boolean","description":"Alias for execute"},
             "engine": {"type":"string","enum":["gigaam","whisper"]},
             "model": {"type":"string"},
-            "device": {"type":"string"},
-            "docs": {"type":"string"},
+            "device": {"type":"string","description":"ASR device. On macOS defaults to metal when omitted."},
+            "speed": {
+                "type":"number",
+                "minimum": 0.25,
+                "maximum": 4.0,
+                "description":"Preprocess playback speed (e.g. 1.5, 2, 2.2). Speeds up ASR; timestamps remapped via TimeMap."
+            },
+            "overwrite": {
+                "type":"boolean",
+                "default": true,
+                "description":"Overwrite existing outputs next to the source (default true)."
+            },
+            "docs": {
+                "type":"string",
+                "description":"Path to accompanying documents/materials (folder or file). Fed to prepare-context → vd-assets for fix-asr / fix-terms (glossary, names, domain terms)."
+            },
             "output_dir": {"type":"string"}
         }
     })
@@ -108,17 +172,24 @@ fn meeting_schema() -> Value {
                     "type": "object",
                     "required": ["role"],
                     "properties": {
-                        "role": {"type":"string","enum":["room","merged","participant","context"]},
+                        "role": {
+                            "type":"string",
+                            "enum":["room","merged","participant","context"],
+                            "description":"room/merged = shared mix; participant = per-speaker track; context = docs/materials for vd-assets"
+                        },
                         "path": {"type":"string"},
                         "uri": {"type":"string"},
                         "artifact": {"type":"string"},
                         "blob": {"type":"string"},
-                        "participant": {"type":"string"},
+                        "participant": {"type":"string","description":"Speaker id/name when role is participant"},
                         "purposes": {"type":"array","items":{"type":"string"}}
                     }
                 }
             },
-            "meeting": {"type":"object"},
+            "meeting": {
+                "type":"object",
+                "description":"Meeting model: participants.known (name, constraints.gender), diarization.enabled (auto|true|false)"
+            },
             "output": {"type":"object"},
             "working_dir": {"type":"string"},
             "document": {"type":"string"},
