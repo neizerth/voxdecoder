@@ -1,0 +1,12 @@
+# Default Runtime config for the container image.
+# `vd-srv serve` CLI flags override these (see Dockerfile CMD).
+# Client tools (`ping`, `submit`, …) use this file via VD_SRV_CONFIG.
+
+transport = "tcp"
+# Healthcheck / in-container clients connect here; serve CMD binds 0.0.0.0.
+tcp = "127.0.0.1:7701"
+data_dir = "/data/srv"
+log_level = "info"
+
+# `workers` omitted → server default (later: derive from ResourceClasses / hardware).
+# Override with: docker run … --workers N

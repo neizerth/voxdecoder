@@ -15,13 +15,15 @@ pub enum ArtifactError {
     UnsupportedType,
     #[error("input missing or unreadable: {0}")]
     Io(String),
+    #[error("parse error: {0}")]
+    Parse(String),
 }
 
 impl ArtifactError {
     pub fn exit_code(&self) -> u8 {
         match self {
             Self::UnsupportedType | Self::Io(_) => 3,
-            Self::Message(_) => 1,
+            Self::Message(_) | Self::Parse(_) => 1,
         }
     }
 }

@@ -173,7 +173,7 @@ Groups for GUI / `filters` listing:
 | Operation | Params (examples) |
 |-----------|-------------------|
 | `resample` | `rate` (Hz) |
-| `speed` | `factor` |
+| `speed` | `factor` (`0.25`–`4.0`; `atempo` chained above `2.0` / below `0.5`) |
 | `trim-silence` | `min_duration`, `threshold` |
 | `trim` | `start`, `end` / `duration` |
 | `highpass` / `lowpass` | `cutoff_hz` |

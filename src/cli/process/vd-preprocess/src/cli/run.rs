@@ -98,6 +98,13 @@ pub fn execute(args: RunArgs) -> Result<(), CliError> {
     let result = preprocess::execute(&req)
         .map_err(|e| CliError::with_code(e.exit_code(), e.to_string()))?;
     status::emit_phase(&progress, "done", 100);
-    println!("{}", result.output.path.display());
+    if args.json {
+        println!("{}", serde_json::to_string_pretty(&result).unwrap());
+    } else {
+        println!("{}", result.output.path.display());
+        if let Some(tm) = &result.timemap {
+            eprintln!("timemap: {}", tm.display());
+        }
+    }
     Ok(())
 }

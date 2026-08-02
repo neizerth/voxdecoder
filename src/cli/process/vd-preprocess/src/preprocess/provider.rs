@@ -72,6 +72,11 @@ fn find_ffmpeg() -> Result<PathBuf, PreprocessError> {
     })
 }
 
+/// Best-effort ffmpeg path for duration probing (may be missing).
+pub(crate) fn find_ffmpeg_for_probe() -> Option<PathBuf> {
+    find_ffmpeg().ok()
+}
+
 fn which(bin: &str) -> Option<PathBuf> {
     std::env::var_os("PATH").and_then(|paths| {
         for dir in std::env::split_paths(&paths) {
@@ -207,12 +212,8 @@ fn ffmpeg_args(
         }
         "speed" => {
             let factor = param_f64(filter, "factor").unwrap_or(1.0);
-            if !(0.5..=2.0).contains(&factor) {
-                return Err(PreprocessError::Usage(
-                    "speed factor must be between 0.5 and 2.0 for atempo".into(),
-                ));
-            }
-            args.extend(["-af".into(), format!("atempo={factor}")]);
+            let af = atempo_filtergraph(factor)?;
+            args.extend(["-af".into(), af]);
         }
         "trim-silence" => {
             let min_d = param_str(filter, "min_duration").unwrap_or_else(|| "0.5".into());
@@ -249,6 +250,41 @@ fn ffmpeg_args(
     }
     args.push(output.display().to_string());
     Ok(args)
+}
+
+/// ffmpeg `atempo` accepts ~0.5..=2.0 per stage; chain stages for 0.25..=4.0.
+fn atempo_filtergraph(factor: f64) -> Result<String, PreprocessError> {
+    const MIN: f64 = 0.25;
+    const MAX: f64 = 4.0;
+    const STAGE_MIN: f64 = 0.5;
+    const STAGE_MAX: f64 = 2.0;
+
+    if !factor.is_finite() || !(MIN..=MAX).contains(&factor) {
+        return Err(PreprocessError::Usage(format!(
+            "speed factor must be between {MIN} and {MAX} (got {factor})"
+        )));
+    }
+    if (factor - 1.0).abs() < 1e-9 {
+        return Ok("atempo=1.0".into());
+    }
+
+    let mut remaining = factor;
+    let mut stages = Vec::new();
+    while remaining > STAGE_MAX + 1e-9 {
+        stages.push(STAGE_MAX);
+        remaining /= STAGE_MAX;
+    }
+    while remaining < STAGE_MIN - 1e-9 {
+        stages.push(STAGE_MIN);
+        remaining /= STAGE_MIN;
+    }
+    stages.push(remaining);
+
+    Ok(stages
+        .into_iter()
+        .map(|s| format!("atempo={s}"))
+        .collect::<Vec<_>>()
+        .join(","))
 }
 
 fn param_str(filter: &FilterSpec, key: &str) -> Option<String> {
@@ -301,4 +337,55 @@ pub fn describe_step(
         }
     }
     m
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    fn speed_filter(factor: f64) -> FilterSpec {
+        let mut params = BTreeMap::new();
+        params.insert("factor".into(), serde_json::json!(factor));
+        FilterSpec {
+            operation: "speed".into(),
+            provider: "ffmpeg".into(),
+            params,
+        }
+    }
+
+    #[test]
+    fn atempo_within_single_stage() {
+        assert_eq!(atempo_filtergraph(1.25).unwrap(), "atempo=1.25");
+        assert_eq!(atempo_filtergraph(2.0).unwrap(), "atempo=2");
+    }
+
+    #[test]
+    fn atempo_chains_above_2() {
+        assert_eq!(atempo_filtergraph(4.0).unwrap(), "atempo=2,atempo=2");
+        assert_eq!(atempo_filtergraph(3.0).unwrap(), "atempo=2,atempo=1.5");
+        assert_eq!(atempo_filtergraph(2.5).unwrap(), "atempo=2,atempo=1.25");
+    }
+
+    #[test]
+    fn atempo_rejects_out_of_range() {
+        assert!(atempo_filtergraph(0.1).is_err());
+        assert!(atempo_filtergraph(4.1).is_err());
+    }
+
+    #[test]
+    fn ffmpeg_argv_embeds_chained_atempo() {
+        let argv = ffmpeg_argv_for_plan(
+            &speed_filter(3.5),
+            Path::new("in.wav"),
+            Path::new("out.wav"),
+        )
+        .unwrap();
+        let af = argv
+            .windows(2)
+            .find(|w| w[0] == "-af")
+            .map(|w| w[1].as_str())
+            .unwrap();
+        assert_eq!(af, "atempo=2,atempo=1.75");
+    }
 }

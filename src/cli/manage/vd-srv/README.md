@@ -1,28 +1,29 @@
-# vd-srv — Execution Engine
+# vd-srv — Runtime (execution engine)
 
 Layout: [STRUCTURE.md](STRUCTURE.md).  
 CLI / API surface: [cli.md](cli.md).  
 Transport / RPC: [TRANSPORT.md](TRANSPORT.md).  
-Related: [`vd-pipeline`](../../process/vd-pipeline/) · [`vd-meeting`](../../process/vd-meeting/) · [`vd-postprocess`](../../process/vd-postprocess/) · [`vd-diarize`](../../process/vd-diarize/) · `vd-mcp` (planned).  
+Platform role: [`docs/runtime.md`](../../../../docs/runtime.md).  
+Related: [`vd-pipeline`](../../process/vd-pipeline/) · [`vd-meeting`](../../process/vd-meeting/) · [`vd-postprocess`](../../process/vd-postprocess/) · [`vd-diarize`](../../process/vd-diarize/) · [`vd-mcp`](../vd-mcp/) (reserved).
 Shared crates: [`vd-artifact`](../../../crates/vd-artifact/), [`vd-progress`](../../../crates/vd-progress/), [`vd-pipeline`](../../process/vd-pipeline/).  
 Rust gates: [RUST.md](RUST.md).
 
 **Status: implemented (v1).** Workspace member: `src/cli/manage/vd-srv`.
 
-> **`vd-srv` is the execution engine for VoxDecoder.**
+> **`vd-srv` is the Runtime Environment for VoxDecoder.**
 >
-> It owns scheduling, persistence, resource management, observability, and background execution. Capability logic remains in the shared Executor.
+> It owns Worker Pool, Resource Classes, Queue, Event/Artifact stores, Health, Transport, API, and scheduling. Capability logic remains in the shared Executor (lib preferred, CLI subprocess fallback). Builders submit Jobs; Runtime runs them.
 
 **v1 scope:** Job-granularity workers (full Job → shared `Executor`); node records + Event Store for queue/watch; JSON-RPC 2.0 control plane over transport abstraction (UDS primary; optional TCP) — see [TRANSPORT.md](TRANSPORT.md); filesystem Job Store. Per-node dispatch and Windows Named Pipe are next.
 
-The queue is only one subsystem. Scheduler, Resource Manager, Worker Pool, and Event Store together form the long-running execution engine that serves CLI, MCP, HTTP, and a future GUI the same way. `vd-pipeline` and `vd-meeting` plan Jobs; `vd-srv` runs them in durable mode.
+The queue is only one subsystem. Scheduler, Resource Manager, Worker Pool, and Event Store together form the long-running **Runtime** that serves CLI, MCP, HTTP, and a future GUI the same way. `vd-pipeline` and `vd-meeting` plan Jobs; `vd-srv` runs them in durable mode. Container image: `voxdecoder/runtime` ([docs/runtime.md](../../../../docs/runtime.md)).
 
 ---
 
 ## Core rule
 
 ```text
-vd-srv is the long-running execution engine for VoxDecoder.
+vd-srv is the Runtime for VoxDecoder.
 
 It accepts Jobs, schedules DAG nodes, limits resources, balances concurrent work,
 persists state, and exposes progress — all through the shared Executor.

@@ -251,6 +251,8 @@ Spawn `cargo_bin!("vd-pipeline")`. Isolate with `VD_PIPELINE_CONFIG` (+ clear `V
 | `run_fix_only.rs` | Job without transcribe: txt → fix-* with shipping lexicon (needs built fix CLIs) |
 | `run_prepare_context.rs` | `prepare-context` on `fixtures/docs` writes `.voxdecoder/` (`terms.yml` + `md/`) |
 | `run_full_pipeline.rs` | **optional / `#[ignore]`** unless `VD_PIPELINE_E2E_FULL=1` and audio + gigaam available |
+| `speed_experiment.rs` | **experimental / `#[ignore]`**: `VD_PIPELINE_E2E_SPEED=1` — ffmpeg speed bands (`low` 1–2× / `high` 2–4× / `all`) vs 1× time + coverage |
+| `timemap_remap.rs` | **experimental / `#[ignore]`**: `VD_PIPELINE_E2E_TIMEMAP=1` — 1× vs speed 2× remapped segment ends (ADR TimeMap) |
 
 Full ASR e2e must not block default `cargo test` / CI. Gate:
 

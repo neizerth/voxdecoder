@@ -25,6 +25,12 @@ cargo test -p vd-pipeline --test integration
 cargo test -p vd-pipeline --test e2e
 # optional full ASR:
 # VD_PIPELINE_E2E_FULL=1 cargo test --release -p vd-pipeline --test e2e run_full_pipeline -- --ignored
+# experimental preprocess speed vs accuracy:
+# VD_PIPELINE_E2E_SPEED=1 VD_PIPELINE_E2E_SPEED_BAND=high \
+#   cargo test --release -p vd-pipeline --test e2e preprocess_speed_faster_than_1x -- --ignored --nocapture
+# TimeMap remap (1× vs speed 2× segment ends):
+# VD_PIPELINE_E2E_TIMEMAP=1 cargo test --release -p vd-pipeline --test e2e \
+#   preprocess_speed_2x_timemap_matches_1x_segments -- --ignored --nocapture
 ```
 
 Git hooks ([lefthook.yml](../../../../lefthook.yml)): `npm install` installs lefthook; `pre-commit` runs `npm test`; `commit-msg` runs commitlint (conventional commits).

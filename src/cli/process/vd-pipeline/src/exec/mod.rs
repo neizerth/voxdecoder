@@ -2,6 +2,7 @@
 
 mod bind;
 mod subprocess;
+mod timemap;
 
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
@@ -77,6 +78,8 @@ struct RunState {
     artifacts: ArtifactRegistry,
     prev: Option<PathBuf>,
     last_out: Option<PathBuf>,
+    /// Active TimeMap from the latest preprocess that rewrote time (ADR §5–6).
+    active_timemap: Option<PathBuf>,
     step_reports: Vec<StepReport>,
     any_failed: bool,
     completed: u32,
@@ -99,6 +102,7 @@ impl<B: Binder + Sync> Executor<B> {
             artifacts: ArtifactRegistry::new(),
             prev: None,
             last_out: None,
+            active_timemap: None,
             step_reports: Vec::new(),
             any_failed: false,
             completed: 0,
@@ -185,6 +189,7 @@ impl<B: Binder + Sync> Executor<B> {
 
         let parent_artifacts = state.artifacts.clone();
         let parent_prev = state.prev.clone();
+        let parent_timemap = state.active_timemap.clone();
         let reports = Arc::new(Mutex::new(Vec::<StepReport>::new()));
         let errors = Arc::new(Mutex::new(Vec::<String>::new()));
         let branch_regs = Arc::new(Mutex::new(Vec::<ArtifactRegistry>::new()));
@@ -196,6 +201,7 @@ impl<B: Binder + Sync> Executor<B> {
                 for kid in chunk {
                     let parent_artifacts = parent_artifacts.clone();
                     let parent_prev = parent_prev.clone();
+                    let parent_timemap = parent_timemap.clone();
                     let reports = Arc::clone(&reports);
                     let errors = Arc::clone(&errors);
                     let branch_regs = Arc::clone(&branch_regs);
@@ -207,6 +213,7 @@ impl<B: Binder + Sync> Executor<B> {
                             artifacts: parent_artifacts,
                             prev: parent_prev,
                             last_out: None,
+                            active_timemap: parent_timemap,
                             step_reports: Vec::new(),
                             any_failed: false,
                             completed: 0,
@@ -360,6 +367,28 @@ impl<B: Binder + Sync> Executor<B> {
             Ok(result) => {
                 let step_elapsed = step_t0.elapsed();
                 let step_end = SystemTime::now();
+
+                if step.capability == Capability::Preprocess {
+                    if let Some(tm) = result.outputs.get("timemap") {
+                        state.active_timemap = Some(tm.clone());
+                    }
+                }
+
+                // ADR §6: remap timeline artifacts from processed → original clock.
+                if matches!(
+                    step.capability,
+                    Capability::Transcribe | Capability::Diarize
+                ) {
+                    if let Some(tm_path) = state.active_timemap.clone() {
+                        let map = timemap::load_timemap(&tm_path)?;
+                        timemap::remap_timeline_outputs(
+                            &result.primary_output,
+                            &result.outputs,
+                            &map,
+                        )?;
+                    }
+                }
+
                 state.artifacts.publish_step(
                     step.capability,
                     step.id.as_deref(),

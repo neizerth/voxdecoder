@@ -149,12 +149,142 @@ pub fn execute(req: &PreprocessRequest) -> Result<PreprocessResult, PreprocessEr
         let _ = std::fs::remove_file(t);
     }
 
+    let mut extras = Vec::new();
+    let mut timemap = None;
+    if filters_change_time(&req.filters) {
+        let in_dur = probe_duration(&req.input)?;
+        let out_dur = probe_duration(&planned.output)?;
+        if in_dur > 0.0 && out_dur > 0.0 {
+            let map = vd_artifact::TimeMap::uniform(out_dur, in_dur);
+            let path = timemap_sidecar_path(&planned.output);
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent)
+                    .map_err(|e| PreprocessError::Other(e.to_string()))?;
+            }
+            let body = serde_json::to_string_pretty(&map)
+                .map_err(|e| PreprocessError::Other(e.to_string()))?;
+            std::fs::write(&path, body).map_err(|e| PreprocessError::Other(e.to_string()))?;
+            extras.push(PreparedMedia {
+                id: Some("timemap".into()),
+                path: path.clone(),
+            });
+            timemap = Some(path);
+        }
+    }
+
     Ok(PreprocessResult {
         output: PreparedMedia {
             id: None,
             path: planned.output,
         },
-        extras: Vec::new(),
+        extras,
+        timemap,
+    })
+}
+
+fn filters_change_time(filters: &[FilterSpec]) -> bool {
+    filters.iter().any(|f| {
+        matches!(
+            f.operation.as_str(),
+            "speed" | "trim-silence" | "trim" | "chunk"
+        )
+    })
+}
+
+fn timemap_sidecar_path(media: &Path) -> PathBuf {
+    let stem = media
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("prepared");
+    let parent = media.parent().unwrap_or_else(|| Path::new("."));
+    parent.join(format!("{stem}.timemap.json"))
+}
+
+/// Best-effort media duration in seconds (ffprobe, else ffmpeg stderr).
+fn probe_duration(path: &Path) -> Result<f64, PreprocessError> {
+    if let Some(ffprobe) = find_ffprobe() {
+        if let Ok(out) = std::process::Command::new(&ffprobe)
+            .args([
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+            ])
+            .arg(path)
+            .output()
+        {
+            if out.status.success() {
+                let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                if let Ok(v) = s.parse::<f64>() {
+                    if v.is_finite() && v > 0.0 {
+                        return Ok(v);
+                    }
+                }
+            }
+        }
+    }
+
+    // Fallback: `ffmpeg -i` prints Duration on stderr.
+    let ffmpeg = provider::find_ffmpeg_for_probe().unwrap_or_else(|| PathBuf::from("ffmpeg"));
+    let out = std::process::Command::new(&ffmpeg)
+        .arg("-i")
+        .arg(path)
+        .output()
+        .map_err(|e| PreprocessError::Other(format!("ffmpeg probe: {e}")))?;
+    let err = String::from_utf8_lossy(&out.stderr);
+    parse_ffmpeg_duration(&err).ok_or_else(|| {
+        PreprocessError::Other(format!(
+            "could not probe duration for {}",
+            path.display()
+        ))
+    })
+}
+
+fn parse_ffmpeg_duration(stderr: &str) -> Option<f64> {
+    // Duration: 00:01:46.16
+    let idx = stderr.find("Duration: ")?;
+    let rest = &stderr[idx + "Duration: ".len()..];
+    let token = rest.split(',').next()?.trim();
+    let parts: Vec<&str> = token.split(':').collect();
+    if parts.len() != 3 {
+        return None;
+    }
+    let h: f64 = parts[0].parse().ok()?;
+    let m: f64 = parts[1].parse().ok()?;
+    let s: f64 = parts[2].parse().ok()?;
+    Some(h * 3600.0 + m * 60.0 + s)
+}
+
+fn find_ffprobe() -> Option<PathBuf> {
+    if let Ok(p) = std::env::var("VD_FFPROBE") {
+        let path = PathBuf::from(p);
+        if path.exists() {
+            return Some(path);
+        }
+    }
+    if let Ok(ffmpeg) = std::env::var("VD_FFMPEG") {
+        let ffmpeg = PathBuf::from(ffmpeg);
+        if let Some(parent) = ffmpeg.parent() {
+            let sibling = parent.join("ffprobe");
+            if sibling.is_file() {
+                return Some(sibling);
+            }
+        }
+    }
+    which_bin("ffprobe")
+}
+
+fn which_bin(bin: &str) -> Option<PathBuf> {
+    std::env::var_os("PATH").and_then(|paths| {
+        for dir in std::env::split_paths(&paths) {
+            let candidate = dir.join(bin);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+        None
     })
 }
 

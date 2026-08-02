@@ -61,6 +61,8 @@ Default project dir: **`.voxdecoder/`**. Shared via [`vd-artifact::paths`](../..
 
 Transcribe: [../transcribe/](../transcribe/). Fix: [../fix/README.md](../fix/README.md). Queue: [`vd-srv`](../manage/vd-srv/).
 
+Platform ADR (DAG, TimeMap, unified artifacts): [`docs/adr/0001-platform-refactoring-plan.md`](../../../docs/adr/0001-platform-refactoring-plan.md).
+
 ```bash
 vd-pipeline run -i meeting.ogg --docs ./docs
 vd-pipeline run job.yaml

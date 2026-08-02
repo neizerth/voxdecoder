@@ -1,0 +1,15 @@
+target/
+**/target/
+.git/
+.idea/
+.vscode/
+node_modules/
+knowledge/
+**/*.rs.bk
+.DS_Store
+*.swp
+src/cli/transcribe/vd-gigaam/models/
+src/cli/transcribe/vd-gigaam/scripts/.venv/
+**/fixtures/golden/
+agent-transcripts/
+.cursor/

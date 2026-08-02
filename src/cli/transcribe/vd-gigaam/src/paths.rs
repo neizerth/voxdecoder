@@ -7,6 +7,7 @@ use directories::{BaseDirs, ProjectDirs};
 
 const ENV_CONFIG: &str = "VD_GIGAAM_CONFIG";
 const ENV_MODELS: &str = "VD_GIGAAM_MODELS_DIR";
+const ENV_MODELS_ROOT: &str = "VD_MODELS_DIR";
 
 /// Resolved config.toml path (`VD_GIGAAM_CONFIG` overrides).
 pub fn config_path() -> PathBuf {
@@ -20,13 +21,22 @@ pub fn config_path() -> PathBuf {
 
 /// Default install / models root — same layout as Python GigaAM cache.
 ///
-/// Platform defaults (override with `VD_GIGAAM_MODELS_DIR` / `--download-root` / config):
-/// - Linux / macOS: `~/.cache/gigaam` (matches `os.path.expanduser("~/.cache/gigaam")`)
-/// - with `XDG_CACHE_HOME`: `$XDG_CACHE_HOME/gigaam`
-/// - Windows: `%LOCALAPPDATA%\gigaam`
+/// Resolution order:
+/// 1. `VD_GIGAAM_MODELS_DIR`
+/// 2. `$VD_MODELS_DIR/gigaam` (shared Runtime models root)
+/// 3. platform cache (`~/.cache/gigaam`, …)
 pub fn default_models_dir() -> PathBuf {
     if let Ok(p) = env::var(ENV_MODELS) {
-        return PathBuf::from(p);
+        let t = p.trim();
+        if !t.is_empty() {
+            return PathBuf::from(t);
+        }
+    }
+    if let Ok(root) = env::var(ENV_MODELS_ROOT) {
+        let t = root.trim();
+        if !t.is_empty() {
+            return PathBuf::from(t).join("gigaam");
+        }
     }
     preferred_gigaam_cache()
 }

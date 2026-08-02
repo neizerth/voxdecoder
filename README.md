@@ -1,60 +1,83 @@
 # VoxDecoder
 
 Local speech-to-text, transcript cleanup, and derived artifacts.  
-Three complementary executors — filter graph, capability DAG, recipe graph — sharing one artifact model.
+An **artifact-processing platform**: every capability is `Artifact(s) → Artifact(s)`.  
+Three complementary executors — filter graph, capability DAG, recipe graph — share one model.
 
 License: [MIT](LICENSE)
 
 ## Architecture
 
 ```text
-                 Media
-                   │
-                   ▼
-           vd-preprocess
-             (Filter Graph)
-                   │
-                   ▼
-              Artifacts
-                   │
-                   ▼
-             vd-pipeline
-             (Capability DAG)
-                   │
-                   ▼
-              Artifacts
-                   │
-                   ▼
-          vd-postprocess
-            (Recipe Graph)
-                   │
-                   ▼
-          Derived Artifacts
+                     Media
+                       │
+                       ▼
+              Filter Graph
+             (vd-preprocess)
+                       │
+             Audio + TimeMap*
+                       │
+                       ▼
+             Capability DAG
+              (vd-pipeline)
+                       │
+                 Artifacts
+                       │
+          Executor remaps timeline
+              via TimeMap*
+                       │
+                       ▼
+              Canonical Artifacts
+                       │
+                       ▼
+               Recipe Graph
+            (vd-postprocess)
+                       │
+                       ▼
+             Derived Artifacts
+
+* TimeMap only when timing filters rewrite the clock (speed, trim-silence, …).
 ```
 
 | Level | What it executes |
 |-------|------------------|
-| **`vd-preprocess`** | Graph of media filters (`ffmpeg`, `deepfilternet`, …) |
+| **`vd-preprocess`** | Graph of media filters (`ffmpeg`, …) → prepared media (+ TimeMap) |
 | **`vd-pipeline`** | DAG of capabilities (`transcribe`, `diarize`, `meeting-merge`, `postprocess`, …) |
 | **`vd-postprocess`** | Graph of recipe nodes (`LLM`, `process`, `http`, `mcp`, …) |
 
-Job builders feed the middle layer; leaf tools own their graphs:
+Job builders feed the **Runtime Environment**; leaf tools own their graphs:
 
 ```text
-   Job builders                 shared Job Executor
-   ─────────────                ───────────────────
-   vd-pipeline CLI  ─┐
-   vd-meeting       ─┼─→  Job (DAG)  →  Executor
-   MCP / vd-srv     ─┘         │
-                               ├─ preprocess       → Filter Graph (vd-preprocess)
-                               ├─ transcribe / fix-* / prepare-context
-                               ├─ diarize          → vd-diarize
-                               ├─ meeting-merge    → Meeting Artifact
-                               └─ postprocess      → Recipe Graph (vd-postprocess)
+                Builders
+
+   vd-pipeline CLI · vd-meeting · vd-mcp · Desktop · HTTP
+                        │
+                        ▼
+                       Job
+                        ▼
+              Runtime Environment (vd-srv)
+               Worker Pool · Resources · Queue
+               Event/Artifact store · Health · Transport
+                        ▼
+                     Executor
+                        ▼
+                   Capabilities
+              (lib preferred · CLI fallback)
 ```
 
-Foreground: call a binary directly, or submit a Job via `vd-pipeline` / `vd-meeting`.  
-Background (planned → **v1**): [`vd-srv`](src/cli/manage/vd-srv/) is the **execution engine** — queues Jobs, persists state, runs them on a Worker Pool against the **same** Job Executor.
+| Role | Responsibility | Examples |
+|------|----------------|----------|
+| **Builder** | Builds a Job | `vd-pipeline` CLI, `vd-meeting`, `vd-mcp`, Desktop |
+| **Runtime** | Job lifecycle, schedule, resources, observe, health, transport | **`vd-srv`** |
+| **Executor** | Runs the capability DAG (+ TimeMap remap) | shared Executor (`vd-pipeline`) |
+| **Capability** | Domain work | `vd-gigaam`, `vd-preprocess`, `vd-fix-*`, … |
+
+Foreground without Runtime: `vd-pipeline run` / `vd-meeting` still work one-shot.  
+Background / Docker / k8s: [`vd-srv`](src/cli/manage/vd-srv/) is the Runtime (PID 1). Capabilities run in-process via shared libraries where available, with CLI subprocess as fallback.
+
+Containers: [`docs/runtime.md`](docs/runtime.md).  
+Build / backends: [`docs/adr/0002-build-and-container-strategy.md`](docs/adr/0002-build-and-container-strategy.md).  
+Platform RFC: [`docs/adr/0001-platform-refactoring-plan.md`](docs/adr/0001-platform-refactoring-plan.md).
 
 Default project assets dir: **`.voxdecoder/`** (`md/` + `terms.yml`). Override with `$VD_PROJECT_DIR` or `VD_PROJECT_DIR=` in `.voxdecoder/env` / `.env`.
 
@@ -68,28 +91,29 @@ One binary per model family (not a multi-model adapter). Rust + Candle; no Pytho
 
 | CLI | Role | Status | Spec |
 |-----|------|--------|------|
-| [`vd-gigaam`](src/cli/transcribe/vd-gigaam/) | GigaAM ASR (Conformer + CTC/RNNT) | implemented | [cli](src/cli/transcribe/vd-gigaam/cli.md) · [structure](src/cli/transcribe/vd-gigaam/STRUCTURE.md) |
+| [`vd-gigaam`](src/cli/transcribe/vd-gigaam/) | GigaAM ASR (Conformer + CTC/RNNT) → transcript / segments / SRT | implemented | [cli](src/cli/transcribe/vd-gigaam/cli.md) · [structure](src/cli/transcribe/vd-gigaam/STRUCTURE.md) |
 | `vd-whisper` | Whisper ASR | reserved | — |
 
 Overview: [src/cli/transcribe/](src/cli/transcribe/).
 
 ```bash
 vd-gigaam run -i meeting.ogg
-vd-gigaam run -i meeting.ogg -m v3_e2e_ctc --device metal
+vd-gigaam run -i meeting.ogg -m v3_e2e_ctc --device metal --segments
 ```
 
 ### Process
 
-Prepare media, project knowledge, run Jobs, diarize, build meeting Jobs, and derive artifacts from recipes.
+Prepare media, orchestrate Jobs, diarize, plan meetings, and derive artifacts from recipes.  
+Process CLIs are graph builders/executors — not a fixed “cleanup pipeline”.
 
 | CLI | Role | Status | Spec |
 |-----|------|--------|------|
-| [`vd-pipeline`](src/cli/process/vd-pipeline/) | Universal Job Executor (+ CLI builder for single-source cleanup) | implemented | [cli](src/cli/process/vd-pipeline/cli.md) · [structure](src/cli/process/vd-pipeline/STRUCTURE.md) |
-| [`vd-preprocess`](src/cli/process/vd-preprocess/) | Media filter chain → prepared media (`use: preprocess`) | implemented | [readme](src/cli/process/vd-preprocess/README.md) · [cli](src/cli/process/vd-preprocess/cli.md) · [structure](src/cli/process/vd-preprocess/STRUCTURE.md) |
-| [`vd-assets`](src/cli/process/vd-assets/) | Docs/PDF/Office → `.voxdecoder/` (`md/` + `terms.yml`) | implemented | [cli](src/cli/process/vd-assets/cli.md) · [structure](src/cli/process/vd-assets/STRUCTURE.md) |
-| [`vd-diarize`](src/cli/process/vd-diarize/) | Who spoke when → Diarization Artifact (`use: diarize`, local-first) | implemented | [cli](src/cli/process/vd-diarize/cli.md) · [structure](src/cli/process/vd-diarize/STRUCTURE.md) |
-| [`vd-meeting`](src/cli/process/vd-meeting/) | Meeting Planner (MeetingRequest → Job → same Executor) | implemented | [cli](src/cli/process/vd-meeting/cli.md) · [structure](src/cli/process/vd-meeting/STRUCTURE.md) |
-| [`vd-postprocess`](src/cli/process/vd-postprocess/) | Portable recipe graphs (`ExecutionRunner`) → derived artifacts (`use: postprocess`) | implemented | [cli](src/cli/process/vd-postprocess/cli.md) · [structure](src/cli/process/vd-postprocess/STRUCTURE.md) |
+| [`vd-pipeline`](src/cli/process/vd-pipeline/) | Universal Job Executor (+ CLI Job builder for single-source work) | implemented | [cli](src/cli/process/vd-pipeline/cli.md) · [structure](src/cli/process/vd-pipeline/STRUCTURE.md) · [workflow](src/cli/process/vd-pipeline/WORKFLOW.md) |
+| [`vd-preprocess`](src/cli/process/vd-preprocess/) | Media **filter graph** → prepared media (+ TimeMap when time changes); `use: preprocess` | implemented | [readme](src/cli/process/vd-preprocess/README.md) · [cli](src/cli/process/vd-preprocess/cli.md) · [structure](src/cli/process/vd-preprocess/STRUCTURE.md) |
+| [`vd-assets`](src/cli/process/vd-assets/) | Docs/PDF/Office → `.voxdecoder/` (`md/` + `terms.yml`); `use: prepare-context` | implemented | [cli](src/cli/process/vd-assets/cli.md) · [structure](src/cli/process/vd-assets/STRUCTURE.md) |
+| [`vd-diarize`](src/cli/process/vd-diarize/) | Who spoke when → SpeakerTimeline; `use: diarize` (local-first) | implemented | [cli](src/cli/process/vd-diarize/cli.md) · [structure](src/cli/process/vd-diarize/STRUCTURE.md) |
+| [`vd-meeting`](src/cli/process/vd-meeting/) | Meeting **Planner** only: MeetingRequest → Job (does not execute) | implemented | [cli](src/cli/process/vd-meeting/cli.md) · [structure](src/cli/process/vd-meeting/STRUCTURE.md) |
+| [`vd-postprocess`](src/cli/process/vd-postprocess/) | Portable **recipe graphs** (`ExecutionRunner`) → derived artifacts; `use: postprocess` | implemented | [readme](src/cli/process/vd-postprocess/README.md) · [cli](src/cli/process/vd-postprocess/cli.md) · [structure](src/cli/process/vd-postprocess/STRUCTURE.md) |
 
 Overview: [src/cli/process/](src/cli/process/).
 
@@ -97,34 +121,35 @@ Overview: [src/cli/process/](src/cli/process/).
 
 | `use` | Meaning | Implementation |
 |-------|---------|----------------|
-| `preprocess` | Media → prepared media via filter chain | `vd-preprocess` |
-| `transcribe` | Audio/video → transcript | `engine: gigaam` (default); `whisper` reserved |
+| `preprocess` | Media → prepared media (+ TimeMap) via filter chain | `vd-preprocess` |
+| `transcribe` | Audio/video → transcript (segments / words / SRT optional) | `engine: gigaam` (default); `whisper` reserved |
 | `prepare-context` | Build project context | `vd-assets` |
 | `fix-casing` | Presentation | `vd-fix-casing` |
 | `fix-asr` | Wording / ASR repair | `vd-fix-asr` |
 | `fix-terms` | Canonical terminology | `vd-fix-terms` |
 | `diarize` | Speaker timeline | `vd-diarize` |
 | `meeting-merge` | Meeting Artifact | stub in `vd-pipeline` (real merge later) |
-| `postprocess` | Derived artifacts via user recipe graphs | `vd-postprocess` |
+| `postprocess` | Derived artifacts via recipe graphs | `vd-postprocess` |
+
+When a preprocess step emits a TimeMap, the Executor remaps timeline artifacts (segments, SRT, diarization, …) to the **original** media clock before registering them as canonical.
 
 ```bash
 vd-pipeline run -i meeting.ogg
 vd-pipeline run -i meeting.ogg --docs ./docs --dry-run --json
 vd-pipeline run job.yaml
 
+vd-preprocess run -i meeting.wav --filter 'mono' --filter 'resample:rate=16000'
 vd-assets run -i ./docs
-vd-assets run -i ./spec.pdf --ocr
-
-vd-diarize run -i meeting.wav
 vd-diarize run -i meeting.wav --backend stub
-
+vd-meeting run meeting.yaml --dry-run --json
 vd-postprocess run --input meeting=meeting.json --recipe ./summary.yaml
 ```
 
 | Tool | Owns |
 |------|------|
-| `vd-pipeline` | Shared Job Executor (capability DAG) |
-| `vd-preprocess` | Filter graph + media providers → prepared media |
+| `vd-pipeline` | Shared Job Executor: capability DAG, artifact registry, TimeMap application, progress / report |
+| `vd-preprocess` | Filter graph + media providers → prepared media (+ TimeMap sidecar) |
+| `vd-assets` | Project knowledge pack under `.voxdecoder/` |
 | `vd-diarize` | One audio → anonymous speaker timeline |
 | `vd-meeting` | Plan MeetingRequest → Job only — does not execute |
 | `vd-postprocess` | Recipe graph + `ExecutionRunner` → derived artifacts |
@@ -162,13 +187,13 @@ vd-fix-terms run -i transcript.fixed.txt --terms ./.voxdecoder
 мы используем GitHub Actions
 ```
 
-### Other / planned
+### Manage / planned
 
 | CLI | Role | Status | Spec |
 |-----|------|--------|------|
+| [`vd-srv`](src/cli/manage/vd-srv/) | **Runtime** — queue · schedule · Worker Pool · persist → shared Executor | implemented (v1) | [readme](src/cli/manage/vd-srv/README.md) · [cli](src/cli/manage/vd-srv/cli.md) · [structure](src/cli/manage/vd-srv/STRUCTURE.md) · [transport](src/cli/manage/vd-srv/TRANSPORT.md) · [runtime](docs/runtime.md) |
+| [`vd-mcp`](src/cli/manage/vd-mcp/) | MCP Builder (clients → Runtime); separate image, no GPU | reserved | [readme](src/cli/manage/vd-mcp/README.md) |
 | `vd-unit` | — | TBD | — |
-| [`vd-srv`](src/cli/manage/vd-srv/) | Execution engine (node schedule · Resource Classes · Worker Pool · persist → shared Executor) | implemented (v1) | [readme](src/cli/manage/vd-srv/README.md) · [cli](src/cli/manage/vd-srv/cli.md) · [structure](src/cli/manage/vd-srv/STRUCTURE.md) · [transport](src/cli/manage/vd-srv/TRANSPORT.md) |
-| `vd-mcp` | MCP server (same Job schema as `vd-pipeline`) | TBD | — |
 
 ---
 
@@ -176,7 +201,7 @@ vd-fix-terms run -i transcript.fixed.txt --terms ./.voxdecoder
 
 | Crate | Owns |
 |-------|------|
-| [`vd-artifact`](src/crates/vd-artifact/) | Artifact load/walk/write, shared types, platform `paths` |
+| [`vd-artifact`](src/crates/vd-artifact/) | Artifact load/walk/write; **TimeMap** + timeline remap; shared types; platform `paths` |
 | [`vd-output`](src/crates/vd-output/) | `-o` / `-d` / `--in-place` / `--overwrite`; caller naming |
 | [`vd-progress`](src/crates/vd-progress/) | Stderr progress (`start` / `phase` / `done` / `error`) |
 
@@ -188,10 +213,14 @@ Overview: [src/crates/](src/crates/).
 
 | Path | Role |
 |------|------|
+| [`docs/adr/`](docs/adr/) | Platform ADRs / RFCs |
+| [`docs/runtime.md`](docs/runtime.md) | Runtime Environment + container images |
+| [`docs/adr/0002-build-and-container-strategy.md`](docs/adr/0002-build-and-container-strategy.md) | Native vs Docker builds, backends, matrix |
+| [`Dockerfile`](Dockerfile) | One build → `runtime` / `mcp` targets |
 | [`src/cli/`](src/cli/) | User-facing CLIs |
-| [`src/cli/manage/`](src/cli/manage/) | Long-running / operator tools (`vd-srv`, …) |
+| [`src/cli/process/`](src/cli/process/) | Filter / Job / recipe / meeting tools |
+| [`src/cli/manage/`](src/cli/manage/) | Runtime (`vd-srv`) · MCP Builder (`vd-mcp`, reserved) · other operator tools |
 | [`src/crates/`](src/crates/) | Shared Rust libraries |
-| [`src/mcp/`](src/mcp/) | MCP (TBD) |
 
 ---
 
@@ -204,21 +233,28 @@ After clone: `npm install` (runs `prepare` → lefthook install).
 | Script | What it does |
 |--------|----------------|
 | `npm test` | All crate/CLI tests via [`scripts/test.sh`](scripts/test.sh) |
-| `./scripts/test.sh vd-pipeline` | `cargo test -p vd-pipeline` (also `vd-gigaam`, `crates`, `vd-assets`, `vd-fix-*`) |
-| `npm run build:vd-*` | Release binary → `target/release/vd-*` |
+| `npm run build` | Release Runtime set ([`scripts/build.sh`](scripts/build.sh); Metal on macOS — [ADR 0002](docs/adr/0002-build-and-container-strategy.md)) |
+| `npm run build:cpu` | Same set, CPU features only (matches Docker) |
+| `./scripts/test.sh vd-pipeline` | `cargo test -p vd-pipeline` (also `vd-gigaam`, `crates`, `vd-assets`, `vd-fix-*`, …) |
+| `npm run build:vd-*` | Single release binary → `target/release/vd-*` |
 | `npm run install:vd-*` | `cargo install` into `~/.cargo/bin` |
 | `npm run lint:rust` | `cargo fmt --check` + `clippy -D warnings` |
 
 ```bash
 npm test
-npm run build:vd-gigaam
+npm run build                 # Runtime set (Metal on macOS; CPU elsewhere)
+npm run build:cpu             # same packages, CPU only (Docker parity)
+npm run build:vd-gigaam       # gigaam alone + Metal feature
 npm run build:vd-pipeline
+npm run build:vd-preprocess
+npm run build:vd-postprocess
 npm run build:vd-assets
 npm run build:vd-fix-casing
 npm run build:vd-fix-asr
 npm run build:vd-fix-terms
 
 vd-pipeline --help
+vd-preprocess --help
 vd-gigaam --help
 vd-assets --help
 ```

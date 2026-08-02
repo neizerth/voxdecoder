@@ -33,7 +33,13 @@ Filter chain
 Provider(s)
       ↓
 Prepared Media
+      +
+TimeMap   (when timing filters rewrite the clock: speed, trim-silence, …)
 ```
+
+Sidecar: `{output_stem}.timemap.json` (processed → original). The Job Executor remaps
+downstream timeline artifacts — see
+[`docs/adr/0001-platform-refactoring-plan.md`](../../../../docs/adr/0001-platform-refactoring-plan.md).
 
 | Surface | Role |
 |---------|------|

@@ -3,8 +3,11 @@
 
 mod bad_job;
 mod dry_run;
+mod helpers;
 mod missing_input;
 mod run_light;
+mod speed_experiment;
+mod timemap_remap;
 mod whisper;
 
 use std::path::{Path, PathBuf};

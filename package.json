@@ -4,6 +4,9 @@
   "scripts": {
     "prepare": "lefthook install",
     "test": "./scripts/test.sh",
+    "build": "./scripts/build.sh",
+    "build:runtime": "./scripts/build.sh",
+    "build:cpu": "./scripts/build.sh --cpu",
     "build:vd-gigaam": "cargo build -p vd-gigaam --release --features metal",
     "build:vd-gigaam:cpu": "cargo build -p vd-gigaam --release",
     "build:vd-fix-casing": "cargo build -p vd-fix-casing --release",

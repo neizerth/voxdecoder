@@ -91,9 +91,23 @@ fn run_preprocess(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
             .unwrap_or_else(|| req.working_dir.clone())
             .join(name)
     });
+
+    let mut outputs = BTreeMap::new();
+    let timemap = {
+        let stem = primary
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("prepared");
+        let parent = primary.parent().unwrap_or_else(|| Path::new("."));
+        parent.join(format!("{stem}.timemap.json"))
+    };
+    if timemap.is_file() {
+        outputs.insert("timemap".into(), timemap);
+    }
+
     Ok(InvokeResult {
         primary_output: primary,
-        outputs: BTreeMap::new(),
+        outputs,
     })
 }
 
@@ -444,6 +458,16 @@ fn run_transcribe(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
     if req.options.get("overwrite").and_then(ArgValue::as_bool) == Some(true) {
         args.push("--overwrite".into());
     }
+    if req.options.get("segments").and_then(ArgValue::as_bool) == Some(true) {
+        args.push("--segments".into());
+    }
+    if req.options.get("word_timestamps").and_then(ArgValue::as_bool) == Some(true) {
+        args.push("--word-timestamps".into());
+    }
+    if let Some(fmt) = req.options.get("format").and_then(ArgValue::as_string) {
+        args.push("--format".into());
+        args.push(fmt);
+    }
     if let Some(o) = &req.output {
         args.push("-o".into());
         args.push(o.display().to_string());
@@ -454,10 +478,24 @@ fn run_transcribe(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
 
     run_cmd(&bin, &args, &req.working_dir)?;
     let out = infer_gigaam_output(req);
+    let mut outputs = BTreeMap::new();
+    let seg = segments_sidecar_for(&out);
+    if seg.is_file() {
+        outputs.insert("segments".into(), seg);
+    }
     Ok(InvokeResult {
         primary_output: out,
-        outputs: BTreeMap::new(),
+        outputs,
     })
+}
+
+fn segments_sidecar_for(main: &Path) -> PathBuf {
+    let stem = main
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("out");
+    let parent = main.parent().unwrap_or_else(|| Path::new("."));
+    parent.join(format!("{stem}.segments.json"))
 }
 
 fn infer_gigaam_output(req: &InvokeRequest) -> PathBuf {

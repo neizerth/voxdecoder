@@ -1,0 +1,38 @@
+# Local Runtime (+ optional MCP profile).
+#   docker compose build runtime && docker compose up runtime
+#   MODELS_DIR=/path/to/models docker compose up runtime
+#   docker compose --profile mcp up
+
+services:
+  runtime:
+    build:
+      context: .
+      target: runtime
+      args:
+        WITH_FFMPEG: ${WITH_FFMPEG:-1}
+    image: voxdecoder/runtime:local
+    ports:
+      - "7701:7701"
+    volumes:
+      - vd-data:/data
+      - ${MODELS_DIR:-./models}:/models:ro
+      - ${WORK_DIR:-./work}:/work
+    environment:
+      VD_MODELS_DIR: /models
+      VD_GIGAAM_MODELS_DIR: /models/gigaam
+      VD_PROJECT_DIR: /data/project
+
+  mcp:
+    build:
+      context: .
+      target: mcp
+    image: voxdecoder/mcp:local
+    profiles: ["mcp"]
+    environment:
+      VD_TRANSPORT: tcp
+      VD_TCP: runtime:7701
+    depends_on:
+      - runtime
+
+volumes:
+  vd-data:
