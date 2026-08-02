@@ -3,13 +3,33 @@
   "input": {
     "audio": "meeting.ogg"
   },
+  "context": {
+    "docs": "."
+  },
   "steps": [
+    {
+      "use": "preprocess",
+      "id": "prepared",
+      "options": {
+        "provider": "stub",
+        "filters": [
+          { "type": "resample", "rate": 16000 },
+          { "type": "mono" },
+          { "type": "trim-silence" },
+          { "type": "normalize" }
+        ]
+      }
+    },
     {
       "use": "transcribe",
       "id": "transcript",
+      "input": "prepared",
       "options": {
         "engine": "gigaam"
       }
+    },
+    {
+      "use": "prepare-context"
     },
     {
       "use": "fix-casing",

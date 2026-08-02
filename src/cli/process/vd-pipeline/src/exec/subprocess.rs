@@ -22,9 +22,135 @@ impl Binder for SubprocessBinder {
             Capability::FixTerms => run_fix(req, "vd-fix-terms"),
             Capability::Diarize => run_diarize(req),
             Capability::MeetingMerge => run_meeting_merge(req),
+            Capability::Preprocess => run_preprocess(req),
             Capability::Postprocess => run_postprocess(req),
         }
     }
+}
+
+fn run_preprocess(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
+    let bin = find_bin("vd-preprocess")?;
+    let mut args = vec!["run".into(), "-q".into()];
+    args.push("-i".into());
+    args.push(req.input.display().to_string());
+
+    if let Some(t) = req.options.get("provider").and_then(ArgValue::as_string) {
+        args.push("--provider".into());
+        args.push(t);
+    } else {
+        args.push("--provider".into());
+        args.push("stub".into());
+    }
+
+    if let Some(chain) = req.options.get("chain").and_then(ArgValue::as_string) {
+        args.push("--chain".into());
+        args.push(chain);
+    } else if let Some(list) = req.options.get("filters").and_then(ArgValue::as_list) {
+        let yaml = filters_list_to_yaml(list)?;
+        let path = req.working_dir.join(format!(
+            ".vd-preprocess-filters-{}.yaml",
+            std::process::id()
+        ));
+        std::fs::write(&path, yaml).map_err(|e| ExecError::Step(e.to_string()))?;
+        args.push("--chain".into());
+        args.push(path.display().to_string());
+    } else {
+        return Err(ExecError::Step(
+            "preprocess requires options.filters or options.chain".into(),
+        ));
+    }
+
+    if let Some(d) = &req.output_dir {
+        args.push("-d".into());
+        args.push(d.display().to_string());
+    }
+    if let Some(o) = &req.output {
+        args.push("-o".into());
+        args.push(o.display().to_string());
+    }
+    if req.options.get("overwrite").and_then(ArgValue::as_bool) == Some(true) {
+        args.push("--overwrite".into());
+    }
+
+    run_cmd(&bin, &args, &req.working_dir)?;
+
+    let primary = req.output.clone().unwrap_or_else(|| {
+        let stem = req
+            .input
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("prepared");
+        let ext = req
+            .input
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("wav");
+        let name = format!("{stem}.prepared.{ext}");
+        req.output_dir
+            .clone()
+            .unwrap_or_else(|| req.working_dir.clone())
+            .join(name)
+    });
+    Ok(InvokeResult {
+        primary_output: primary,
+        outputs: BTreeMap::new(),
+    })
+}
+
+fn filters_list_to_yaml(list: &[ArgValue]) -> Result<String, ExecError> {
+    let mut filters = Vec::new();
+    for item in list {
+        let Some(map) = item.as_map() else {
+            return Err(ExecError::Step(
+                "preprocess filters entries must be maps".into(),
+            ));
+        };
+        let mut m = serde_yaml::Mapping::new();
+        for (k, v) in map {
+            m.insert(
+                serde_yaml::Value::String(k.clone()),
+                arg_value_to_yaml(v)?,
+            );
+        }
+        filters.push(serde_yaml::Value::Mapping(m));
+    }
+    let mut root = serde_yaml::Mapping::new();
+    root.insert(
+        serde_yaml::Value::String("filters".into()),
+        serde_yaml::Value::Sequence(filters),
+    );
+    serde_yaml::to_string(&serde_yaml::Value::Mapping(root))
+        .map_err(|e| ExecError::Step(e.to_string()))
+}
+
+fn arg_value_to_yaml(v: &ArgValue) -> Result<serde_yaml::Value, ExecError> {
+    Ok(match v {
+        ArgValue::Bool(b) => serde_yaml::Value::Bool(*b),
+        ArgValue::Number(n) => serde_yaml::Value::from(*n),
+        ArgValue::String(s) => serde_yaml::Value::String(s.clone()),
+        ArgValue::Strings(ss) => serde_yaml::Value::Sequence(
+            ss.iter()
+                .map(|s| serde_yaml::Value::String(s.clone()))
+                .collect(),
+        ),
+        ArgValue::List(items) => {
+            let mut seq = Vec::new();
+            for i in items {
+                seq.push(arg_value_to_yaml(i)?);
+            }
+            serde_yaml::Value::Sequence(seq)
+        }
+        ArgValue::Map(map) => {
+            let mut m = serde_yaml::Mapping::new();
+            for (k, v) in map {
+                m.insert(
+                    serde_yaml::Value::String(k.clone()),
+                    arg_value_to_yaml(v)?,
+                );
+            }
+            serde_yaml::Value::Mapping(m)
+        }
+    })
 }
 
 fn run_postprocess(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
@@ -73,20 +199,30 @@ fn run_postprocess(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
         }
     }
 
-    if let Some(map) = req.options.get("provider").and_then(ArgValue::as_map) {
+    if let Some(map) = req
+        .options
+        .get("runner")
+        .or_else(|| req.options.get("provider"))
+        .and_then(ArgValue::as_map)
+    {
         if let Some(t) = map.get("type").and_then(ArgValue::as_string) {
-            args.push("--provider".into());
+            args.push("--runner".into());
             args.push(t);
         }
         if let Some(m) = map.get("model").and_then(ArgValue::as_string) {
             args.push("-m".into());
             args.push(m);
         }
-    } else if let Some(t) = req.options.get("provider").and_then(ArgValue::as_string) {
-        args.push("--provider".into());
+    } else if let Some(t) = req
+        .options
+        .get("runner")
+        .or_else(|| req.options.get("provider"))
+        .and_then(ArgValue::as_string)
+    {
+        args.push("--runner".into());
         args.push(t);
     } else {
-        args.push("--provider".into());
+        args.push("--runner".into());
         args.push("stub".into());
     }
 
@@ -181,6 +317,9 @@ fn arg_to_json(v: &ArgValue) -> serde_json::Value {
         ArgValue::String(s) => serde_json::Value::String(s.clone()),
         ArgValue::Strings(xs) => {
             serde_json::Value::Array(xs.iter().cloned().map(serde_json::Value::String).collect())
+        }
+        ArgValue::List(xs) => {
+            serde_json::Value::Array(xs.iter().map(arg_to_json).collect())
         }
         ArgValue::Map(m) => {
             let mut obj = serde_json::Map::new();
@@ -346,6 +485,12 @@ fn run_prepare_context(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
         .clone()
         .or_else(|| req.context_assets.clone())
         .unwrap_or_else(|| req.working_dir.join(".voxdecoder"));
+
+    // No docs root / nothing convertible → empty assets dir (fix-* still run).
+    if !req.input.exists() || !docs_have_sources(&req.input) {
+        return ensure_empty_assets(&out_dir);
+    }
+
     let mut args = vec![
         "run".into(),
         "-i".into(),
@@ -365,6 +510,56 @@ fn run_prepare_context(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
         primary_output: out_dir,
         outputs: BTreeMap::new(),
     })
+}
+
+fn ensure_empty_assets(out_dir: &Path) -> Result<InvokeResult, ExecError> {
+    std::fs::create_dir_all(out_dir.join("md")).map_err(|e| ExecError::Step(e.to_string()))?;
+    let terms = out_dir.join("terms.yml");
+    if !terms.exists() {
+        std::fs::write(&terms, "version: 1\nentries: []\nforms: []\n")
+            .map_err(|e| ExecError::Step(e.to_string()))?;
+    }
+    Ok(InvokeResult {
+        primary_output: out_dir.to_path_buf(),
+        outputs: BTreeMap::new(),
+    })
+}
+
+fn docs_have_sources(root: &Path) -> bool {
+    fn is_source(p: &Path) -> bool {
+        matches!(
+            p.extension()
+                .and_then(|e| e.to_str())
+                .map(|e| e.to_ascii_lowercase())
+                .as_deref(),
+            Some(
+                "md" | "markdown" | "txt" | "rst" | "pdf" | "docx" | "doc" | "xlsx" | "xls"
+                    | "pptx" | "ppt" | "odt" | "ods",
+            )
+        )
+    }
+    if root.is_file() {
+        return is_source(root);
+    }
+    let Ok(walk) = std::fs::read_dir(root) else {
+        return false;
+    };
+    for entry in walk.flatten() {
+        let p = entry.path();
+        if p.is_file() && is_source(&p) {
+            return true;
+        }
+        if p.is_dir() {
+            let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if name.starts_with('.') {
+                continue;
+            }
+            if docs_have_sources(&p) {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 fn run_fix(req: &InvokeRequest, bin_name: &str) -> Result<InvokeResult, ExecError> {

@@ -1,17 +1,22 @@
-//! Domain: recipe executor.
+//! Domain: recipe-graph executor.
 
 pub mod recipe;
 
 mod executor;
-mod provider;
 mod result;
+mod runner;
 
 pub use executor::{
-    execute, plan, ArtifactBinding, ExecutionPlan, PlannedRecipe, PostprocessRequest,
+    execute, execute_with_progress, plan, ArtifactBinding, ArtifactOutput, ExecutionNode,
+    ExecutionPlan, InputBinding, PlannedOutput, PlannedRecipe, PostprocessRequest,
 };
-pub use provider::ExecutionProviderSpec;
 pub use recipe::RecipeDoc;
 pub use result::{DerivedArtifact, PostprocessResult, RecipeResult};
+pub use runner::{
+    resolve_provider, resolve_runner, validate_provider_type, validate_runner_type,
+    ExecutionProvider, ExecutionProviderSpec, ExecutionRunner, ProviderInvoke, RunnerInvoke,
+    RunnerSpec,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum PostprocessError {

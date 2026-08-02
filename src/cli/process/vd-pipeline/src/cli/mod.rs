@@ -69,7 +69,7 @@ pub struct RunCli {
     /// Request FlashAttention (CUDA builds of vd-gigaam)
     #[arg(long = "flash")]
     pub flash: bool,
-    /// Docs root → prepare-context
+    /// Docs root → prepare-context (default Job always includes the step; default path `.`)
     #[arg(long = "docs")]
     pub docs: Option<PathBuf>,
     #[arg(short = 'd', long = "output-dir")]

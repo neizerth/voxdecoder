@@ -1,28 +1,60 @@
 # VoxDecoder
 
-Local speech-to-text and transcript cleanup. Separate CLIs per concern; one Job executor to chain them.
+Local speech-to-text, transcript cleanup, and derived artifacts.  
+Three complementary executors — filter graph, capability DAG, recipe graph — sharing one artifact model.
 
 License: [MIT](LICENSE)
 
-## Pipeline
+## Architecture
 
 ```text
-audio / video / docs / meeting tracks
-        │
-        ▼
-   Job builders                 shared Executor
-   ─────────────                ───────────────
+                 Media
+                   │
+                   ▼
+           vd-preprocess
+             (Filter Graph)
+                   │
+                   ▼
+              Artifacts
+                   │
+                   ▼
+             vd-pipeline
+             (Capability DAG)
+                   │
+                   ▼
+              Artifacts
+                   │
+                   ▼
+          vd-postprocess
+            (Recipe Graph)
+                   │
+                   ▼
+          Derived Artifacts
+```
+
+| Level | What it executes |
+|-------|------------------|
+| **`vd-preprocess`** | Graph of media filters (`ffmpeg`, `deepfilternet`, …) |
+| **`vd-pipeline`** | DAG of capabilities (`transcribe`, `diarize`, `meeting-merge`, `postprocess`, …) |
+| **`vd-postprocess`** | Graph of recipe nodes (`LLM`, `process`, `http`, `mcp`, …) |
+
+Job builders feed the middle layer; leaf tools own their graphs:
+
+```text
+   Job builders                 shared Job Executor
+   ─────────────                ───────────────────
    vd-pipeline CLI  ─┐
    vd-meeting       ─┼─→  Job (DAG)  →  Executor
    MCP / vd-srv     ─┘         │
+                               ├─ preprocess       → Filter Graph (vd-preprocess)
                                ├─ transcribe / fix-* / prepare-context
                                ├─ diarize          → vd-diarize
                                ├─ meeting-merge    → Meeting Artifact
-                               └─ postprocess      → derived artifacts (recipes)
+                               └─ postprocess      → Recipe Graph (vd-postprocess)
 ```
 
 Foreground: call a binary directly, or submit a Job via `vd-pipeline` / `vd-meeting`.  
-Background (planned → **v1**): [`vd-srv`](src/cli/manage/vd-srv/) is the **execution engine** — queues Jobs, persists state, runs them on a Worker Pool against the **same** Executor.
+Background (planned → **v1**): [`vd-srv`](src/cli/manage/vd-srv/) is the **execution engine** — queues Jobs, persists state, runs them on a Worker Pool against the **same** Job Executor.
 
 Default project assets dir: **`.voxdecoder/`** (`md/` + `terms.yml`). Override with `$VD_PROJECT_DIR` or `VD_PROJECT_DIR=` in `.voxdecoder/env` / `.env`.
 
@@ -48,15 +80,16 @@ vd-gigaam run -i meeting.ogg -m v3_e2e_ctc --device metal
 
 ### Process
 
-Prepare project knowledge, run Jobs, diarize, build meeting Jobs, and derive artifacts from recipes.
+Prepare media, project knowledge, run Jobs, diarize, build meeting Jobs, and derive artifacts from recipes.
 
 | CLI | Role | Status | Spec |
 |-----|------|--------|------|
 | [`vd-pipeline`](src/cli/process/vd-pipeline/) | Universal Job Executor (+ CLI builder for single-source cleanup) | implemented | [cli](src/cli/process/vd-pipeline/cli.md) · [structure](src/cli/process/vd-pipeline/STRUCTURE.md) |
+| [`vd-preprocess`](src/cli/process/vd-preprocess/) | Media filter chain → prepared media (`use: preprocess`) | implemented | [readme](src/cli/process/vd-preprocess/README.md) · [cli](src/cli/process/vd-preprocess/cli.md) · [structure](src/cli/process/vd-preprocess/STRUCTURE.md) |
 | [`vd-assets`](src/cli/process/vd-assets/) | Docs/PDF/Office → `.voxdecoder/` (`md/` + `terms.yml`) | implemented | [cli](src/cli/process/vd-assets/cli.md) · [structure](src/cli/process/vd-assets/STRUCTURE.md) |
 | [`vd-diarize`](src/cli/process/vd-diarize/) | Who spoke when → Diarization Artifact (`use: diarize`, local-first) | implemented | [cli](src/cli/process/vd-diarize/cli.md) · [structure](src/cli/process/vd-diarize/STRUCTURE.md) |
 | [`vd-meeting`](src/cli/process/vd-meeting/) | Meeting Planner (MeetingRequest → Job → same Executor) | implemented | [cli](src/cli/process/vd-meeting/cli.md) · [structure](src/cli/process/vd-meeting/STRUCTURE.md) |
-| [`vd-postprocess`](src/cli/process/vd-postprocess/) | User recipes + execution provider → derived artifacts (`use: postprocess`) | implemented | [cli](src/cli/process/vd-postprocess/cli.md) · [structure](src/cli/process/vd-postprocess/STRUCTURE.md) |
+| [`vd-postprocess`](src/cli/process/vd-postprocess/) | Portable recipe graphs (`ExecutionRunner`) → derived artifacts (`use: postprocess`) | implemented | [cli](src/cli/process/vd-postprocess/cli.md) · [structure](src/cli/process/vd-postprocess/STRUCTURE.md) |
 
 Overview: [src/cli/process/](src/cli/process/).
 
@@ -64,6 +97,7 @@ Overview: [src/cli/process/](src/cli/process/).
 
 | `use` | Meaning | Implementation |
 |-------|---------|----------------|
+| `preprocess` | Media → prepared media via filter chain | `vd-preprocess` |
 | `transcribe` | Audio/video → transcript | `engine: gigaam` (default); `whisper` reserved |
 | `prepare-context` | Build project context | `vd-assets` |
 | `fix-casing` | Presentation | `vd-fix-casing` |
@@ -71,7 +105,7 @@ Overview: [src/cli/process/](src/cli/process/).
 | `fix-terms` | Canonical terminology | `vd-fix-terms` |
 | `diarize` | Speaker timeline | `vd-diarize` |
 | `meeting-merge` | Meeting Artifact | stub in `vd-pipeline` (real merge later) |
-| `postprocess` | Derived artifacts via user recipes | `vd-postprocess` |
+| `postprocess` | Derived artifacts via user recipe graphs | `vd-postprocess` |
 
 ```bash
 vd-pipeline run -i meeting.ogg
@@ -84,15 +118,16 @@ vd-assets run -i ./spec.pdf --ocr
 vd-diarize run -i meeting.wav
 vd-diarize run -i meeting.wav --backend stub
 
-vd-postprocess run --input meeting=meeting.json --recipe ./summary.yaml --provider stub
+vd-postprocess run --input meeting=meeting.json --recipe ./summary.yaml
 ```
 
 | Tool | Owns |
 |------|------|
-| `vd-pipeline` | Shared Executor (any Job DAG) |
+| `vd-pipeline` | Shared Job Executor (capability DAG) |
+| `vd-preprocess` | Filter graph + media providers → prepared media |
 | `vd-diarize` | One audio → anonymous speaker timeline |
 | `vd-meeting` | Plan MeetingRequest → Job only — does not execute |
-| `vd-postprocess` | Recipes + provider → derived artifacts |
+| `vd-postprocess` | Recipe graph + `ExecutionRunner` → derived artifacts |
 
 ### Fix (local cleaning)
 

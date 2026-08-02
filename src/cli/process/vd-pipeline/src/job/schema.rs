@@ -225,6 +225,7 @@ pub enum Capability {
     FixTerms,
     Diarize,
     MeetingMerge,
+    Preprocess,
     Postprocess,
 }
 
@@ -238,6 +239,7 @@ impl Capability {
             Self::FixTerms => "fix-terms",
             Self::Diarize => "diarize",
             Self::MeetingMerge => "meeting-merge",
+            Self::Preprocess => "preprocess",
             Self::Postprocess => "postprocess",
         }
     }
@@ -253,6 +255,7 @@ impl Capability {
             Self::PrepareContext => "assets",
             Self::Diarize => "timeline",
             Self::MeetingMerge => "meeting",
+            Self::Preprocess => "media",
             Self::Postprocess => "derived",
         }
     }
@@ -265,6 +268,8 @@ pub enum ArgValue {
     Number(f64),
     String(String),
     Strings(Vec<String>),
+    /// Heterogeneous list (e.g. preprocess `filters:`).
+    List(Vec<Self>),
     Map(BTreeMap<String, Self>),
 }
 
@@ -274,7 +279,7 @@ impl ArgValue {
             Self::String(s) => Some(s.clone()),
             Self::Number(n) => Some(n.to_string()),
             Self::Bool(b) => Some(b.to_string()),
-            Self::Strings(_) | Self::Map(_) => None,
+            Self::Strings(_) | Self::List(_) | Self::Map(_) => None,
         }
     }
 
@@ -288,6 +293,13 @@ impl ArgValue {
     pub fn as_map(&self) -> Option<&BTreeMap<String, Self>> {
         match self {
             Self::Map(m) => Some(m),
+            _ => None,
+        }
+    }
+
+    pub fn as_list(&self) -> Option<&[Self]> {
+        match self {
+            Self::List(v) => Some(v),
             _ => None,
         }
     }

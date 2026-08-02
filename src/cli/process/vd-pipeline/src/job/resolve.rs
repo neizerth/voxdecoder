@@ -136,7 +136,7 @@ fn preview_input(
         };
     }
     match step.r#use {
-        Capability::Transcribe | Capability::Diarize => {
+        Capability::Transcribe | Capability::Diarize | Capability::Preprocess => {
             let audio = job.input.audio.as_ref().ok_or_else(|| {
                 JobError::Usage(format!(
                     "{} step needs input.audio or step.inputs",
@@ -389,6 +389,23 @@ fn gate_capabilities(job: &Job) -> Result<(), JobError> {
                 ));
             }
         }
+        if step.r#use == Capability::Preprocess {
+            let has_filters = step
+                .options
+                .get("filters")
+                .and_then(ArgValue::as_list)
+                .is_some_and(|l| !l.is_empty());
+            let has_chain = step
+                .options
+                .get("chain")
+                .and_then(ArgValue::as_string)
+                .is_some_and(|s| !s.is_empty());
+            if !has_filters && !has_chain {
+                return Err(JobError::Usage(
+                    "preprocess requires options.filters or options.chain".into(),
+                ));
+            }
+        }
     }
     Ok(())
 }
@@ -418,7 +435,7 @@ pub fn exec_input(
         };
     }
     match step.r#use {
-        Capability::Transcribe | Capability::Diarize => {
+        Capability::Transcribe | Capability::Diarize | Capability::Preprocess => {
             let audio = job
                 .input
                 .audio

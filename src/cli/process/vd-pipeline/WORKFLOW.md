@@ -30,6 +30,7 @@ Executor walks `WorkflowPlan` recursively. `parallel` runs children in `thread::
 
 | Epic | Capability | Artifact kind | Notes |
 |------|------------|---------------|-------|
+| 3b | `preprocess` | `media` / prepared | Filter chain; default Job head; per-branch in meetings — see [`vd-preprocess`](../vd-preprocess/) |
 | 4 | `diarize` | `timeline` | Real backends TBD; stub binder stays |
 | 5 | `meeting-merge` | `meeting` | Alignment strategies TBD |
 | 6 | Meeting export | `meeting` | Multi-format export TBD |

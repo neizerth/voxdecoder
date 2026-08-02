@@ -51,7 +51,7 @@ fn dry_run_and_stub_run() {
             &format!("transcript={}", input.display()),
             "--recipe",
             recipe.to_str().unwrap(),
-            "--provider",
+            "--runner",
             "stub",
             "-d",
             dir.path().to_str().unwrap(),
@@ -71,7 +71,7 @@ fn dry_run_and_stub_run() {
             &format!("transcript={}", input.display()),
             "--recipe",
             recipe.to_str().unwrap(),
-            "--provider",
+            "--provider", // alias
             "stub",
             "-d",
             dir.path().to_str().unwrap(),
@@ -83,4 +83,42 @@ fn dry_run_and_stub_run() {
         .stdout(predicate::str::contains("summary:"));
 
     assert!(dir.path().join("out.md").exists());
+}
+
+#[test]
+fn run_progress_json() {
+    let dir = TempDir::new().unwrap();
+    let input = dir.path().join("in.txt");
+    fs::write(&input, "payload").unwrap();
+    let recipe = dir.path().join("r.yaml");
+    fs::write(
+        &recipe,
+        "version: 1\nid: s\ninputs:\n  transcript:\n    required: true\noutputs:\n  - id: summary\n    path: out.md\nprompt: |\n  {{ transcript }}\n",
+    )
+    .unwrap();
+    let cfg = dir.path().join("config.toml");
+
+    let mut cmd = bin();
+    with_isolation(&mut cmd, &cfg);
+    cmd.current_dir(dir.path())
+        .args([
+            "run",
+            "--input",
+            &format!("transcript={}", input.display()),
+            "--recipe",
+            recipe.to_str().unwrap(),
+            "--runner",
+            "stub",
+            "-d",
+            dir.path().to_str().unwrap(),
+            "--overwrite",
+            "--progress=json",
+        ])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("\"event\":\"start\""))
+        .stderr(predicate::str::contains("\"event\":\"phase\""))
+        .stderr(predicate::str::contains("\"phase\":\"planning\""))
+        .stderr(predicate::str::contains("\"phase\":\"executing\""))
+        .stderr(predicate::str::contains("\"event\":\"done\""));
 }

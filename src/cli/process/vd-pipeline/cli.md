@@ -57,7 +57,7 @@ vd-pipeline run job.yaml --report-dir ./run-out
 | `--model` | `-m` | — | → `steps[transcribe].options.model` |
 | `--device` | — | — | → `steps[transcribe].options.device` (`cpu` \| `metal` \| `cuda` \| `auto`; what the ASR binary accepts) |
 | `--flash` | — | off | → `steps[transcribe].options.flash` (CUDA / non-mac `vd-gigaam` only) |
-| `--docs` | — | — | Docs root → Job `context.docs`; adds a `prepare-context` step when set |
+| `--docs` | — | `.` | Docs root → Job `context.docs` for always-on `prepare-context` (`vd-assets`) |
 | `--output-dir` | `-d` | — | → Job `output.dir` |
 | `--working-dir` | — | cwd | → Job `working_dir` (relative paths resolve here) |
 | `--dry-run` | — | — | Print resolved Job and exit (no execution) |
@@ -205,6 +205,7 @@ Independent ready steps may run together up to `max_parallel` and free resource 
 
 | `use` | Bound binary (detail) | Spec |
 |-------|----------------------|------|
+| `preprocess` | `vd-preprocess` | [README](../vd-preprocess/README.md) |
 | `transcribe` + `engine: gigaam` | `vd-gigaam` | [cli](../../transcribe/vd-gigaam/cli.md) |
 | `transcribe` + `engine: whisper` | `vd-whisper` | reserved |
 | `prepare-context` | `vd-assets` | [cli](../vd-assets/cli.md) |
@@ -217,6 +218,8 @@ Independent ready steps may run together up to `max_parallel` and free resource 
 
 ### Default Job shape (CLI)
 
+Target shape once `vd-preprocess` lands — preprocess first (trim silence / normalize for ASR):
+
 ```yaml
 version: 1
 working_dir: .
@@ -227,6 +230,23 @@ context:
 output:
   dir: < -d >               # only if -d set
 steps:
+  - use: preprocess
+    id: prepared
+    input: audio
+    options:
+      provider: ffmpeg
+      filters:
+        - type: trim-silence
+        - type: normalize
+  - use: transcribe
+    input: prepared
+  # … prepare-context / fix-* as today
+```
+
+Until `preprocess` is bound, the live default Job is:
+
+```yaml
+steps:
   - use: transcribe
     id: transcript
     options:
@@ -234,12 +254,14 @@ steps:
       model: < -m >
       device: < --device >
       flash: < --flash >           # if set
-  - use: prepare-context      # only if --docs set
+  - use: prepare-context          # always; docs from --docs or `.`
   - use: fix-casing
-    input: transcript         # sugar still accepted
+    input: transcript
   - use: fix-asr
   - use: fix-terms
 ```
+
+`context.docs` defaults to `.` when `--docs` is omitted. If that root has no text/Office/PDF sources, the binder writes an empty `.voxdecoder/` and continues (fix-* still run).
 
 ---
 

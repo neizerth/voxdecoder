@@ -1,19 +1,20 @@
-# vd-postprocess — recipe executor for derived artifacts
+# vd-postprocess — recipe-graph executor for derived artifacts
 
 Layout: [STRUCTURE.md](STRUCTURE.md).  
 CLI surface: [cli.md](cli.md).  
-Stack overview: [../README.md](../README.md) · [vd-pipeline](../vd-pipeline/) · [vd-meeting](../vd-meeting/).  
+Stack overview: [../README.md](../README.md) · [vd-pipeline](../vd-pipeline/) · [vd-meeting](../vd-meeting/) · [vd-preprocess](../vd-preprocess/).  
 Shared crates (planned): [`vd-artifact`](../../../crates/vd-artifact/), [`vd-progress`](../../../crates/vd-progress/).  
 Rust gates: [RUST.md](RUST.md).
 
-**Status: implemented.** Workspace member: `src/cli/process/vd-postprocess`. Default provider: `stub` (CI / dry pipelines). OpenAI / Ollama / process / HTTP / MCP: typed but not wired yet.
+**Status: implemented (v0).** Workspace member: `src/cli/process/vd-postprocess`. Default runner: `stub` (CI / dry pipelines). OpenAI / Ollama / process / HTTP / MCP: typed but not wired yet.  
+**Target contract below** (Recipe = portable graph + Runner; Job only selects recipes and may override). Current code still uses the older `provider` field name — migrate to `runner` without changing the Job/recipe *idea*.
 
 ## Core rule
 
 ```text
-vd-postprocess is a universal recipe executor.
+vd-postprocess is a universal recipe-graph executor.
 
-Artifact(s) + Recipe + Provider → Derived Artifacts.
+ArtifactRef(s) + Recipe (+ optional Runner override) → Derived Artifacts.
 
 It has no built-in recipes.
 Without recipes, it does nothing (and errors).
@@ -21,27 +22,333 @@ Without recipes, it does nothing (and errors).
 
 > **vd-postprocess produces new artifacts from existing ones by user recipes.**  
 > The CLI does not know about “summary”, “tasks”, “jira”, or “decisions”. Those are recipe files the user (or company) owns. One binary; many corporate packs.  
-> **Provider** means *execution provider* — LLM, local process, script, HTTP, MCP tool — not “chat API only”.
+> **Runner** means *who executes a graph node* — LLM, local process, HTTP, MCP tool — not “chat API only”.
 
 ## Contract
 
 ```text
-Artifact(s)
+ArtifactRef(s)
       +
-Recipe
+Recipe  (portable: owns default Runner + execution graph + outputs)
       +
-Provider
+optional Runner override  (Job / CLI / config)
       ↓
 Derived Artifacts
 ```
 
 | Surface | Role |
 |---------|------|
-| **CLI** (`vd-postprocess run`) | Human UX: named inputs + recipes + provider |
+| **CLI** (`vd-postprocess run`) | Human UX: named `ArtifactRef` inputs + recipes (+ optional runner override) |
 | **`use: postprocess`** | Same implementation, scheduled by [`vd-pipeline`](../vd-pipeline/) Executor |
-| **MCP / `vd-srv`** | Submit a Job step; never own provider SDKs |
+| **MCP / `vd-srv`** | Submit a Job step; never own runner SDKs |
 
-`vd-postprocess` knows nothing about meetings, ASR engines, or speaker identity. Planners only add Job step(s) with `options.recipes` + `options.provider` (+ optional `variables`).
+`vd-postprocess` knows nothing about meetings, ASR engines, or speaker identity. Planners only add Job step(s) with `options.recipes` (+ optional `runner` override and `variables`).
+
+---
+
+## Recipe is the only portable unit
+
+Job does **not** own the runner. Recipe does.
+
+```yaml
+# Job step — “run these recipes”
+- use: postprocess
+  id: summary
+  inputs:
+    meeting:
+      artifact: meeting
+    transcript:
+      artifact: transcript
+  options:
+    recipes:
+      - ./summary.yaml
+```
+
+Inside the recipe (travels with the pack):
+
+```yaml
+# summary.yaml — fully portable
+version: 1
+id: summary
+
+runner:
+  type: openai
+  model: gpt-5
+
+inputs:
+  meeting:
+    required: true
+  transcript:
+    required: true
+
+outputs:
+  summary:
+    type: markdown
+  decisions:
+    type: markdown
+
+graph:
+  - id: main
+    prompt: |
+      Summarize for {{ audience }}.
+      Meeting: {{ meeting }}
+      Transcript: {{ transcript }}
+```
+
+Same recipe elsewhere with a different backend:
+
+```yaml
+runner:
+  type: process
+  command: python render.py
+```
+
+```yaml
+runner:
+  type: mcp
+  tool: jira.create
+```
+
+**Moving a recipe between projects does not require editing the Job.** Job only says *which* recipes to run.
+
+---
+
+## Runner override (Job / CLI / config)
+
+Recipe carries the **default** runner. Callers may override. **One rule everywhere:**
+
+```text
+Runner resolution priority
+
+CLI
+ ↓
+Job
+ ↓
+Config
+ ↓
+Recipe default
+```
+
+Compact: **`CLI > Job > Config > Recipe`**.
+
+Example: run `summary.yaml` (written for OpenAI) via Ollama once:
+
+```yaml
+options:
+  recipes:
+    - ./summary.yaml
+  runner:
+    type: ollama
+    model: qwen3
+```
+
+```bash
+vd-postprocess run \
+  --input meeting.artifact=meeting.json \
+  --recipe ./summary.yaml \
+  --runner ollama \
+  --model qwen3
+```
+
+Override replaces the default runner for that invoke; recipe body / graph stay the same. Node-level `runner:` pins that node only.
+
+---
+
+## Inputs are ArtifactRef
+
+Not a bare id string:
+
+```yaml
+# ❌ too thin — no room to grow
+inputs:
+  meeting: meeting
+```
+
+```yaml
+# ✅ ArtifactRef — extensible
+inputs:
+  meeting:
+    artifact: meeting
+  transcript:
+    artifact: transcript
+    format: markdown
+  # future:
+  # transcript:
+  #   artifact: transcript
+  #   selector:
+  #     participant: alice
+  #   segments:
+  #     from: 10m
+  #     to: 15m
+```
+
+CLI sugar stays ergonomic:
+
+```bash
+--input meeting=meeting.json          # → { artifact: <path-or-id> }
+--input transcript.artifact=out.txt   # explicit
+```
+
+Primary path sugar (`-i FILE`) may map to a default binding when only one input is needed — convenience, not the model.
+
+---
+
+## Recipe = execution graph
+
+A recipe is not “one prompt → one file”. It is an **execution graph**. Even when the graph has a single node, the model is already graph-shaped — so multi-step recipes do not need a second schema later.
+
+```text
+Recipe
+  └── graph
+        ├── node A  (LLM extract → JSON)
+        ├── node B  (HTTP / MCP call)
+        └── node C  (process → Markdown)
+```
+
+Every node has a **Runner** (explicit, or inherited from the resolved Recipe default). Nodes are not “prompt-only”:
+
+```yaml
+graph:
+  - id: summarize
+    runner:
+      type: openai
+      model: gpt-5
+    prompt: |
+      …
+
+  - id: render
+    needs: [summarize]
+    runner:
+      type: process
+      command: render.py
+    inputs:
+      draft:
+        from: summarize.summary
+```
+
+If `runner` is omitted on a node → inherit Recipe default after **`CLI > Job > Config > Recipe`**.
+
+### Parallelism
+
+**Nodes without `needs` execute in parallel.** Nodes with `needs` wait for listed upstream ids.
+
+```yaml
+graph:
+  - id: summarize
+  - id: tasks
+  - id: jira
+  - id: pack
+    needs: [summarize, tasks, jira]
+```
+
+### Unified InputRef
+
+Same shape for Job bindings and graph edges — artifact **or** upstream output:
+
+```yaml
+inputs:
+  transcript:
+    artifact: transcript
+  meeting:
+    artifact: meeting
+  entities:
+    from: extract.entities
+```
+
+### `foreach` (reserved)
+
+Expand one node template into N planned nodes (e.g. per participant). Dry-run must show the expanded **ExecutionPlan**. Exact shape hardens at implementation — see [cli.md](cli.md#foreach-reserved).
+
+Terminology: **Recipe** is the product name. Avoid “Workflow” here — that word belongs to Job DAGs / planners. Inside a recipe we say **graph** / **nodes**.
+
+---
+
+## ExecutionPlan
+
+First-class. Built before invoke; **`--dry-run` emits it; execute consumes it.**
+
+```rust
+ExecutionPlan {
+    nodes: Vec<ExecutionNode>,    // resolved runners, needs, InputRefs, bodies
+    outputs: Vec<ArtifactOutput>, // artifact id + type + path
+}
+```
+
+Not a side log — the plan *is* what runs. Details: [cli.md](cli.md#executionplan).
+
+---
+
+## Outputs are declared explicitly
+
+Map key = logical name. `artifact` = id. `path` = optional filesystem location.
+
+```yaml
+outputs:
+  summary:
+    artifact: summary
+    type: markdown
+    path: reports/summary.md
+  tasks:
+    artifact: tasks
+    type: json
+    schema: ./schemas/task-list.json
+```
+
+One recipe → many registered artifacts. The Executor treats them like any other step outputs.
+
+---
+
+## Variables vs secrets
+
+```yaml
+variables:
+  language: Russian
+  audience: Executives
+
+secrets:
+  jira_token: env:JIRA_TOKEN
+  # future: vault://… 
+```
+
+`variables` are safe defaults (may appear in dry-run). `secrets` are refs only — never plain API keys in packs, never mixed into `variables`.
+
+---
+
+## Runner catalog (`ExecutionRunner`)
+
+Product name **Runner**; Rust trait **`ExecutionRunner`** with typed impls (`OpenAIRunner`, `ProcessRunner`, `HttpRunner`, `McpRunner`, …).
+
+Anything that can execute a graph node:
+
+| Family | `runner.type` (examples) |
+|--------|--------------------------|
+| **LLM** | `openai`, `anthropic`, `gemini`, `ollama`, `qwen`, `gigachat`, … |
+| **Process** | `process`, `python`, `bash` |
+| **Service** | `http`, `grpc`, `mcp` |
+| **Future** | `wasm`, `plugin`, … |
+| **CI** | `stub` |
+
+```yaml
+runner:
+  type: ollama
+  model: qwen3
+```
+
+```yaml
+runner:
+  type: process
+  command: ./bin/my-renderer
+```
+
+```yaml
+runner:
+  type: mcp
+  tool: jira.create
+```
+
+Auth / base URL / API keys via `secrets` + env + config — never baked into Meeting Model. MCP picks recipes (+ optional runner override) in Job JSON; it does not implement clients.
+
+**Naming:** prefer **Runner** / `ExecutionRunner` in product docs and new APIs. Older code / flags may still say `provider` / `ExecutionProvider` until renamed — same concept.
 
 ---
 
@@ -62,8 +369,6 @@ Derived Artifacts
 ```
 
 That fan-out is exactly why [`vd-pipeline`](../vd-pipeline/) is a **DAG** Executor — independent `postprocess` steps share inputs and run concurrently when ready.
-
-Recipes declare **outputs** (ids + paths). The Executor registers them as artifacts like any other step — not opaque side files.
 
 ---
 
@@ -95,117 +400,19 @@ Same binary for every company:
 
 CLI unchanged. Only the recipe pack changes.
 
-Terminology: **Recipe** is the product name (file may still be called a “template” casually). Avoid “Workflow” here — that word belongs to Job DAGs / planners.
-
----
-
-## Multi-input
-
-Many recipes need more than one artifact at once (transcript + meeting + glossary + docs). Inputs are a **named map**, not a single `-i`:
-
-```yaml
-# Job step
-- use: postprocess
-  id: summary
-  inputs:
-    transcript: transcript      # artifact id from earlier step
-    meeting: meeting
-    context: .voxdecoder
-    glossary: terms.yml
-  options:
-    recipes:
-      - ./summary.yaml
-    provider:
-      type: openai
-      model: gpt-5
-    variables:
-      language: Russian
-      audience: Executives
-```
-
-CLI sugar:
-
-```bash
---input transcript=out.txt \
---input meeting=meeting.json \
---input glossary=terms.yml
-```
-
-Primary path sugar (`-i FILE`) may map to a default binding name when only one input is needed — still optional convenience, not the model.
-
----
-
-## Recipes belong to the user
-
-The tool never embeds domain prompts or scripts. Recipes are files:
-
-```yaml
-recipes:
-  - ./summary.yaml
-  - ./tasks.yaml
-  - ./jira.yaml
-```
-
-or
-
-```bash
---recipe summary.yaml
---recipe tasks.yaml
-```
-
-A recipe declares **inputs it expects**, **outputs it produces** (with ids), optional **variables**, **output schema**, and how the **provider** should run (prompt body, command, HTTP payload — depending on provider type). Exact schema: [cli.md](cli.md#recipe-document).
-
-Outputs are first-class artifacts, e.g.:
-
-```text
-summary.md
-tasks.json
-jira.csv
-slides.md
-minutes.docx
-```
-
-All register the same way in the Job (`outputs` / step `id`).
-
----
-
-## Provider = execution provider
-
-Not “LLM provider”. Anything that can **execute a recipe**:
-
-| `provider.type` (examples) | Role |
-|----------------------------|------|
-| `openai` / `anthropic` / `ollama` / `gigachat` | Remote or local chat models |
-| `process` / `python` | Local executable / script |
-| `http` | HTTP endpoint |
-| `mcp` | MCP tool call |
-
-```yaml
-provider:
-  type: ollama
-  model: qwen3
-```
-
-```yaml
-provider:
-  type: process
-  command: ./bin/my-renderer
-```
-
-Auth / base URL / API keys via env + config — never baked into Meeting Model. MCP picks `provider` in Job JSON; it does not implement clients.
-
 ---
 
 ## Capability: `postprocess`
 
 | `use` | Responsibility |
 |-------|----------------|
+| `preprocess` | Media → prepared media via **filter chain** |
 | `transcribe` | Get text from audio/video |
 | `prepare-context` | Get project knowledge |
 | `fix-*` | Improve text |
 | `diarize` | Speaker timeline |
 | `meeting-merge` | Combine meeting artifacts |
-| **`postprocess`** | Produce **new** artifacts from existing ones via **user recipes** |
+| **`postprocess`** | Produce **new** artifacts from existing ones via **user recipe graphs** |
 
 Parallel Job sketch:
 
@@ -217,30 +424,40 @@ steps:
 
   - use: postprocess
     id: summary
-    inputs: { transcript: transcript, meeting: meeting }
+    inputs:
+      transcript:
+        artifact: transcript
+      meeting:
+        artifact: meeting
     options:
       recipes: [./summary.yaml]
-      provider: { type: openai, model: gpt-5 }
+      # runner override optional — recipe already has a default
       variables: { audience: Executives }
 
   - use: postprocess
     id: tasks
-    inputs: { transcript: transcript, meeting: meeting }
+    inputs:
+      transcript:
+        artifact: transcript
+      meeting:
+        artifact: meeting
     options:
       recipes: [./tasks.yaml]
-      provider: { type: openai, model: gpt-5 }
 
   - use: postprocess
     id: jira
-    inputs: { meeting: meeting, glossary: terms.yml }
+    inputs:
+      meeting:
+        artifact: meeting
+      glossary:
+        artifact: terms.yml
     options:
       recipes: [./jira.yaml]
-      provider: { type: process, command: ./tools/jira-export }
 ```
 
 No special Executor rules — same DAG scheduling as every other capability.
 
-One step may also list **several recipes** and emit several outputs in one invoke; fan-out across **steps** is preferred when recipes are independent (clearer ids, better parallelism).
+One step may list **several recipes**; fan-out across **steps** is preferred when recipes are independent (clearer ids, better parallelism).
 
 ---
 
@@ -264,16 +481,56 @@ Meeting Jobs may attach postprocess after `meeting-merge`, or in parallel with o
 
 ---
 
-## Platform model (after this capability)
+## Platform model
+
+VoxDecoder’s process layer is **three complementary executors**, each at its own abstraction level:
+
+```text
+                 Media
+                   │
+                   ▼
+           vd-preprocess
+             (Filter Graph)
+                   │
+                   ▼
+              Artifacts
+                   │
+                   ▼
+             vd-pipeline
+             (Capability DAG)
+                   │
+                   ▼
+              Artifacts
+                   │
+                   ▼
+          vd-postprocess
+            (Recipe Graph)
+                   │
+                   ▼
+          Derived Artifacts
+```
+
+| Level | What it executes |
+|-------|------------------|
+| **`vd-preprocess`** | Graph of media filters (`ffmpeg`, `deepfilternet`, …) over media |
+| **`vd-pipeline`** | DAG of capabilities (`transcribe`, `diarize`, `meeting-merge`, `postprocess`, …) |
+| **`vd-postprocess`** | Graph of recipe nodes (`LLM`, `process`, `http`, `mcp`, …) over artifacts |
 
 | Layer | Role |
 |-------|------|
 | **Builders** | `vd-pipeline` CLI, `vd-meeting`, MCP, `vd-srv` |
-| **Capabilities** | `transcribe`, `prepare-context`, `fix-*`, `diarize`, `meeting-merge`, `postprocess` |
-| **Executor** | One runtime for CLI / MCP / `vd-srv` |
+| **Capabilities** | `preprocess`, `transcribe`, `prepare-context`, `fix-*`, `diarize`, `meeting-merge`, `postprocess` |
+| **Job Executor** | One runtime for CLI / MCP / `vd-srv` (capability DAG) |
 | **Artifacts** | Only data exchange between steps |
 
-New product features later = new capability and/or artifact type — not a new Executor.
+Twin leaf abstractions:
+
+| Tool | Unit of work | Who runs a step |
+|------|--------------|-----------------|
+| [`vd-preprocess`](../vd-preprocess/) | **Filter** in a graph | media **provider** |
+| **`vd-postprocess`** | **Node** in a recipe graph | **`ExecutionRunner`** |
+
+New product features later = new capability and/or artifact type — not a fourth unrelated executor.
 
 ---
 
@@ -282,17 +539,18 @@ New product features later = new capability and/or artifact type — not a new E
 | Tool | Owns |
 |------|------|
 | [`vd-pipeline`](../vd-pipeline/) | Job DAG + Executor; binds `postprocess` |
-| **`vd-postprocess`** | Recipe load · provider invoke · write / register derived artifacts |
-| User / company | Recipe packs |
+| **`vd-postprocess`** | Recipe load · graph plan · runner invoke · write / register derived artifacts |
+| User / company | Recipe packs (portable; own default runners) |
 | MCP | Job JSON only |
 
 `vd-postprocess` never:
 
 - ships built-in summary/tasks/jira recipes
 - invents recipes when none were given
-- assumes every provider is an LLM
+- assumes every runner is an LLM
+- puts the default runner only on the Job (recipe must be portable)
 - owns Meeting Model or diarization
-- replaces fix-* 
+- replaces fix-*
 
 ---
 
@@ -300,13 +558,13 @@ New product features later = new capability and/or artifact type — not a new E
 
 1. **No recipes → error** (exit 2), not a silent default pack.
 2. **CLI ≡ capability** — same options in flags and Job `options`.
-3. **Provider is an ExecutionProvider** under `provider.type` (+ type-specific fields).
-4. **Recipes declare outputs** (ids + paths); one recipe → many `DerivedArtifact`s.
-5. **Inputs are artifacts** (named `ArtifactRef` map); **variables** + optional **schema/mime**.
-6. **Dry-run emits ExecutionPlan** after provider resolve — no invoke.
+3. **Runner resolution: `CLI > Job > Config > Recipe`** (same wording everywhere).
+4. **Recipe is an execution graph**; every node has a Runner (explicit or inherited); **no `needs` → parallel**.
+5. **Inputs are unified InputRef** (`artifact` \| `from`); **outputs** declare `artifact` + `type` (+ optional `path`).
+6. **`variables` ≠ `secrets`**; dry-run emits first-class **ExecutionPlan** — no invoke.
 
 ---
 
 ## Status note
 
-Implemented with `stub` provider for CI. Other `ExecutionProvider` backends land without changing the Job / recipe contract.
+v0 ships with `stub` runner for CI and a flatter recipe shape (`prompt` + `provider` hints). Target contract: portable recipe graph, `ExecutionRunner`, unified InputRef, `artifact`+`type` outputs, `variables`/`secrets`, first-class **ExecutionPlan**, `foreach` reserved. Runner priority always **`CLI > Job > Config > Recipe`**. Platform concept: three executors (Filter Graph / Capability DAG / Recipe Graph) — see root [README](../../../../README.md).

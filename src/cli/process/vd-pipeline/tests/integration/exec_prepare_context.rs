@@ -1,4 +1,4 @@
-//! prepare-context only when docs set (default Job).
+//! prepare-context is always in the default Job.
 
 use std::path::PathBuf;
 
@@ -10,7 +10,7 @@ use vd_pipeline::{
 use super::RecordingBinder;
 
 #[test]
-fn default_without_docs_skips_prepare_context() {
+fn default_without_docs_still_invokes_prepare_context() {
     let binder = RecordingBinder::new();
     let mut job = default_job(&DefaultJobArgs {
         audio: PathBuf::from("/work/a.ogg"),
@@ -35,9 +35,10 @@ fn default_without_docs_skips_prepare_context() {
         progress: ProgressMode::None,
     };
     exec.run(&resolved).unwrap();
-    assert!(!binder
+    assert!(binder
         .calls
-        .lock().unwrap()
+        .lock()
+        .unwrap()
         .iter()
         .any(|c| c.capability == Capability::PrepareContext));
 }
@@ -70,7 +71,8 @@ fn default_with_docs_invokes_prepare_context() {
     exec.run(&resolved).unwrap();
     assert!(binder
         .calls
-        .lock().unwrap()
+        .lock()
+        .unwrap()
         .iter()
         .any(|c| c.capability == Capability::PrepareContext));
 }

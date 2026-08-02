@@ -22,8 +22,9 @@ pub enum Command {
 #[command(
     name = "vd-postprocess",
     version,
-    about = "Recipe executor: artifacts + recipes + provider → derived artifacts",
-    long_about = "CLI ≡ use: postprocess. No recipes → error.\n\n\
+    about = "Recipe-graph executor: ArtifactRef + recipes + ExecutionRunner → derived artifacts",
+    long_about = "CLI ≡ use: postprocess. No recipes → error.\n\
+Runner priority: CLI > Job > Config > Recipe.\n\n\
 Shorthand: vd-postprocess --input a=f.txt --recipe r.yaml  ≡  vd-postprocess run …"
 )]
 struct Root {
@@ -33,7 +34,7 @@ struct Root {
 
 #[derive(Debug, Subcommand)]
 enum RootCommand {
-    /// Apply recipes to named inputs
+    /// Apply recipe graphs to named inputs
     Run(RunCli),
     /// Show or change defaults
     Config(ConfigArgs),
@@ -41,7 +42,7 @@ enum RootCommand {
 
 #[derive(Debug, Clone, Parser)]
 pub struct RunCli {
-    /// Named input: name=path (repeatable)
+    /// Named input: name=path or name.artifact=path (repeatable)
     #[arg(long = "input")]
     pub inputs: Vec<String>,
     /// Sugar: single default binding `input`
@@ -52,11 +53,12 @@ pub struct RunCli {
     pub recipes: Vec<PathBuf>,
     #[arg(short = 'd', long = "output-dir")]
     pub output_dir: Option<PathBuf>,
-    #[arg(long = "provider")]
-    pub provider: Option<String>,
+    /// Override recipe default runner (`CLI > Job > Config > Recipe`)
+    #[arg(long = "runner", visible_alias = "provider")]
+    pub runner: Option<String>,
     #[arg(short = 'm', long = "model")]
     pub model: Option<String>,
-    /// Variable: key=value (repeatable)
+    /// Variable: key=value (repeatable) — not for secrets
     #[arg(long = "var")]
     pub vars: Vec<String>,
     #[arg(long = "dry-run")]
@@ -189,7 +191,7 @@ fn validate_run(cli: RunCli) -> Result<RunArgs, CliError> {
         input_file: cli.input_file,
         recipes: cli.recipes,
         output_dir: cli.output_dir,
-        provider: cli.provider,
+        runner: cli.runner,
         model: cli.model,
         vars: cli.vars,
         dry_run: cli.dry_run,

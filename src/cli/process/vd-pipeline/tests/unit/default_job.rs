@@ -24,7 +24,28 @@ fn default_matches_fixture() {
 }
 
 #[test]
-fn docs_inserts_prepare_context() {
+fn default_always_includes_prepare_context() {
+    let job = default_job(&DefaultJobArgs {
+        audio: PathBuf::from("meeting.ogg"),
+        engine: TranscribeEngine::Gigaam,
+        model: None,
+        device: None,
+        flash: false,
+        docs: None,
+        output_dir: None,
+        working_dir: None,
+        continue_on_error: false,
+        overwrite: false,
+    });
+    assert!(job
+        .leaf_steps()
+        .iter()
+        .any(|s| s.r#use == Capability::PrepareContext));
+    assert_eq!(job.context.docs, Some(PathBuf::from(".")));
+}
+
+#[test]
+fn docs_override_sets_context() {
     let job = default_job(&DefaultJobArgs {
         audio: PathBuf::from("meeting.ogg"),
         engine: TranscribeEngine::Gigaam,

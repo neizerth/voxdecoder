@@ -16,7 +16,7 @@ Any Job builder  →  Job (DAG)  →  Executor  →  Capabilities
 
 - **Job** is the unit of work (YAML/JSON DAG).
 - **Executor** does not know whether the Job came from flags, a file, `vd-meeting`, MCP, or `vd-srv`.
-- **`use`** is an action (`transcribe`, `prepare-context`, `fix-*`, `diarize`, `meeting-merge`, `postprocess`), not a binary name.
+- **`use`** is an action (`preprocess`, `transcribe`, `prepare-context`, `fix-*`, `diarize`, `meeting-merge`, `postprocess`), not a binary name.
 - Implementation knobs live under **`options`**.
 - **`id`** / **`outputs`** register named artifacts; **`name`** is display only.
 - **`inputs`** (sugar: **`input`**) and **`depends`** form DAG edges.
@@ -109,6 +109,7 @@ pub struct Step {
 }
 
 pub enum Capability {
+    Preprocess,     // → vd-preprocess (filter chain required)
     Transcribe,
     PrepareContext,
     FixCasing,
@@ -229,7 +230,7 @@ Stub each capability: record call (`use`, resolved paths, `options`) and return 
 | `exec_chain.rs` | omitted `input` uses previous primary output |
 | `exec_continue.rs` | failure stops by default; `continue_on_error` runs the rest |
 | `exec_progress.rs` | emits `step_start` / `step_done` / `{step}:…` with `path` = file, `step` = capability |
-| `exec_prepare_context.rs` | step present only when `context.docs` set (default Job) |
+| `exec_prepare_context.rs` | default Job always invokes `prepare-context` |
 | `exec_options.rs` | `options` forwarded untouched to the binder |
 | `exec_report.rs` | `ExecutionReport` has step order, backend/model, timings; failure returns partial report |
 
@@ -239,8 +240,8 @@ Spawn `cargo_bin!("vd-pipeline")`. Isolate with `VD_PIPELINE_CONFIG` (+ clear `V
 
 | File / case | Must prove |
 |-------------|------------|
-| `dry_run_default.rs` | `-i audio --dry-run --json` → Job with `transcribe` + fix steps; no `prepare-context` without `--docs` |
-| `dry_run_with_docs.rs` | `--docs` inserts `prepare-context` |
+| `dry_run_default.rs` | `-i audio --dry-run --json` → Job with `transcribe` + `prepare-context` + fix steps; `context.docs` defaults to `.` |
+| `dry_run_with_docs.rs` | `--docs` sets `context.docs` |
 | `dry_run_file.rs` | `run fixtures/jobs/full.yaml --dry-run --json` matches resolved shape |
 | `cli_equals_file.rs` | CLI-built dry-run Job ≡ same fixture Job (canonical json) |
 | `whisper_exit_2.rs` | `--asr whisper` or `engine: whisper` → exit 2, stderr mentions reserved |

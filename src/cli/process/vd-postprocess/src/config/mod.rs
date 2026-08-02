@@ -6,21 +6,21 @@ pub use file::{load, save};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FileConfig {
-    pub provider_type: Option<String>,
-    pub provider_model: Option<String>,
+    pub runner_type: Option<String>,
+    pub runner_model: Option<String>,
     pub progress: Option<String>,
 }
 
 pub fn defaults() -> Defaults {
     Defaults {
-        provider_type: "stub",
+        runner_type: "stub",
         progress: "text",
     }
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct Defaults {
-    pub provider_type: &'static str,
+    pub runner_type: &'static str,
     pub progress: &'static str,
 }
 
@@ -28,11 +28,13 @@ impl FileConfig {
     pub fn get(&self, key: &str) -> Result<String, String> {
         let d = defaults();
         match key {
-            "provider.type" => Ok(self
-                .provider_type
+            "runner.type" | "provider.type" => Ok(self
+                .runner_type
                 .clone()
-                .unwrap_or_else(|| d.provider_type.to_string())),
-            "provider.model" => Ok(self.provider_model.clone().unwrap_or_default()),
+                .unwrap_or_else(|| d.runner_type.to_string())),
+            "runner.model" | "provider.model" => {
+                Ok(self.runner_model.clone().unwrap_or_default())
+            }
             "progress" => Ok(self
                 .progress
                 .clone()
@@ -43,11 +45,11 @@ impl FileConfig {
 
     pub fn set(&mut self, key: &str, value: &str) -> Result<(), String> {
         match key {
-            "provider.type" => {
-                self.provider_type = Some(value.to_string());
+            "runner.type" | "provider.type" => {
+                self.runner_type = Some(value.to_string());
             }
-            "provider.model" => {
-                self.provider_model = Some(value.to_string());
+            "runner.model" | "provider.model" => {
+                self.runner_model = Some(value.to_string());
             }
             "progress" => {
                 if !matches!(value, "text" | "json") {
@@ -64,12 +66,12 @@ impl FileConfig {
         let d = defaults();
         vec![
             format!(
-                "provider.type = {}",
-                self.provider_type.as_deref().unwrap_or(d.provider_type)
+                "runner.type = {}",
+                self.runner_type.as_deref().unwrap_or(d.runner_type)
             ),
             format!(
-                "provider.model = {}",
-                self.provider_model.as_deref().unwrap_or("(none)")
+                "runner.model = {}",
+                self.runner_model.as_deref().unwrap_or("(none)")
             ),
             format!(
                 "progress = {}",

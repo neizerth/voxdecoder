@@ -7,8 +7,9 @@ pub mod postprocess;
 pub mod status;
 
 pub use postprocess::{
-    execute, plan, ArtifactBinding, DerivedArtifact, ExecutionPlan, ExecutionProviderSpec,
-    PlannedRecipe, PostprocessError, PostprocessRequest, PostprocessResult, RecipeDoc, RecipeResult,
+    execute, execute_with_progress, plan, ArtifactBinding, ArtifactOutput, DerivedArtifact,
+    ExecutionNode, ExecutionPlan, ExecutionProviderSpec, ExecutionRunner, PlannedRecipe,
+    PostprocessError, PostprocessRequest, PostprocessResult, RecipeDoc, RecipeResult, RunnerSpec,
 };
 
 pub use vd_artifact as artifact;
