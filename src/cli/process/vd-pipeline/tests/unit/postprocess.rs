@@ -17,7 +17,7 @@ fn postprocess_requires_recipes() {
         max_parallel: None,
         resources: Default::default(),
         continue_on_error: false,
-        steps: vec![Step::new(Capability::Postprocess)],
+        steps: vec![Step::new(Capability::Postprocess)].into_iter().map(Into::into).collect(),
     };
     let err = resolve_job(job).unwrap_err();
     assert_eq!(err.exit_code(), 2);
@@ -56,7 +56,7 @@ fn postprocess_with_recipes_ok() {
         max_parallel: None,
         resources: Default::default(),
         continue_on_error: false,
-        steps: vec![step],
+        steps: vec![step].into_iter().map(Into::into).collect(),
     };
     resolve_job(job).expect("postprocess with recipes should resolve");
 }

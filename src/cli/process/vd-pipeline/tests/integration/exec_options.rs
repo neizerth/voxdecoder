@@ -13,7 +13,7 @@ fn options_forwarded_untouched() {
     let binder = RecordingBinder::new();
     let mut options = BTreeMap::new();
     options.insert("engine".into(), ArgValue::String("gigaam".into()));
-    options.insert("model".into(), ArgValue::String("v2_rnnt".into()));
+    options.insert("model".into(), ArgValue::String("v3_e2e_ctc".into()));
     options.insert("flash".into(), ArgValue::Bool(true));
 
     let job = Job {
@@ -32,7 +32,7 @@ fn options_forwarded_untouched() {
             output: Some(PathBuf::from("/work/t.txt")),
             options: options.clone(),
             ..Step::new(Capability::Transcribe)
-        }],
+        }].into_iter().map(Into::into).collect(),
     };
     let resolved = resolve_job(job).unwrap();
     let exec = Executor {
@@ -40,5 +40,5 @@ fn options_forwarded_untouched() {
         progress: ProgressMode::None,
     };
     exec.run(&resolved).unwrap();
-    assert_eq!(binder.calls.borrow()[0].options, options);
+    assert_eq!(binder.calls.lock().unwrap()[0].options, options);
 }

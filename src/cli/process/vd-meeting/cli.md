@@ -53,7 +53,7 @@ Shorthand: `vd-meeting …` without subcommand inserts `run`.
 
 ```bash
 vd-meeting run \
-  --input role=merged,path=meeting.wav \
+  --input role=room,path=meeting.wav,purposes=timeline \
   --input role=participant,participant=alice,path=alice.wav \
   --input role=context,path=./docs \
   --meeting meeting.yaml \
@@ -67,7 +67,7 @@ vd-meeting run meeting.yaml --context ./docs
 
 | Argument | Short | Description |
 |----------|-------|-------------|
-| `--input` | — | Repeatable: `role=…,path=…[,participant=…]` |
+| `--input` | — | Repeatable: `role=…,path=…[,participant=…][,purposes=transcript\|timeline]` |
 | `--meeting` / positional | `-f` | Document with `inputs` + `meeting` |
 | `--context` | — | Sugar: add `role: context` input |
 | `--output-dir` | `-d` | → MeetingOutput / merge output dir |
@@ -94,8 +94,9 @@ version: 1
 working_dir: .
 
 inputs:
-  - role: merged
+  - role: room
     path: meeting.wav
+    # default with tracks: purposes: [timeline]
   - role: participant
     participant: alice
     path: alice.wav
@@ -151,9 +152,15 @@ ASR / overwrite / parallelism are **CLI or config BuildOptions**, not fields und
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `role` | ✅ | `merged` \| `participant` \| `context` \| … |
+| `role` | ✅ | `room` (alias `merged`) \| `participant` \| `context` |
 | `path` | ✅ | Filesystem path |
 | `participant` | — | Link to known id/name |
+| `purposes` | — | `[transcript]` and/or `[timeline]`; empty → planner defaults |
+
+CLI: `--input role=room,path=meeting.wav,purposes=timeline`  
+(`purposes` values separated by `\|` when both needed).
+
+Defaults: participant → transcript; room + tracks → timeline only; room alone → transcript (+ timeline if diarization auto/true).
 
 ### Meeting Model
 
@@ -205,7 +212,7 @@ steps:
       participants: { … }
 ```
 
-Each participant/merged text path is a **transcript branch**, not a “cleanup” branch.
+Each participant (or room-with-transcript) path is a **transcript branch**. A room mix with only `purpose: timeline` does **not** get ASR.
 
 ---
 

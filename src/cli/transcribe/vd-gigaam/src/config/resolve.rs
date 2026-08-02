@@ -113,7 +113,7 @@ pub struct Defaults {
 
 pub fn defaults() -> Defaults {
     Defaults {
-        model: "v2_rnnt".into(),
+        model: "v3_e2e_ctc".into(),
         device: Device::Auto,
         fp16_encoder: true,
         flash: false,

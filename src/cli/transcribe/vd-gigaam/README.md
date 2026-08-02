@@ -34,7 +34,7 @@ Catalog names (CLI `-m` / aliases): see [cli.md](cli.md).
 | `v*_rnnt`, `v*_e2e_rnnt` | RNNT / e2e RNNT — often better quality, different decode cost |
 | SSL / emo | Out of scope for transcription CLI |
 
-Default in CLI: `v2_rnnt` (override via config). Prefer `v3_e2e_*` when quality matters; CTC when latency/RAM matter.
+Default in CLI: `v3_e2e_ctc` (override via config). RNNT can be installed; inference TBD. Use `v2_ctc` when latency/RAM matter.
 
 On Russian conversational audio, GigaAM CTC is typically close to Whisper on sense, with small artifacts, and much stronger than generic multilingual small models.
 
@@ -67,7 +67,7 @@ CLI flags map to the same ideas as the reference Python API (`load_model` / `tra
 
 | CLI | Meaning | Default |
 |-----|---------|---------|
-| `-m` | Catalog name or local `.ckpt`/`.pt` (converted / loaded into Candle) | `v2_rnnt` |
+| `-m` | Catalog name or local `.ckpt`/`.pt` (converted / loaded into Candle) | `v3_e2e_ctc` |
 | `--device` | `cpu` / `cuda` / `auto` (Metal where available) | `auto` |
 | `--no-fp16-encoder` | Disable FP16 encoder | FP16 on |
 | `--flash` | Enable FlashAttention when supported | off |

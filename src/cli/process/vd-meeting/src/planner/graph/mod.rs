@@ -1,11 +1,11 @@
-//! Build Job DAG from ResolvedMeeting.
+//! Build Job workflow tree from ResolvedMeeting.
 
 mod diarize;
 mod merge;
 mod transcript;
 
 use vd_pipeline::{
-    ArgValue, Capability, Job, JobContext, JobInput, JobOutput, Step,
+    ArgValue, Capability, Job, JobContext, JobInput, JobOutput, Step, WorkflowNode,
 };
 
 use super::normalize::ResolvedMeeting;
@@ -16,27 +16,43 @@ pub fn build_job(
     resolved: &ResolvedMeeting,
     options: &BuildOptions,
 ) -> Result<Job, PlanError> {
-    let mut steps: Vec<Step> = Vec::new();
+    let mut root: Vec<WorkflowNode> = Vec::new();
 
     if resolved.has_context {
         if let Some(ctx) = resolved.inputs.iter().find(|i| i.role == InputRole::Context) {
             let mut step = Step::new(Capability::PrepareContext);
             step.id = Some("assets".into());
             step.input = Some(ctx.path.display().to_string());
-            steps.push(step);
+            root.push(step.into());
         }
     }
 
+    let mut branch_nodes: Vec<WorkflowNode> = Vec::new();
     let mut text_ids: Vec<String> = Vec::new();
     for &idx in &resolved.text_sources {
         let src = &resolved.inputs[idx];
-        let final_id = transcript::append_branch(&mut steps, src, options)?;
+        let mut leafs: Vec<Step> = Vec::new();
+        let final_id = transcript::append_branch(&mut leafs, src, options)?;
         text_ids.push(final_id);
+        let seq: Vec<WorkflowNode> = leafs.into_iter().map(Into::into).collect();
+        branch_nodes.push(WorkflowNode::sequence(seq));
+    }
+
+    if branch_nodes.len() == 1 {
+        // Flatten single-branch sequence into root.
+        if let WorkflowNode::Sequence { sequence, .. } = branch_nodes.remove(0) {
+            root.extend(sequence);
+        }
+    } else if branch_nodes.len() > 1 {
+        root.push(WorkflowNode::parallel(branch_nodes));
     }
 
     let want_diarize = should_diarize(resolved);
     let timeline_id = if want_diarize {
-        Some(diarize::append_diarize(&mut steps, resolved, options)?)
+        let mut leafs = Vec::new();
+        let id = diarize::append_diarize(&mut leafs, resolved, options)?;
+        root.extend(leafs.into_iter().map(Into::into));
+        Some(id)
     } else {
         None
     };
@@ -47,7 +63,15 @@ pub fn build_job(
         ));
     }
 
-    merge::append_merge(&mut steps, resolved, &text_ids, timeline_id.as_deref(), options)?;
+    let mut merge_leafs = Vec::new();
+    merge::append_merge(
+        &mut merge_leafs,
+        resolved,
+        &text_ids,
+        timeline_id.as_deref(),
+        options,
+    )?;
+    root.extend(merge_leafs.into_iter().map(Into::into));
 
     let context = if resolved.has_context {
         let docs = resolved
@@ -63,11 +87,10 @@ pub fn build_job(
         JobContext::default()
     };
 
-    // Prefer merged audio as Job.input.audio when present (diarize default).
     let audio = resolved
         .inputs
         .iter()
-        .find(|i| i.role == InputRole::Merged)
+        .find(|i| i.role == InputRole::Room)
         .or_else(|| {
             resolved
                 .inputs
@@ -86,16 +109,18 @@ pub fn build_job(
             dir: resolved.output.dir.clone(),
         },
         continue_on_error: options.executor.continue_on_error,
-        max_parallel: options.executor.max_parallel,
+        max_parallel: options.executor.max_parallel.or(Some(4)),
         resources: options.executor.resources.clone(),
-        steps,
+        steps: root,
     })
 }
 
 fn should_diarize(resolved: &ResolvedMeeting) -> bool {
     match resolved.meeting.diarization.enabled {
         DiarizationEnabled::False => false,
-        DiarizationEnabled::True | DiarizationEnabled::Auto => resolved.has_merged,
+        DiarizationEnabled::True | DiarizationEnabled::Auto => {
+            !resolved.timeline_sources.is_empty()
+        }
     }
 }
 

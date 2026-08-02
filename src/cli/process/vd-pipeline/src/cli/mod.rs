@@ -63,6 +63,12 @@ pub struct RunCli {
     /// Catalog / checkpoint model for transcribe
     #[arg(short = 'm', long = "model")]
     pub model: Option<String>,
+    /// Inference device for transcribe (e.g. cpu|metal|cuda|auto)
+    #[arg(long = "device")]
+    pub device: Option<String>,
+    /// Request FlashAttention (CUDA builds of vd-gigaam)
+    #[arg(long = "flash")]
+    pub flash: bool,
     /// Docs root → prepare-context
     #[arg(long = "docs")]
     pub docs: Option<PathBuf>,
@@ -82,6 +88,12 @@ pub struct RunCli {
     pub continue_on_error: bool,
     #[arg(long = "overwrite")]
     pub overwrite: bool,
+    /// Write ExecutionReport JSON to this file
+    #[arg(long = "report")]
+    pub report: Option<PathBuf>,
+    /// Write report.json + resolved-job.json into this directory
+    #[arg(long = "report-dir")]
+    pub report_dir: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
@@ -194,6 +206,16 @@ fn validate_run(cli: RunCli) -> Result<RunArgs, CliError> {
     if cli.json && !cli.dry_run {
         return Err(CliError::usage("--json requires --dry-run"));
     }
+    if cli.report.is_some() && cli.report_dir.is_some() {
+        return Err(CliError::usage(
+            "--report and --report-dir are mutually exclusive",
+        ));
+    }
+    if cli.dry_run && (cli.report.is_some() || cli.report_dir.is_some()) {
+        return Err(CliError::usage(
+            "--report / --report-dir require a real run (not --dry-run)",
+        ));
+    }
     let job_file = cli.file.or(cli.job_positional);
     if job_file.is_some() && cli.input.is_some() {
         return Err(CliError::usage(
@@ -211,6 +233,8 @@ fn validate_run(cli: RunCli) -> Result<RunArgs, CliError> {
         job_file,
         asr: cli.asr,
         model: cli.model,
+        device: cli.device,
+        flash: cli.flash,
         docs: cli.docs,
         output_dir: cli.output_dir,
         working_dir: cli.working_dir,
@@ -220,5 +244,7 @@ fn validate_run(cli: RunCli) -> Result<RunArgs, CliError> {
         quiet: cli.quiet,
         continue_on_error: cli.continue_on_error,
         overwrite: cli.overwrite,
+        report: cli.report,
+        report_dir: cli.report_dir,
     })
 }

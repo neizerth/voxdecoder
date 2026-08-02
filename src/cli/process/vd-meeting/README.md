@@ -104,12 +104,33 @@ Branches are sibling subgraphs. The Executor runs them in parallel when independ
 
 There are **no modes**. There are **sources**. The Job is **derived from available inputs**.
 
+`role` describes **what the file is** (provenance).  
+`purposes` describes **why it is used** (transcript vs timeline). They are orthogonal.
+
+### Input purposes
+
+| Purpose | Meaning |
+|---------|---------|
+| `transcript` | Build a transcript branch (`transcribe` → `fix-*`) |
+| `timeline` | Feed `diarize` → `SpeakerTimeline` |
+
+Omit `purposes` to use defaults:
+
+| Role | Situation | Default purposes |
+|------|-----------|------------------|
+| `participant` | any | `[transcript]` |
+| `room` | with participant tracks | `[timeline]` only (mix for diarize, **no** room ASR) |
+| `room` | alone, diarization auto/true | `[transcript, timeline]` |
+| `room` | alone, diarization false | `[transcript]` |
+| `context` | any | (none) |
+
 ### Input roles
 
 ```yaml
 inputs:
-  - role: merged
+  - role: room                 # alias: merged
     path: meeting.wav
+    purposes: [timeline]       # optional; default when tracks exist
 
   - role: participant
     participant: alice
@@ -120,20 +141,19 @@ inputs:
     path: bob.wav
 
   - role: context
-    path: ./docs          # README, wiki, pdf, jira, slides, … — vd-assets decides
+    path: ./docs
 ```
 
 | Role | Meaning |
 |------|---------|
-| `merged` | Room / mixed recording |
+| `room` | Multi-speaker / room mix (`merged` still accepted as alias) |
 | `participant` | Per-person track (optional link to known participant) |
-| `context` | Project materials for `prepare-context` — not limited to “docs” |
+| `context` | Project materials for `prepare-context` |
 
-Later roles stay the same idea (`reference`, `screen-recording`, `zoom-audio`, …).
-
-Examples (all valid; no special mode):
+Examples:
 
 ```yaml
+# Tracks only — no diarize
 inputs:
   - role: participant
     path: speaker1.wav
@@ -142,22 +162,30 @@ inputs:
 ```
 
 ```yaml
+# Room alone — transcript (+ timeline when diarization auto/true)
 inputs:
-  - role: merged
+  - role: room
     path: meeting.wav
 ```
 
 ```yaml
+# Primary multi-track case: room = timeline only
 inputs:
-  - role: merged
+  - role: room
     path: meeting.wav
   - role: participant
     participant: alice
     path: alice.wav
+  - role: participant
+    participant: bob
+    path: bob.wav
   - role: context
     path: ./docs
 ```
 
+> **Room is not “always transcribe.”** With isolated tracks it is usually a **timeline source** only. Override with `purposes: [transcript, timeline]` if you also want ASR on the mix.
+
+Future direction: property-based sources (`kind`, `channels: mixed|isolated`, …) without changing the purpose model.
 ---
 
 ## Meeting Model
@@ -251,8 +279,8 @@ meeting:
 
 | Value | Meaning |
 |-------|---------|
-| `auto` | Add `diarize` when a merged-like source exists and diarization is useful |
-| `true` | Prefer / require `diarize` when possible |
+| `auto` | Add `diarize` when some input has purpose `timeline` |
+| `true` | Prefer / require `diarize` when a timeline source exists |
 | `false` | Never attach `diarize` |
 
 ### Alignment
@@ -282,37 +310,40 @@ collect inputs
       ↓
 normalize Meeting Model
       ↓
-build transcript branches
+resolve purposes (explicit or defaults)
       ↓
-build diarization branch
+determine artifact requirements
       ↓
-build meeting-merge capability
+determine branches
       ↓
-resolve artifacts
+reuse sources when possible
+      ↓
+build transcript / diarize / meeting-merge
       ↓
 submit Job
 ```
 
-1. **Collect inputs** — declared roles, paths, participant links (no filesystem crawl).
-2. **Normalize Meeting Model** — ids, defaults, constraint consistency → `ResolvedMeeting`.
-3. **Determine branches** — what the input set + policy allow.
-4. **Build transcript branches** — one `transcribe → …` chain per source that needs text.
-5. **Build diarization branch** — if merged-like source + `diarization.enabled` allows.
-6. **Build `meeting-merge` capability** — transcripts (+ timeline) + Meeting Model options.
-7. **Resolve / wire artifacts** — named ids for Executor.
-8. **Submit Job** (or return Job for dry-run / MCP).
+1. **Collect inputs** — roles, paths, participant links, optional purposes.
+2. **Normalize Meeting Model** — ids, defaults, constraint consistency.
+3. **Resolve purposes** — fill defaults (room+tracks → timeline-only, …).
+4. **Determine artifact requirements** — which transcripts + whether `SpeakerTimeline`.
+5. **Determine branches** — map requirements → sources (no wasted room ASR by default).
+6. **Build transcript branches** — one chain per source with purpose `transcript`.
+7. **Build diarization branch** — if policy allows and a `timeline` purpose source exists.
+8. **Build `meeting-merge`** — transcript artifacts (+ timeline) + Meeting Model options.
+9. **Submit Job** (or return Job for dry-run / MCP).
 
-### Example graph
+### Example graph (room + tracks)
 
 ```text
-alice.wav  ──► [transcript branch] ──► alice.transcript ──┐
-bob.wav    ──► [transcript branch] ──► bob.transcript   ──┼──► meeting-merge capability ──► Meeting Artifact
-meeting.wav ─► diarize ──────────────► SpeakerTimeline ────┘
+alice.wav  ──► [transcript branch] ──► alice.text ──┐
+bob.wav    ──► [transcript branch] ──► bob.text   ──┼──► meeting-merge ──► Meeting Artifact
+meeting.wav ─► diarize ──────────────► timeline ────┘
+                 (purpose: timeline only — no room.transcript)
 ```
 
 If only tracks exist, or `diarization.enabled: false`, omit diarize.  
-If only merged exists, transcript (+ optional diarize) still feed merge.
-
+If only room exists, transcript (+ optional diarize) still feed merge.
 ---
 
 ## Meeting Artifact

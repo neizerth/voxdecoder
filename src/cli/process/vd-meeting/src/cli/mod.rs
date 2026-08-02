@@ -49,7 +49,7 @@ pub struct RunCli {
     pub meeting_file: Option<PathBuf>,
     #[arg(short = 'f', long = "meeting")]
     pub meeting_flag: Option<PathBuf>,
-    /// Repeatable: role=merged,path=…[,participant=…]
+    /// Repeatable: role=room,path=…[,participant=…][,purposes=transcript|timeline]
     #[arg(long = "input")]
     pub inputs: Vec<String>,
     #[arg(long = "context")]

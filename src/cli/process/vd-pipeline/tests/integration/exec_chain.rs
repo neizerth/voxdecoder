@@ -37,7 +37,7 @@ fn omitted_input_uses_previous_output() {
                 output: Some(PathBuf::from("/work/a.txt")),
                 ..Step::new(Capability::FixAsr)
             },
-        ],
+        ].into_iter().map(Into::into).collect(),
     };
     let resolved = resolve_job(job).unwrap();
     let exec = Executor {
@@ -45,6 +45,6 @@ fn omitted_input_uses_previous_output() {
         progress: ProgressMode::None,
     };
     exec.run(&resolved).unwrap();
-    let calls = binder.calls.borrow();
+    let calls = binder.calls.lock().unwrap();
     assert_eq!(calls[2].input, PathBuf::from("/work/c.txt"));
 }

@@ -33,12 +33,12 @@ vd-gigaam -i /path/meeting.ogg
 vd-gigaam run -i voice.mp3 -m v3_e2e_rnnt --device cuda
 
 # Full GigaAM load options
-vd-gigaam run -i call.wav -m v2_rnnt \
+vd-gigaam run -i call.wav -m v3_e2e_ctc \
   --device cuda --flash \
   --download-root ~/models/gigaam
 
 # Disable FP16 encoder (on by default)
-vd-gigaam run -i call.wav -m v2_rnnt --no-fp16-encoder
+vd-gigaam run -i call.wav -m v3_e2e_ctc --no-fp16-encoder
 
 # Word timestamps → written into --format json / --segments
 vd-gigaam run -i podcast.mp3 -m v3_ctc --word-timestamps --format json
@@ -54,8 +54,8 @@ vd-gigaam run -i lecture.mp4 --format srt -d ./subs/
 vd-gigaam run -i meeting.ogg --overwrite
 
 # Preview resolved options (no transcription)
-vd-gigaam run -i voice.mp3 -m v2_rnnt --flash --dry-run
-vd-gigaam run -i voice.mp3 -m v2_rnnt --flash --dry-run --json
+vd-gigaam run -i voice.mp3 -m v3_e2e_ctc --flash --dry-run
+vd-gigaam run -i voice.mp3 -m v3_e2e_ctc --flash --dry-run --json
 
 # Progress for GUI / scripts
 vd-gigaam run -i voice.mp3 --progress=json
@@ -105,7 +105,7 @@ Flags mirror the reference load API; the binary loads weights in-process (SafeTe
 
 | Argument | Short | Default | Description |
 |----------|-------|---------|-------------|
-| `--model` | `-m` | `v2_rnnt` | Catalog name or path to `.ckpt` / `.pt` (converted / loaded in Rust) |
+| `--model` | `-m` | `v3_e2e_ctc` | Catalog name or path to `.ckpt` / `.pt` (converted / loaded in Rust) |
 | `--device` | — | `auto` | `cpu`, `cuda`, `auto` (Metal where available) |
 | `--no-fp16-encoder` | — | — | Disable FP16 encoder (default: on) |
 | `--flash` | — | — | Enable FlashAttention (default: off) |
@@ -115,9 +115,9 @@ ASR catalog:
 
 | Name | Notes |
 |------|-------|
-| `v3_e2e_rnnt`, `v3_e2e_ctc` | v3 end-to-end |
+| `v3_e2e_rnnt`, `v3_e2e_ctc` | v3 end-to-end (default: `v3_e2e_ctc`) |
 | `v3_rnnt`, `v3_ctc` | v3 |
-| `v2_rnnt`, `v2_ctc` | v2 (default: `v2_rnnt`) |
+| `v2_rnnt`, `v2_ctc` | v2 |
 | `v1_rnnt`, `v1_ctc` | v1 |
 
 Short aliases: `rnnt` → `v2_rnnt`, `ctc` → `v2_ctc`, `e2e_rnnt` → `v3_e2e_rnnt`, `e2e_ctc` → `v3_e2e_ctc`.
@@ -148,7 +148,7 @@ Prints the resolved plan and exits 0 (no transcription).
 Text (default):
 
 ```
-Model: v2_rnnt
+Model: v3_e2e_ctc
 Device: cuda
 Flash: on
 FP16 encoder: on
@@ -163,7 +163,7 @@ Machine-readable (`--dry-run --json`):
 
 ```json
 {
-  "model": "v2_rnnt",
+  "model": "v3_e2e_ctc",
   "device": "cuda",
   "flash": true,
   "fp16_encoder": true,
@@ -300,7 +300,7 @@ sha256:     a1b2c3…
 After install:
 
 ```bash
-vd-gigaam run -i file.ogg -m v2_rnnt
+vd-gigaam run -i file.ogg -m v3_e2e_ctc
 ```
 
 ---
@@ -321,7 +321,7 @@ Booleans use `on` / `off`.
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `model` | `v2_rnnt` | GigaAM name or path to `.ckpt` / `.pt` |
+| `model` | `v3_e2e_ctc` | GigaAM name or path to `.ckpt` / `.pt` |
 | `device` | `auto` | cpu / cuda / auto |
 | `fp16_encoder` | `on` | FP16 encoder (CLI: `--no-fp16-encoder`) |
 | `flash` | `off` | FlashAttention (CLI: `--flash`) |
@@ -347,7 +347,7 @@ Omit progress with `-q` / `--quiet`.
 Stdout stays free (except `--dry-run` / `info` / `list` text). Example for `run --progress=json`:
 
 ```json
-{"event":"start","input":"…","output":"…","model":"v2_rnnt","device":"cuda"}
+{"event":"start","input":"…","output":"…","model":"v3_e2e_ctc","device":"cuda"}
 {"event":"phase","phase":"loading_model","percent":5}
 {"event":"phase","phase":"transcribing","percent":55,"segment":2,"segment_total":4}
 {"event":"done","output":"/path/meeting.txt","duration_sec":89.2,"char_count":12400}

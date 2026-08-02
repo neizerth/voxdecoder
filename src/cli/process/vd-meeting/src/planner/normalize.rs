@@ -1,10 +1,15 @@
 //! Normalize inputs + Meeting Model → ResolvedMeeting.
+//!
+//! Flow: resolve purposes → collect required artifacts → branch ids.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use super::PlanError;
-use crate::model::{InputRole, InputSource, MeetingModel, MeetingOutput, MeetingRequest, Participants};
+use crate::model::{
+    DiarizationEnabled, InputPurpose, InputRole, InputSource, MeetingModel, MeetingOutput,
+    MeetingRequest, Participants,
+};
 
 #[derive(Debug, Clone)]
 pub struct ResolvedMeeting {
@@ -12,10 +17,12 @@ pub struct ResolvedMeeting {
     pub inputs: Vec<ResolvedInput>,
     pub meeting: MeetingModel,
     pub output: MeetingOutput,
-    pub has_merged: bool,
+    pub has_room: bool,
     pub has_context: bool,
     /// Indices into `inputs` that need a transcript branch.
     pub text_sources: Vec<usize>,
+    /// Indices into `inputs` that may feed diarization / timeline.
+    pub timeline_sources: Vec<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -23,7 +30,8 @@ pub struct ResolvedInput {
     pub role: InputRole,
     pub path: PathBuf,
     pub participant: Option<String>,
-    /// Stable branch id (alice, bob, merged, track-0, …).
+    pub purposes: Vec<InputPurpose>,
+    /// Stable branch id (alice, bob, room, track-0, …).
     pub branch_id: String,
 }
 
@@ -40,21 +48,29 @@ pub fn normalize(request: &MeetingRequest) -> Result<ResolvedMeeting, PlanError>
     let mut meeting = request.meeting.clone();
     normalize_participants(&mut meeting.participants)?;
 
+    let has_participant = request
+        .inputs
+        .iter()
+        .any(|s| s.role == InputRole::Participant);
+    let diarization = meeting.diarization.enabled;
+
     let mut used_ids: HashSet<String> = HashSet::new();
     let mut inputs = Vec::with_capacity(request.inputs.len());
     let mut track_idx = 0u32;
-    let mut has_merged = false;
+    let mut has_room = false;
     let mut has_context = false;
     let mut text_sources = Vec::new();
+    let mut timeline_sources = Vec::new();
 
     for (i, src) in request.inputs.iter().enumerate() {
         validate_source(src)?;
         let path = resolve_path(&working_dir, &src.path);
+        let purposes = resolve_purposes(src, has_participant, diarization)?;
 
         let branch_id = match src.role {
-            InputRole::Merged => {
-                has_merged = true;
-                unique_id("merged", &mut used_ids)
+            InputRole::Room => {
+                has_room = true;
+                unique_id("room", &mut used_ids)
             }
             InputRole::Participant => {
                 let base = src
@@ -78,21 +94,27 @@ pub fn normalize(request: &MeetingRequest) -> Result<ResolvedMeeting, PlanError>
             }
         };
 
-        if matches!(src.role, InputRole::Merged | InputRole::Participant) {
+        if purposes.contains(&InputPurpose::Transcript) {
             text_sources.push(i);
+        }
+        if purposes.contains(&InputPurpose::Timeline) {
+            timeline_sources.push(i);
         }
 
         inputs.push(ResolvedInput {
             role: src.role,
             path,
             participant: src.participant.clone(),
+            purposes,
             branch_id,
         });
     }
 
     if text_sources.is_empty() {
         return Err(PlanError::Usage(
-            "need at least one merged or participant audio input".into(),
+            "need at least one audio input with purpose transcript \
+             (participant track, or room with purposes including transcript)"
+                .into(),
         ));
     }
 
@@ -101,9 +123,58 @@ pub fn normalize(request: &MeetingRequest) -> Result<ResolvedMeeting, PlanError>
         inputs,
         meeting,
         output: request.output.clone(),
-        has_merged,
+        has_room,
         has_context,
         text_sources,
+        timeline_sources,
+    })
+}
+
+/// Default purposes when the document omits them.
+///
+/// | Role | Context | Default |
+/// |------|---------|---------|
+/// | participant | any | `[transcript]` |
+/// | room | with participant tracks | `[timeline]` (mix for diarize only) |
+/// | room | alone, diarization on/auto | `[transcript, timeline]` |
+/// | room | alone, diarization off | `[transcript]` |
+/// | context | any | `[]` |
+fn resolve_purposes(
+    src: &InputSource,
+    has_participant: bool,
+    diarization: DiarizationEnabled,
+) -> Result<Vec<InputPurpose>, PlanError> {
+    if !src.purposes.is_empty() {
+        if src.role == InputRole::Context {
+            return Err(PlanError::Usage(
+                "context inputs cannot declare audio purposes".into(),
+            ));
+        }
+        // Dedup while preserving order.
+        let mut out = Vec::new();
+        for p in &src.purposes {
+            if !out.contains(p) {
+                out.push(*p);
+            }
+        }
+        return Ok(out);
+    }
+
+    Ok(match src.role {
+        InputRole::Participant => vec![InputPurpose::Transcript],
+        InputRole::Context => Vec::new(),
+        InputRole::Room => {
+            if has_participant {
+                vec![InputPurpose::Timeline]
+            } else if matches!(
+                diarization,
+                DiarizationEnabled::True | DiarizationEnabled::Auto
+            ) {
+                vec![InputPurpose::Transcript, InputPurpose::Timeline]
+            } else {
+                vec![InputPurpose::Transcript]
+            }
+        }
     })
 }
 
@@ -123,6 +194,11 @@ pub fn require_paths(resolved: &ResolvedMeeting) -> Result<(), PlanError> {
 fn validate_source(src: &InputSource) -> Result<(), PlanError> {
     if src.path.as_os_str().is_empty() {
         return Err(PlanError::Usage("input path is empty".into()));
+    }
+    if src.role == InputRole::Context && !src.purposes.is_empty() {
+        return Err(PlanError::Usage(
+            "context inputs cannot declare audio purposes".into(),
+        ));
     }
     Ok(())
 }

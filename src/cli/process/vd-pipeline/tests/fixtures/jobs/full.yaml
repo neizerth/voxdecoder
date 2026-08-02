@@ -14,7 +14,7 @@ steps:
     name: Initial transcript
     options:
       engine: gigaam
-      model: v2_rnnt
+      model: v3_e2e_ctc
   - use: prepare-context
   - use: fix-casing
     input: transcript

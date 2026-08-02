@@ -98,7 +98,7 @@ pub struct RunCli {
     /// Disable progress on stderr
     #[arg(short = 'q', long = "quiet")]
     pub quiet: bool,
-    /// Catalog name or path to weights (default: v2_rnnt / config)
+    /// Catalog name or path to weights (default: v3_e2e_ctc / config)
     #[arg(short = 'm', long = "model")]
     pub model: Option<String>,
     /// Inference device for this build

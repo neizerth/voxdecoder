@@ -297,6 +297,8 @@ fn run_transcribe(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
         args.push("--device".into());
         args.push(d);
     }
+    // vd-gigaam exposes --flash only on non-macOS (CUDA) builds.
+    #[cfg(not(target_os = "macos"))]
     if req.options.get("flash").and_then(ArgValue::as_bool) == Some(true) {
         args.push("--flash".into());
     }

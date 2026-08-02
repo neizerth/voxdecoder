@@ -146,7 +146,7 @@ RoPE lives **inside** `encoder/conformer.rs` unless it grows large (~200+ lines)
 
 ```rust
 let model = GigaModel::load(GigaLoadOptions {
-    model: "v2_rnnt".into(),
+    model: "v3_e2e_ctc".into(),
     device: Device::Auto,
     fp16_encoder: true,
     flash: false,

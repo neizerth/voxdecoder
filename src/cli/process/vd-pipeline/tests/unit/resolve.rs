@@ -27,7 +27,7 @@ fn relative_paths_join_working_dir() {
                 ..Step::new(Capability::Transcribe)
             },
             Step::new(Capability::PrepareContext),
-        ],
+        ].into_iter().map(Into::into).collect(),
     };
     let resolved = resolve_job(job).unwrap();
     assert_eq!(resolved.working_dir, PathBuf::from("/work"));
@@ -55,7 +55,7 @@ fn diarize_resolves_from_audio() {
         max_parallel: None,
         resources: Default::default(),
         continue_on_error: false,
-        steps: vec![Step::new(Capability::Diarize)],
+        steps: vec![Step::new(Capability::Diarize)].into_iter().map(Into::into).collect(),
     };
     let resolved = resolve_job(job).unwrap();
     assert_eq!(

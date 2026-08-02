@@ -1,9 +1,9 @@
-//! Diarize branch when policy + merged source allow it.
+//! Diarize branch when policy + a timeline-purpose source allow it.
 
 use vd_pipeline::{Capability, Step};
 
 use super::overwrite_opt;
-use crate::model::{BuildOptions, InputRole};
+use crate::model::{BuildOptions, InputPurpose};
 use crate::planner::normalize::ResolvedMeeting;
 use crate::planner::PlanError;
 
@@ -12,16 +12,21 @@ pub fn append_diarize(
     resolved: &ResolvedMeeting,
     options: &BuildOptions,
 ) -> Result<String, PlanError> {
-    let merged = resolved
-        .inputs
+    let src = resolved
+        .timeline_sources
         .iter()
-        .find(|i| i.role == InputRole::Merged)
-        .ok_or_else(|| PlanError::Usage("diarize requires a merged input".into()))?;
+        .map(|&i| &resolved.inputs[i])
+        .find(|i| i.purposes.contains(&InputPurpose::Timeline))
+        .ok_or_else(|| {
+            PlanError::Usage(
+                "diarize requires an audio input with purpose timeline (usually role: room)".into(),
+            )
+        })?;
 
     let id = "timeline".to_string();
     let mut step = Step::new(Capability::Diarize);
     step.id = Some(id.clone());
-    step.input = Some(merged.path.display().to_string());
+    step.input = Some(src.path.display().to_string());
     step.options = overwrite_opt(options);
     steps.push(step);
     Ok(id)

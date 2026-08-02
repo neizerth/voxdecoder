@@ -36,7 +36,7 @@ meeting:
     .unwrap();
     let (req, _) = load_meeting_file(&path).unwrap();
     assert_eq!(req.inputs.len(), 2);
-    assert_eq!(req.inputs[0].role, InputRole::Merged);
+    assert_eq!(req.inputs[0].role, InputRole::Room);
     assert_eq!(req.inputs[1].participant.as_deref(), Some("alice"));
     assert_eq!(req.meeting.diarization.enabled, DiarizationEnabled::Auto);
     assert!(req.working_dir == Some(PathBuf::from(".")));

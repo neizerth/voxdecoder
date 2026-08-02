@@ -6,7 +6,9 @@ mod exec_chain;
 mod exec_continue;
 mod exec_options;
 mod exec_order;
+mod exec_parallel;
 mod exec_prepare_context;
+mod exec_report;
 mod stub;
 
 use stub::RecordingBinder;

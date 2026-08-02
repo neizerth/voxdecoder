@@ -21,5 +21,6 @@ pub fn submit_job(job: Job, progress: ProgressMode) -> Result<std::path::PathBuf
         progress,
     };
     exec.run(&resolved)
+        .map(|o| o.output)
         .map_err(|e| PlanError::Other(e.to_string()))
 }

@@ -7,6 +7,7 @@ mod default_job;
 mod engine_gate;
 mod job_parse;
 mod postprocess;
+mod report;
 mod resolve;
 mod status;
 

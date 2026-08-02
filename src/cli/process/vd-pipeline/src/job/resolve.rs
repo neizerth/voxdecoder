@@ -1,11 +1,12 @@
-//! Resolve working_dir, validate artifact refs / DAG, gate engines.
+//! Resolve working_dir, validate artifact refs / workflow, gate engines.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::env;
 use std::path::{Path, PathBuf};
 
 use super::schema::{
-    ArgValue, ArtifactRef, Capability, Job, JobError, ResolvedJob, ResolvedStep, TranscribeEngine,
+    ArgValue, ArtifactRef, Capability, Job, JobError, ResolvedJob, ResolvedStep, Step,
+    TranscribeEngine, WorkflowNode, WorkflowPlan,
 };
 
 pub fn resolve_job(job: Job) -> Result<ResolvedJob, JobError> {
@@ -15,52 +16,115 @@ pub fn resolve_job(job: Job) -> Result<ResolvedJob, JobError> {
         None => cwd()?,
     };
 
+    if job.leaf_count() == 0 {
+        return Err(JobError::Usage("job has no capability steps".into()));
+    }
+
     gate_engines(&job)?;
     gate_capabilities(&job)?;
     validate_artifact_refs(&job)?;
-    let order = schedule_order(&job)?;
 
-    let mut resolved_steps = Vec::with_capacity(job.steps.len());
-    for (i, step) in job.steps.iter().enumerate() {
-        let index = (i + 1) as u32;
-        let input = if step.skip {
-            None
-        } else {
-            preview_input(step, &job, &working_dir)?
-        };
-        let output = step
-            .output
-            .as_ref()
-            .map(|p| resolve_against(&working_dir, p));
-        let outputs = step
-            .outputs
-            .iter()
-            .map(|(k, p)| (k.clone(), resolve_against(&working_dir, p)))
-            .collect();
+    let mut leaves = Vec::new();
+    let mut leaf_index = 0usize;
+    let plan = compile_plan(&job.steps, "", &mut leaves, &mut leaf_index, &job, &working_dir)?;
 
-        resolved_steps.push(ResolvedStep {
-            index,
-            capability: step.r#use,
-            id: step.id.clone(),
-            name: step.name.clone(),
-            skip: step.skip,
-            input,
-            output,
-            outputs,
-            options: step.options.clone(),
-        });
-    }
+    let order = schedule_leaf_order(&job, leaves.len())?;
 
     Ok(ResolvedJob {
         job,
         working_dir,
-        steps: resolved_steps,
+        steps: leaves,
+        plan,
         order,
     })
 }
 
+fn compile_plan(
+    nodes: &[WorkflowNode],
+    prefix: &str,
+    leaves: &mut Vec<ResolvedStep>,
+    leaf_index: &mut usize,
+    job: &Job,
+    working_dir: &Path,
+) -> Result<WorkflowPlan, JobError> {
+    // Root / sequence list: if every node is a Step, still wrap as Sequence.
+    let mut kids = Vec::with_capacity(nodes.len());
+    for (i, node) in nodes.iter().enumerate() {
+        let path = if prefix.is_empty() {
+            format!("{i}")
+        } else {
+            format!("{prefix}.{i}")
+        };
+        kids.push(compile_node(node, &path, leaves, leaf_index, job, working_dir)?);
+    }
+    Ok(WorkflowPlan::Sequence(kids))
+}
+
+fn compile_node(
+    node: &WorkflowNode,
+    path: &str,
+    leaves: &mut Vec<ResolvedStep>,
+    leaf_index: &mut usize,
+    job: &Job,
+    working_dir: &Path,
+) -> Result<WorkflowPlan, JobError> {
+    match node {
+        WorkflowNode::Step(step) => {
+            let idx = *leaf_index;
+            *leaf_index += 1;
+            let input = if step.skip {
+                None
+            } else {
+                preview_input(step, job, working_dir)?
+            };
+            let output = step
+                .output
+                .as_ref()
+                .map(|p| resolve_against(working_dir, p));
+            let outputs = step
+                .outputs
+                .iter()
+                .map(|(k, p)| (k.clone(), resolve_against(working_dir, p)))
+                .collect();
+            leaves.push(ResolvedStep {
+                index: (idx + 1) as u32,
+                path: path.to_string(),
+                capability: step.r#use,
+                id: step.id.clone(),
+                name: step.name.clone(),
+                skip: step.skip,
+                input,
+                output,
+                outputs,
+                produces: step.produces.clone(),
+                consumes: step.consumes.clone(),
+                options: step.options.clone(),
+            });
+            Ok(WorkflowPlan::Leaf(idx))
+        }
+        WorkflowNode::Sequence { sequence, .. } => {
+            compile_plan(sequence, path, leaves, leaf_index, job, working_dir)
+        }
+        WorkflowNode::Parallel { parallel, .. } => {
+            let mut kids = Vec::with_capacity(parallel.len());
+            for (i, child) in parallel.iter().enumerate() {
+                let child_path = format!("{path}.{i}");
+                kids.push(compile_node(
+                    child,
+                    &child_path,
+                    leaves,
+                    leaf_index,
+                    job,
+                    working_dir,
+                )?);
+            }
+            Ok(WorkflowPlan::Parallel(kids))
+        }
+    }
+}
+
 fn preview_input(
-    step: &super::schema::Step,
+    step: &Step,
     job: &Job,
     working_dir: &Path,
 ) -> Result<Option<PathBuf>, JobError> {
@@ -68,7 +132,7 @@ fn preview_input(
     if let Some(raw) = refs.first() {
         return match ArtifactRef::parse(raw) {
             ArtifactRef::Id(_) => Ok(None),
-            ArtifactRef::Path(p) => Ok(Some(resolve_against(working_dir, &p))),
+            ArtifactRef::Path(p) => Ok(Some(resolve_against(working_dir, p.as_path()))),
         };
     }
     match step.r#use {
@@ -96,15 +160,17 @@ fn preview_input(
 }
 
 fn validate_artifact_refs(job: &Job) -> Result<(), JobError> {
+    let leaves: Vec<&Step> = job.leaf_steps();
     let mut produced: HashSet<String> = HashSet::new();
     let mut step_ids: HashSet<String> = HashSet::new();
-    for step in &job.steps {
+
+    for step in &leaves {
         if let Some(id) = &step.id {
-            if !produced.insert(id.clone()) {
-                return Err(JobError::Usage(format!("duplicate artifact id: {id}")));
-            }
             if !step_ids.insert(id.clone()) {
                 return Err(JobError::Usage(format!("duplicate step id: {id}")));
+            }
+            if !produced.insert(id.clone()) {
+                return Err(JobError::Usage(format!("duplicate artifact id: {id}")));
             }
         }
         for name in step.outputs.keys() {
@@ -112,15 +178,33 @@ fn validate_artifact_refs(job: &Job) -> Result<(), JobError> {
                 return Err(JobError::Usage(format!("duplicate artifact id: {name}")));
             }
         }
+        for name in &step.produces {
+            if name.contains('*') {
+                continue;
+            }
+            produced.insert(name.clone());
+        }
     }
-    for step in &job.steps {
+
+    for step in &leaves {
         for raw in step.input_refs() {
-            if let ArtifactRef::Id(id) = ArtifactRef::parse(raw) {
-                if !produced.contains(&id) {
-                    return Err(JobError::Usage(format!(
-                        "unknown artifact id in inputs: {id}"
-                    )));
+            match ArtifactRef::parse(raw) {
+                ArtifactRef::Path(_) => {}
+                ArtifactRef::Id(id) if id.contains('*') => {
+                    // Wildcard: prefix must match at least a naming convention; checked at runtime.
                 }
+                ArtifactRef::Id(id) => {
+                    if !produced.contains(&id) && !step_ids.contains(&id) {
+                        return Err(JobError::Usage(format!(
+                            "unknown artifact id in inputs: {id}"
+                        )));
+                    }
+                }
+            }
+        }
+        for dep in &step.depends {
+            if !step_ids.contains(dep) {
+                return Err(JobError::Usage(format!("unknown depends id: {dep}")));
             }
         }
         if step.r#use == Capability::Postprocess {
@@ -128,9 +212,10 @@ fn validate_artifact_refs(job: &Job) -> Result<(), JobError> {
                 for v in map.values() {
                     if let Some(raw) = v.as_string() {
                         if let ArtifactRef::Id(id) = ArtifactRef::parse(&raw) {
-                            if !produced.contains(&id) {
+                            if !id.contains('*') && !produced.contains(&id) && !step_ids.contains(&id)
+                            {
                                 return Err(JobError::Usage(format!(
-                                    "unknown artifact id in postprocess options.inputs: {id}"
+                                    "unknown artifact id in postprocess inputs: {id}"
                                 )));
                             }
                         }
@@ -138,27 +223,29 @@ fn validate_artifact_refs(job: &Job) -> Result<(), JobError> {
                 }
             }
         }
-        for dep in &step.depends {
-            if !step_ids.contains(dep) {
-                return Err(JobError::Usage(format!("unknown depends step id: {dep}")));
-            }
-        }
     }
     Ok(())
 }
 
-/// Kahn topo order. Edges: producer → consumer via artifact `inputs` / `depends`.
-pub fn schedule_order(job: &Job) -> Result<Vec<usize>, JobError> {
-    let n = job.steps.len();
+/// Kahn topo over **leaf** indices (for validation + flat-sequence scheduling hints).
+fn schedule_leaf_order(job: &Job, n: usize) -> Result<Vec<usize>, JobError> {
+    let leaves: Vec<&Step> = job.leaf_steps();
+    debug_assert_eq!(leaves.len(), n);
+
     let mut id_to_idx: HashMap<&str, usize> = HashMap::new();
     let mut artifact_to_idx: HashMap<&str, usize> = HashMap::new();
-    for (i, step) in job.steps.iter().enumerate() {
+    for (i, step) in leaves.iter().enumerate() {
         if let Some(id) = &step.id {
             id_to_idx.insert(id.as_str(), i);
             artifact_to_idx.insert(id.as_str(), i);
         }
         for name in step.outputs.keys() {
             artifact_to_idx.insert(name.as_str(), i);
+        }
+        for name in &step.produces {
+            if !name.contains('*') {
+                artifact_to_idx.insert(name.as_str(), i);
+            }
         }
     }
 
@@ -175,9 +262,12 @@ pub fn schedule_order(job: &Job) -> Result<Vec<usize>, JobError> {
         }
     };
 
-    for (i, step) in job.steps.iter().enumerate() {
+    for (i, step) in leaves.iter().enumerate() {
         for raw in step.input_refs() {
             if let ArtifactRef::Id(id) = ArtifactRef::parse(raw) {
+                if id.contains('*') {
+                    continue;
+                }
                 if let Some(&from) = artifact_to_idx.get(id.as_str()) {
                     add_edge(&mut adj, &mut indeg, from, i);
                 }
@@ -193,6 +283,9 @@ pub fn schedule_order(job: &Job) -> Result<Vec<usize>, JobError> {
                 for v in map.values() {
                     if let Some(raw) = v.as_string() {
                         if let ArtifactRef::Id(id) = ArtifactRef::parse(&raw) {
+                            if id.contains('*') {
+                                continue;
+                            }
                             if let Some(&from) = artifact_to_idx.get(id.as_str()) {
                                 add_edge(&mut adj, &mut indeg, from, i);
                             }
@@ -201,8 +294,6 @@ pub fn schedule_order(job: &Job) -> Result<Vec<usize>, JobError> {
                 }
             }
         }
-        // Linear sugar: no inputs → depend on previous non-skip step in declaration order
-        // only when capability needs a previous primary (fix / merge without refs).
         if step.input_refs().is_empty()
             && matches!(
                 step.r#use,
@@ -213,7 +304,7 @@ pub fn schedule_order(job: &Job) -> Result<Vec<usize>, JobError> {
             )
             && !step.skip
         {
-            if let Some(prev) = (0..i).rev().find(|&j| !job.steps[j].skip) {
+            if let Some(prev) = (0..i).rev().find(|&j| !leaves[j].skip) {
                 add_edge(&mut adj, &mut indeg, prev, i);
             }
         }
@@ -248,22 +339,22 @@ pub fn schedule_order(job: &Job) -> Result<Vec<usize>, JobError> {
 }
 
 fn gate_engines(job: &Job) -> Result<(), JobError> {
-    for step in &job.steps {
-        if step.r#use != Capability::Transcribe || step.skip {
+    for step in job.leaf_steps() {
+        if step.r#use != Capability::Transcribe {
             continue;
         }
         let engine = step
             .options
             .get("engine")
-            .and_then(super::schema::ArgValue::as_string)
+            .and_then(ArgValue::as_string)
             .unwrap_or_else(|| "gigaam".into());
         match TranscribeEngine::parse(&engine) {
-            Some(TranscribeEngine::Gigaam) => {}
             Some(TranscribeEngine::Whisper) => {
                 return Err(JobError::Reserved(
                     "whisper is reserved; vd-whisper is not available yet".into(),
                 ));
             }
+            Some(TranscribeEngine::Gigaam) => {}
             None => {
                 return Err(JobError::Usage(format!(
                     "unknown transcribe engine: {engine}"
@@ -275,62 +366,35 @@ fn gate_engines(job: &Job) -> Result<(), JobError> {
 }
 
 fn gate_capabilities(job: &Job) -> Result<(), JobError> {
-    for step in &job.steps {
-        if step.skip {
-            continue;
-        }
+    for step in job.leaf_steps() {
         if step.r#use.is_reserved() {
             return Err(JobError::Reserved(format!(
-                "{} is reserved; not available yet",
+                "capability '{}' is reserved",
                 step.r#use.as_str()
             )));
         }
         if step.r#use == Capability::Postprocess {
-            gate_postprocess_options(step)?;
+            let has = step
+                .options
+                .get("recipes")
+                .and_then(|v| match v {
+                    ArgValue::Strings(s) => Some(!s.is_empty()),
+                    ArgValue::String(s) => Some(!s.is_empty()),
+                    _ => None,
+                })
+                .unwrap_or(false);
+            if !has {
+                return Err(JobError::Usage(
+                    "postprocess requires options.recipes".into(),
+                ));
+            }
         }
     }
     Ok(())
 }
 
-fn gate_postprocess_options(step: &super::schema::Step) -> Result<(), JobError> {
-    let recipes = step.options.get("recipes");
-    let empty = match recipes {
-        None => true,
-        Some(ArgValue::Strings(v)) => v.is_empty(),
-        Some(ArgValue::String(s)) => s.is_empty(),
-        Some(ArgValue::Map(m)) => m.is_empty(),
-        Some(_) => false,
-    };
-    if empty {
-        return Err(JobError::Usage(
-            "postprocess step requires options.recipes (non-empty)".into(),
-        ));
-    }
-    Ok(())
-}
-
-fn resolve_against(base: &Path, p: &Path) -> PathBuf {
-    if p.is_absolute() {
-        p.to_path_buf()
-    } else {
-        base.join(p)
-    }
-}
-
-fn absolutize(p: &Path) -> Result<PathBuf, JobError> {
-    if p.is_absolute() {
-        return Ok(p.to_path_buf());
-    }
-    Ok(cwd()?.join(p))
-}
-
-fn cwd() -> Result<PathBuf, JobError> {
-    env::current_dir().map_err(|e| JobError::Other(format!("current_dir: {e}")))
-}
-
-/// Resolve primary step input at execution time.
 pub fn exec_input(
-    step: &super::schema::Step,
+    step: &Step,
     job: &Job,
     working_dir: &Path,
     artifacts: &HashMap<String, PathBuf>,
@@ -339,27 +403,35 @@ pub fn exec_input(
     let refs = step.input_refs();
     if let Some(raw) = refs.first() {
         return match ArtifactRef::parse(raw) {
-            ArtifactRef::Id(id) => artifacts
-                .get(&id)
-                .cloned()
-                .ok_or_else(|| JobError::Usage(format!("artifact not produced yet: {id}"))),
+            ArtifactRef::Id(id) if id.ends_with("/*") => {
+                let prefix = id.trim_end_matches("/*");
+                artifacts
+                    .iter()
+                    .find(|(k, _)| k.starts_with(prefix))
+                    .map(|(_, p)| p.clone())
+                    .ok_or_else(|| JobError::Usage(format!("no artifact matches wildcard: {id}")))
+            }
+            ArtifactRef::Id(id) => artifacts.get(&id).cloned().ok_or_else(|| {
+                JobError::Usage(format!("artifact not produced yet: {id}"))
+            }),
             ArtifactRef::Path(p) => Ok(resolve_against(working_dir, &p)),
         };
     }
     match step.r#use {
         Capability::Transcribe | Capability::Diarize => {
-            let audio = job.input.audio.as_ref().ok_or_else(|| {
-                JobError::Usage(format!(
-                    "{} step needs input.audio or step.inputs",
-                    step.r#use.as_str()
-                ))
-            })?;
+            let audio = job
+                .input
+                .audio
+                .as_ref()
+                .ok_or_else(|| JobError::Usage("missing input.audio".into()))?;
             Ok(resolve_against(working_dir, audio))
         }
         Capability::PrepareContext => {
-            let docs = job.context.docs.as_ref().ok_or_else(|| {
-                JobError::Usage("prepare-context needs context.docs or step.inputs".into())
-            })?;
+            let docs = job
+                .context
+                .docs
+                .as_ref()
+                .ok_or_else(|| JobError::Usage("missing context.docs".into()))?;
             Ok(resolve_against(working_dir, docs))
         }
         Capability::FixCasing
@@ -368,9 +440,34 @@ pub fn exec_input(
         | Capability::MeetingMerge
         | Capability::Postprocess => prev.cloned().ok_or_else(|| {
             JobError::Usage(format!(
-                "{} step needs inputs or a previous step output",
+                "{} needs inputs or a previous step output",
                 step.r#use.as_str()
             ))
         }),
     }
+}
+
+fn resolve_against(working_dir: &Path, p: &Path) -> PathBuf {
+    if p.is_absolute() {
+        p.to_path_buf()
+    } else {
+        working_dir.join(p)
+    }
+}
+
+fn absolutize(p: &Path) -> Result<PathBuf, JobError> {
+    if p.is_absolute() {
+        Ok(p.to_path_buf())
+    } else {
+        Ok(cwd()?.join(p))
+    }
+}
+
+fn cwd() -> Result<PathBuf, JobError> {
+    env::current_dir().map_err(|e| JobError::Other(e.to_string()))
+}
+
+/// Look up leaf [`Step`] by resolved leaf index.
+pub fn leaf_step_at<'a>(job: &'a Job, leaf_idx: usize) -> Option<&'a Step> {
+    job.leaf_steps().into_iter().nth(leaf_idx)
 }

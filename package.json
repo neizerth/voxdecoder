@@ -14,6 +14,7 @@
     "build:vd-meeting": "cargo build -p vd-meeting --release",
     "build:vd-postprocess": "cargo build -p vd-postprocess --release",
     "build:vd-pipeline": "cargo build -p vd-pipeline --release",
+    "build:vd-srv": "cargo build -p vd-srv --release",
     "install:vd-gigaam": "cargo install --path src/cli/transcribe/vd-gigaam --locked --force --features metal",
     "install:vd-gigaam:cpu": "cargo install --path src/cli/transcribe/vd-gigaam --locked --force",
     "install:vd-fix-casing": "cargo install --path src/cli/fix/vd-fix-casing --locked --force",
@@ -24,6 +25,7 @@
     "install:vd-meeting": "cargo install --path src/cli/process/vd-meeting --locked --force",
     "install:vd-postprocess": "cargo install --path src/cli/process/vd-postprocess --locked --force",
     "install:vd-pipeline": "cargo install --path src/cli/process/vd-pipeline --locked --force",
+    "install:vd-srv": "cargo install --path src/cli/manage/vd-srv --locked --force",
     "lint:rust": "cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warnings"
   },
   "devDependencies": {

@@ -17,8 +17,9 @@ path = "src/lib.rs"
 
 [features]
 # On macOS: `cargo build -p vd-gigaam --features metal` (see package.json build:vd-gigaam).
+# Both candle-core and candle-nn need metal — nn ships LayerNorm / other GPU kernels.
 default = []
-metal = ["candle-core/metal"]
+metal = ["candle-core/metal", "candle-nn/metal"]
 
 [dependencies]
 candle-core = "0.11"

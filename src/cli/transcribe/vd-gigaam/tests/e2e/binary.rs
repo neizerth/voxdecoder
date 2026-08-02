@@ -123,7 +123,7 @@ fn e2e_dry_run_json_plan() {
             "-i",
             wav.to_str().unwrap(),
             "-m",
-            "v2_rnnt",
+            "v3_e2e_ctc",
             "-o",
             out.to_str().unwrap(),
             "--segments",
@@ -139,7 +139,7 @@ fn e2e_dry_run_json_plan() {
         .success();
     let stdout = &assert.get_output().stdout;
     let plan: Value = serde_json::from_slice(stdout).expect("json plan");
-    assert_eq!(plan["model"], "v2_rnnt");
+    assert_eq!(plan["model"], "v3_e2e_ctc");
     assert_eq!(plan["device"], "cpu");
     assert_eq!(plan["flash"], false);
     assert_eq!(plan["fp16_encoder"], true);
@@ -306,7 +306,7 @@ fn e2e_shorthand_dash_i_dry_run() {
     cmd.args(["-i", wav.to_str().unwrap(), "--dry-run"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Model: v2_rnnt"));
+        .stdout(predicate::str::contains("Model: v3_e2e_ctc"));
 }
 
 #[test]

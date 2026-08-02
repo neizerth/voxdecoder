@@ -33,7 +33,10 @@ fn run_with_asr_model_docs() {
         "--asr",
         "gigaam",
         "-m",
-        "v2_rnnt",
+        "v3_e2e_ctc",
+        "--device",
+        "metal",
+        "--flash",
         "--docs",
         "./docs",
         "--dry-run",
@@ -44,7 +47,9 @@ fn run_with_asr_model_docs() {
     match cmd {
         Command::Run(r) => {
             assert_eq!(r.asr, "gigaam");
-            assert_eq!(r.model.as_deref(), Some("v2_rnnt"));
+            assert_eq!(r.model.as_deref(), Some("v3_e2e_ctc"));
+            assert_eq!(r.device.as_deref(), Some("metal"));
+            assert!(r.flash);
             assert_eq!(r.docs, Some(PathBuf::from("./docs")));
             assert!(r.dry_run && r.json);
             assert_eq!(r.progress, Some(ProgressMode::Json));
@@ -82,4 +87,46 @@ fn positional_job_file() {
         }
         Command::Config(_) => panic!("expected Run"),
     }
+}
+
+#[test]
+fn report_flag_parses() {
+    let cmd = parse_args(args(&["run", "-i", "a.ogg", "--report", "out/report.json"])).unwrap();
+    match cmd {
+        Command::Run(r) => {
+            assert_eq!(r.report, Some(PathBuf::from("out/report.json")));
+            assert!(r.report_dir.is_none());
+        }
+        Command::Config(_) => panic!("expected Run"),
+    }
+}
+
+#[test]
+fn report_and_report_dir_conflict() {
+    let err = parse_args(args(&[
+        "run",
+        "-i",
+        "a.ogg",
+        "--report",
+        "r.json",
+        "--report-dir",
+        "./rep",
+    ]))
+    .unwrap_err();
+    assert_eq!(err.exit_code(), 2);
+    assert!(err.message().contains("mutually exclusive"));
+}
+
+#[test]
+fn report_requires_real_run() {
+    let err = parse_args(args(&[
+        "run",
+        "-i",
+        "a.ogg",
+        "--dry-run",
+        "--report",
+        "r.json",
+    ]))
+    .unwrap_err();
+    assert_eq!(err.exit_code(), 2);
 }

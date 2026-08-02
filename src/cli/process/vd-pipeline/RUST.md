@@ -24,7 +24,7 @@ cargo test -p vd-pipeline --test unit
 cargo test -p vd-pipeline --test integration
 cargo test -p vd-pipeline --test e2e
 # optional full ASR:
-# VD_PIPELINE_E2E_FULL=1 cargo test -p vd-pipeline --test e2e run_full_pipeline -- --ignored
+# VD_PIPELINE_E2E_FULL=1 cargo test --release -p vd-pipeline --test e2e run_full_pipeline -- --ignored
 ```
 
 Git hooks ([lefthook.yml](../../../../lefthook.yml)): `npm install` installs lefthook; `pre-commit` runs `npm test`; `commit-msg` runs commitlint (conventional commits).

@@ -16,6 +16,8 @@ fn default_without_docs_skips_prepare_context() {
         audio: PathBuf::from("/work/a.ogg"),
         engine: TranscribeEngine::Gigaam,
         model: None,
+        device: None,
+        flash: false,
         docs: None,
         output_dir: None,
         working_dir: Some(PathBuf::from("/work")),
@@ -23,7 +25,9 @@ fn default_without_docs_skips_prepare_context() {
         overwrite: false,
     });
     for (i, step) in job.steps.iter_mut().enumerate() {
-        step.output = Some(PathBuf::from(format!("/work/out-{i}.txt")));
+        if let vd_pipeline::WorkflowNode::Step(s) = step {
+            s.output = Some(PathBuf::from(format!("/work/out-{i}.txt")));
+        }
     }
     let resolved = resolve_job(job).unwrap();
     let exec = Executor {
@@ -33,7 +37,7 @@ fn default_without_docs_skips_prepare_context() {
     exec.run(&resolved).unwrap();
     assert!(!binder
         .calls
-        .borrow()
+        .lock().unwrap()
         .iter()
         .any(|c| c.capability == Capability::PrepareContext));
 }
@@ -45,6 +49,8 @@ fn default_with_docs_invokes_prepare_context() {
         audio: PathBuf::from("/work/a.ogg"),
         engine: TranscribeEngine::Gigaam,
         model: None,
+        device: None,
+        flash: false,
         docs: Some(PathBuf::from("docs")),
         output_dir: None,
         working_dir: Some(PathBuf::from("/work")),
@@ -52,7 +58,9 @@ fn default_with_docs_invokes_prepare_context() {
         overwrite: false,
     });
     for (i, step) in job.steps.iter_mut().enumerate() {
-        step.output = Some(PathBuf::from(format!("/work/out-{i}.txt")));
+        if let vd_pipeline::WorkflowNode::Step(s) = step {
+            s.output = Some(PathBuf::from(format!("/work/out-{i}.txt")));
+        }
     }
     let resolved = resolve_job(job).unwrap();
     let exec = Executor {
@@ -62,7 +70,7 @@ fn default_with_docs_invokes_prepare_context() {
     exec.run(&resolved).unwrap();
     assert!(binder
         .calls
-        .borrow()
+        .lock().unwrap()
         .iter()
         .any(|c| c.capability == Capability::PrepareContext));
 }

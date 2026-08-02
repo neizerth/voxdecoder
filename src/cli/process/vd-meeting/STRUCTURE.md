@@ -159,11 +159,17 @@ pub struct InputSource {
     pub role: InputRole,
     pub path: PathBuf,
     pub participant: Option<String>,
+    pub purposes: Vec<InputPurpose>, // transcript | timeline; empty → defaults
+}
+
+pub enum InputPurpose {
+    Transcript,
+    Timeline,
 }
 
 pub enum InputRole {
     Participant,
-    Merged,
+    Room,      // wire: room; alias merged
     Context,   // README, wiki, pdf, jira, slides, … — vd-assets decides how
 }
 
@@ -233,20 +239,18 @@ Depends on `vd-pipeline` (Job + Executor) and `vd-artifact` / `vd-progress`.
 ```text
 collect inputs
       ↓
-normalize Meeting Model   (+ ResolvedMeeting)
+normalize Meeting Model
       ↓
-build transcript branches
+resolve purposes
       ↓
-build diarization branch    (if policy + merged-like source)
+determine artifact requirements
       ↓
-build meeting-merge capability
+build transcript / diarize / meeting-merge
       ↓
-resolve / wire artifacts
-      ↓
-submit Job                  (or return Job for dry-run / MCP)
+submit Job
 ```
 
-Avoid “discover” — the planner does not crawl the filesystem looking for meetings; it **collects** declared inputs and **normalizes** them.
+Avoid “discover” — the planner does not crawl the filesystem; it **collects** declared inputs, **resolves purposes**, then maps required artifacts to sources.
 
 Detail: [README.md § Planner algorithm](README.md#planner-algorithm).
 
@@ -281,7 +285,8 @@ model →  Job DAG      →  binary (+ Executor when ready)
 
 | Topic | Proof |
 |-------|--------|
-| input roles | `merged` / `participant` / `context`; unknown role → err |
+| input roles | `room` (alias `merged`) / `participant` / `context`; unknown role → err |
+| input purposes | `transcript` / `timeline`; defaults: room+tracks → timeline-only |
 | no modes | same planner path for any input subset |
 | Meeting Model | `known` / `expected` / group + person constraints |
 | typed constraints | `gender` (and reserved fields) — not free-form JSON map |
@@ -295,9 +300,9 @@ model →  Job DAG      →  binary (+ Executor when ready)
 | Topic | Proof |
 |-------|--------|
 | participant tracks only | N **transcript** branches → `meeting-merge`; no `diarize` |
-| merged only | transcript (+ diarize if auto) → `meeting-merge` |
-| merged + tracks + auto | N transcript ∥ `diarize` → `meeting-merge` |
-| `enabled: false` | no `diarize` even with merged |
+| room only | transcript (+ diarize if auto) → `meeting-merge` |
+| room + tracks + auto | N track transcripts ∥ `diarize` from room → `meeting-merge` (**no** `room.text`) |
+| `enabled: false` | no `diarize` even with room timeline purpose |
 | context | `prepare-context` when `role: context` |
 | Job contract | Job validates via `vd-pipeline` resolve |
 | ArtifactType::Meeting | merge step registers meeting artifact |

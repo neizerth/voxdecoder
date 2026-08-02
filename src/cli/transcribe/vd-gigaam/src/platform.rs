@@ -7,8 +7,7 @@
 pub const FLASH_SUPPORTED: bool = cfg!(not(target_os = "macos"));
 
 /// Whether Metal is a first-class device on this build.
-pub const METAL_SUPPORTED: bool =
-    cfg!(all(target_os = "macos", feature = "metal"));
+pub const METAL_SUPPORTED: bool = cfg!(all(target_os = "macos", feature = "metal"));
 
 /// Whether CUDA is a first-class device on this build.
 pub const CUDA_SUPPORTED: bool = cfg!(not(target_os = "macos"));

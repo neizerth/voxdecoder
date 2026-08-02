@@ -33,7 +33,7 @@ fn artifact_id_wires_path() {
                 output: Some(PathBuf::from("/work/fixed.txt")),
                 ..Step::new(Capability::FixCasing)
             },
-        ],
+        ].into_iter().map(Into::into).collect(),
     };
     let resolved = resolve_job(job).unwrap();
     let exec = Executor {
@@ -41,7 +41,7 @@ fn artifact_id_wires_path() {
         progress: ProgressMode::None,
     };
     exec.run(&resolved).unwrap();
-    let calls = binder.calls.borrow();
+    let calls = binder.calls.lock().unwrap();
     assert_eq!(calls[0].input, PathBuf::from("/work/a.ogg"));
     assert_eq!(calls[1].input, PathBuf::from("/work/transcript.txt"));
 }

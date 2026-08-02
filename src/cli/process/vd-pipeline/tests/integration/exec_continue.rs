@@ -35,7 +35,7 @@ fn job(continue_on_error: bool) -> Job {
                 output: Some(PathBuf::from("/work/a.txt")),
                 ..Step::new(Capability::FixAsr)
             },
-        ],
+        ].into_iter().map(Into::into).collect(),
     }
 }
 
@@ -47,8 +47,13 @@ fn failure_stops_by_default() {
         binder: &binder,
         progress: ProgressMode::None,
     };
-    assert!(exec.run(&resolved).is_err());
-    assert_eq!(binder.calls.borrow().len(), 2);
+    let fail = exec.run(&resolved).unwrap_err();
+    assert_eq!(binder.calls.lock().unwrap().len(), 2);
+    assert_eq!(fail.report.status, vd_pipeline::JobReportStatus::Failed);
+    assert_eq!(
+        fail.report.steps.last().unwrap().status,
+        vd_pipeline::StepReportStatus::Failed
+    );
 }
 
 #[test]
@@ -60,6 +65,9 @@ fn continue_on_error_runs_rest() {
         progress: ProgressMode::None,
     };
     let out = exec.run(&resolved).unwrap();
-    assert_eq!(out, PathBuf::from("/work/a.txt"));
-    assert_eq!(binder.calls.borrow().len(), 3);
+    assert_eq!(out.output, PathBuf::from("/work/a.txt"));
+    assert_eq!(binder.calls.lock().unwrap().len(), 3);
+    assert_eq!(out.report.status, vd_pipeline::JobReportStatus::Failed);
+    assert_eq!(out.report.steps[1].status, vd_pipeline::StepReportStatus::Failed);
+    assert_eq!(out.report.steps[2].status, vd_pipeline::StepReportStatus::Ok);
 }

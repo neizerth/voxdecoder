@@ -94,18 +94,18 @@ impl ConformerConv {
     }
 
     fn forward(&self, x: &Tensor) -> CandleResult<Tensor> {
-        // x: [B, T, D] -> [B, D, T]
-        let x = x.transpose(1, 2)?;
+        // x: [B, T, D] -> [B, D, T] (contiguous for Metal conv/matmul)
+        let x = x.transpose(1, 2)?.contiguous()?;
         let x = self.pointwise1.forward(&x)?;
         let x = glu_last_half(&x)?;
         let x = self.depthwise.forward(&x)?;
         // LayerNorm over channel dim: transpose to [B,T,D], norm, back.
-        let x = x.transpose(1, 2)?;
+        let x = x.transpose(1, 2)?.contiguous()?;
         let x = self.norm.forward(&x)?;
-        let x = x.transpose(1, 2)?;
+        let x = x.transpose(1, 2)?.contiguous()?;
         let x = candle_nn::ops::silu(&x)?;
         let x = self.pointwise2.forward(&x)?;
-        x.transpose(1, 2)
+        x.transpose(1, 2)?.contiguous()
     }
 }
 
@@ -147,8 +147,13 @@ impl RotaryMha {
         let x_heads = x.reshape((b, t, self.n_heads, self.head_dim))?;
         let q_rope = apply_rope_on_heads(&x_heads, cos, sin)?;
         let k_rope = apply_rope_on_heads(&x_heads, cos, sin)?;
-        let q_in = q_rope.reshape((b, t, self.n_heads * self.head_dim))?;
-        let k_in = k_rope.reshape((b, t, self.n_heads * self.head_dim))?;
+        // Metal matmul rejects non-contiguous views after reshape/transpose.
+        let q_in = q_rope
+            .reshape((b, t, self.n_heads * self.head_dim))?
+            .contiguous()?;
+        let k_in = k_rope
+            .reshape((b, t, self.n_heads * self.head_dim))?
+            .contiguous()?;
 
         let q = self.linear_q.forward(&q_in)?;
         let k = self.linear_k.forward(&k_in)?;
@@ -156,21 +161,25 @@ impl RotaryMha {
 
         let q = q
             .reshape((b, t, self.n_heads, self.head_dim))?
-            .transpose(1, 2)?; // [B,H,T,Dh]
+            .transpose(1, 2)?
+            .contiguous()?; // [B,H,T,Dh]
         let k = k
             .reshape((b, t, self.n_heads, self.head_dim))?
-            .transpose(1, 2)?;
+            .transpose(1, 2)?
+            .contiguous()?;
         let v = v
             .reshape((b, t, self.n_heads, self.head_dim))?
-            .transpose(1, 2)?;
+            .transpose(1, 2)?
+            .contiguous()?;
 
         let scale = (self.head_dim as f64).sqrt();
-        let att = q.matmul(&k.transpose(D::Minus1, D::Minus2)?)?;
+        let att = q.matmul(&k.transpose(D::Minus1, D::Minus2)?.contiguous()?)?;
         let att = (att / scale)?;
         let att = candle_nn::ops::softmax_last_dim(&att)?;
         let out = att.matmul(&v)?; // [B,H,T,Dh]
         let out = out
             .transpose(1, 2)?
+            .contiguous()?
             .reshape((b, t, self.n_heads * self.head_dim))?;
         self.linear_out.forward(&out)
     }

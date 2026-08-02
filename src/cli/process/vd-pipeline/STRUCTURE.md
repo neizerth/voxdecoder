@@ -54,14 +54,17 @@ src/cli/process/vd-pipeline/
 │   ├── cli/                    # flags → Job
 │   ├── config/
 │   ├── job/
-│   │   ├── mod.rs              # Job, Step, ArtifactRef
+│   │   ├── mod.rs              # Job, WorkflowNode, Step, ArtifactRef
 │   │   ├── parse.rs
 │   │   ├── default.rs          # CLI flags → default Job
-│   │   └── resolve.rs          # working_dir, artifacts, engine gate
-│   ├── status/                 # step / id? / name? / path
+│   │   └── resolve.rs          # compile tree → WorkflowPlan + leaves
+│   ├── artifacts.rs            # ArtifactRegistry (produces/consumes)
+│   ├── meeting_artifact.rs     # Meeting / SpeakerTimeline schema stubs
+│   ├── report/                 # ExecutionReport (+ critical_path / efficiency)
+│   ├── status/                 # live progress (vd-progress) — no timings
 │   └── exec/
-│       ├── mod.rs              # Executor::run(job)
-│       └── bind.rs             # capability → implementation
+│       ├── mod.rs              # recursive sequence/parallel Executor
+│       └── bind.rs
 │
 └── tests/
     ├── unit/                   # pure Job / resolve / status (no child binaries)
@@ -128,7 +131,9 @@ Default Job from CLI: see [cli.md](cli.md#default-job-shape-cli).
 |------|------|
 | `cli/` | Human flags → `Job` |
 | `job/` | Schema, parse, default builder, resolve |
-| `status/` | Progress: `step` = capability, `id` / `name` optional, `path` = filesystem |
+| `status/` | Progress: `step` = capability, `id` / `name` optional, `path` = filesystem (no timings) |
+| `report/` | `ExecutionReport`: per-step `duration_ms`, status, backend/model, I/O stats |
+| `exec/` | Schedule + invoke binders; always builds a report |
 | `exec/` | Executor; bind capability + `options` → implementation |
 | `config/` | Defaults (`progress`, `asr`, …) |
 
@@ -182,7 +187,7 @@ Job   →  Executor     →  binary + real children
 | `tests/e2e/` | Spawn `vd-pipeline` binary; dry-run always; full run when children + fixtures exist |
 | `tests/fixtures/jobs/` | Golden Jobs (yaml + json), invalid Jobs |
 | `tests/fixtures/docs/` | Minimal docs for `prepare-context` |
-| `tests/fixtures/audio/` | Optional short audio for transcribe e2e |
+| `tests/fixtures/audio/` | Hobby dialogue + sauna text clips + `.expected.txt` for gated full ASR e2e |
 
 Cargo test targets:
 
@@ -211,6 +216,7 @@ path = "tests/e2e/mod.rs"
 | `resolve.rs` | `working_dir` + relative paths; omit `input` → previous output |
 | `engine_gate.rs` | `engine: whisper` → clear reserved error before exec |
 | `status.rs` | overall percent; omit unset `id` / `name` in events |
+| `report.rs` | RFC3339 helper; backend/model extraction; report JSON shape |
 
 ### Integration (Executor)
 
@@ -225,6 +231,7 @@ Stub each capability: record call (`use`, resolved paths, `options`) and return 
 | `exec_progress.rs` | emits `step_start` / `step_done` / `{step}:…` with `path` = file, `step` = capability |
 | `exec_prepare_context.rs` | step present only when `context.docs` set (default Job) |
 | `exec_options.rs` | `options` forwarded untouched to the binder |
+| `exec_report.rs` | `ExecutionReport` has step order, backend/model, timings; failure returns partial report |
 
 ### E2E (binary)
 
@@ -247,8 +254,10 @@ Spawn `cargo_bin!("vd-pipeline")`. Isolate with `VD_PIPELINE_CONFIG` (+ clear `V
 Full ASR e2e must not block default `cargo test` / CI. Gate:
 
 ```bash
-VD_PIPELINE_E2E_FULL=1 cargo test -p vd-pipeline --test e2e run_full_pipeline -- --ignored
+VD_PIPELINE_E2E_FULL=1 cargo test --release -p vd-pipeline --test e2e run_full_pipeline -- --ignored
 ```
+
+Uses `fixtures/audio/*.mp3` + converted `v3_e2e_ctc` under `vd-gigaam/models` (`VD_GIGAAM_MODELS_DIR`). Prefer `--release` (debug ASR on this clip can take >10m). When the sibling `vd-gigaam` was built with `--features metal`, the job sets `device: metal`; otherwise the same job runs without that option (CPU/`auto`).
 
 ### What “works” means
 

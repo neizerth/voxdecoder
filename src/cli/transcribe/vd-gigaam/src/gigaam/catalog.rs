@@ -54,10 +54,10 @@ pub fn needs_tokenizer(name: &str) -> bool {
 pub const INSTALL_HELP: &str = concat!(
     "Catalog models:\n",
     "  v3_e2e_rnnt    rnnt  e2e (punctuation)\n",
-    "  v3_e2e_ctc     ctc   e2e (punctuation)\n",
+    "  v3_e2e_ctc     ctc   e2e (punctuation; default for -m)\n",
     "  v3_rnnt        rnnt  ASR\n",
     "  v3_ctc         ctc   ASR\n",
-    "  v2_rnnt        rnnt  ASR (default for -m)\n",
+    "  v2_rnnt        rnnt  ASR\n",
     "  v2_ctc         ctc   ASR\n",
     "  v1_rnnt        rnnt  ASR\n",
     "  v1_ctc         ctc   ASR\n",

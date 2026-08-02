@@ -12,6 +12,8 @@ fn default_matches_fixture() {
         audio: PathBuf::from("meeting.ogg"),
         engine: TranscribeEngine::Gigaam,
         model: None,
+        device: None,
+        flash: false,
         docs: None,
         output_dir: None,
         working_dir: None,
@@ -27,6 +29,8 @@ fn docs_inserts_prepare_context() {
         audio: PathBuf::from("meeting.ogg"),
         engine: TranscribeEngine::Gigaam,
         model: None,
+        device: None,
+        flash: false,
         docs: Some(PathBuf::from("./docs")),
         output_dir: None,
         working_dir: None,
@@ -34,7 +38,7 @@ fn docs_inserts_prepare_context() {
         overwrite: false,
     });
     assert!(job
-        .steps
+        .leaf_steps()
         .iter()
         .any(|s| s.r#use == Capability::PrepareContext));
     assert_eq!(job.context.docs, Some(PathBuf::from("./docs")));

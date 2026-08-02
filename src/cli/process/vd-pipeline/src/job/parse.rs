@@ -30,7 +30,7 @@ pub fn load_job_file(path: &Path) -> Result<Job, JobError> {
             job.version
         )));
     }
-    if job.steps.is_empty() {
+    if job.leaf_count() == 0 {
         return Err(JobError::Usage("job has no steps".into()));
     }
     Ok(job)

@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 use super::schema::{
     ArgValue, Capability, Job, JobContext, JobInput, JobOutput, Step, TranscribeEngine,
+    WorkflowNode,
 };
 
 #[derive(Debug, Clone)]
@@ -12,6 +13,8 @@ pub struct DefaultJobArgs {
     pub audio: PathBuf,
     pub engine: TranscribeEngine,
     pub model: Option<String>,
+    pub device: Option<String>,
+    pub flash: bool,
     pub docs: Option<PathBuf>,
     pub output_dir: Option<PathBuf>,
     pub working_dir: Option<PathBuf>,
@@ -28,79 +31,49 @@ pub fn default_job(args: &DefaultJobArgs) -> Job {
     if let Some(m) = &args.model {
         options.insert("model".into(), ArgValue::String(m.clone()));
     }
+    if let Some(d) = &args.device {
+        options.insert("device".into(), ArgValue::String(d.clone()));
+    }
+    if args.flash {
+        options.insert("flash".into(), ArgValue::Bool(true));
+    }
     if args.overwrite {
         options.insert("overwrite".into(), ArgValue::Bool(true));
     }
 
-    let mut steps = vec![Step {
-        r#use: Capability::Transcribe,
+    let mut steps: Vec<WorkflowNode> = vec![Step {
         id: Some("transcript".into()),
-        name: None,
-        input: None,
-        inputs: Vec::new(),
-        output: None,
-        outputs: BTreeMap::new(),
-        depends: Vec::new(),
-        skip: false,
-        resource: None,
         options,
-    }];
+        ..Step::new(Capability::Transcribe)
+    }
+    .into()];
 
     if args.docs.is_some() {
-        steps.push(Step {
-            r#use: Capability::PrepareContext,
-            id: None,
-            name: None,
-            input: None,
-            inputs: Vec::new(),
-            output: None,
-            outputs: BTreeMap::new(),
-            depends: Vec::new(),
-            skip: false,
-            resource: None,
-            options: BTreeMap::new(),
-        });
+        steps.push(Step::new(Capability::PrepareContext).into());
     }
 
-    steps.push(Step {
-        r#use: Capability::FixCasing,
-        id: None,
-        name: None,
-        input: Some("transcript".into()),
-        inputs: Vec::new(),
-        output: None,
-        outputs: BTreeMap::new(),
-        depends: Vec::new(),
-        skip: false,
-        resource: None,
-        options: overwrite_opts(args.overwrite),
-    });
-    steps.push(Step {
-        r#use: Capability::FixAsr,
-        id: None,
-        name: None,
-        input: None,
-        inputs: Vec::new(),
-        output: None,
-        outputs: BTreeMap::new(),
-        depends: Vec::new(),
-        skip: false,
-        resource: None,
-        options: overwrite_opts(args.overwrite),
-    });
-    steps.push(Step {
-        r#use: Capability::FixTerms,
-        id: None,
-        name: None,
-        input: None,
-        inputs: Vec::new(),
-        output: None,
-        outputs: BTreeMap::new(),
-        depends: Vec::new(),
-        skip: false,
-        resource: None,
-        options: overwrite_opts(args.overwrite),
-    });
+    steps.push(
+        Step {
+            input: Some("transcript".into()),
+            options: overwrite_opts(args.overwrite),
+            ..Step::new(Capability::FixCasing)
+        }
+        .into(),
+    );
+    steps.push(
+        Step {
+            options: overwrite_opts(args.overwrite),
+            ..Step::new(Capability::FixAsr)
+        }
+        .into(),
+    );
+    steps.push(
+        Step {
+            options: overwrite_opts(args.overwrite),
+            ..Step::new(Capability::FixTerms)
+        }
+        .into(),
+    );
 
     Job {
         version: 1,

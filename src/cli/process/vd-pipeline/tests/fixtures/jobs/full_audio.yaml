@@ -1,0 +1,22 @@
+# Gated e2e (`VD_PIPELINE_E2E_FULL=1`): copy audio into working_dir first.
+# On Metal builds, add `device: metal` under transcribe options.
+version: 1
+name: strange hobby dialogue
+working_dir: .
+input:
+  audio: 02-03-strannoye-hobby.mp3
+steps:
+  - use: transcribe
+    options:
+      engine: gigaam
+      model: v3_e2e_ctc
+      overwrite: true
+  - use: fix-casing
+    options:
+      overwrite: true
+  - use: fix-asr
+    options:
+      overwrite: true
+  - use: fix-terms
+    options:
+      overwrite: true

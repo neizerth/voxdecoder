@@ -22,7 +22,7 @@ audio / video / docs / meeting tracks
 ```
 
 Foreground: call a binary directly, or submit a Job via `vd-pipeline` / `vd-meeting`.  
-Background (planned): `vd-srv` queues Jobs to the **same** Executor.
+Background (planned → **v1**): [`vd-srv`](src/cli/manage/vd-srv/) is the **execution engine** — queues Jobs, persists state, runs them on a Worker Pool against the **same** Executor.
 
 Default project assets dir: **`.voxdecoder/`** (`md/` + `terms.yml`). Override with `$VD_PROJECT_DIR` or `VD_PROJECT_DIR=` in `.voxdecoder/env` / `.env`.
 
@@ -43,7 +43,7 @@ Overview: [src/cli/transcribe/](src/cli/transcribe/).
 
 ```bash
 vd-gigaam run -i meeting.ogg
-vd-gigaam run -i meeting.ogg -m v2_rnnt --device metal
+vd-gigaam run -i meeting.ogg -m v3_e2e_ctc --device metal
 ```
 
 ### Process
@@ -129,11 +129,11 @@ vd-fix-terms run -i transcript.fixed.txt --terms ./.voxdecoder
 
 ### Other / planned
 
-| CLI | Role | Status |
-|-----|------|--------|
-| `vd-unit` | — | TBD |
-| `vd-srv` | Background queue / job runner | TBD |
-| `vd-mcp` | MCP server (same Job schema as `vd-pipeline`) | TBD |
+| CLI | Role | Status | Spec |
+|-----|------|--------|------|
+| `vd-unit` | — | TBD | — |
+| [`vd-srv`](src/cli/manage/vd-srv/) | Execution engine (node schedule · Resource Classes · Worker Pool · persist → shared Executor) | implemented (v1) | [readme](src/cli/manage/vd-srv/README.md) · [cli](src/cli/manage/vd-srv/cli.md) · [structure](src/cli/manage/vd-srv/STRUCTURE.md) |
+| `vd-mcp` | MCP server (same Job schema as `vd-pipeline`) | TBD | — |
 
 ---
 
@@ -154,6 +154,7 @@ Overview: [src/crates/](src/crates/).
 | Path | Role |
 |------|------|
 | [`src/cli/`](src/cli/) | User-facing CLIs |
+| [`src/cli/manage/`](src/cli/manage/) | Long-running / operator tools (`vd-srv`, …) |
 | [`src/crates/`](src/crates/) | Shared Rust libraries |
 | [`src/mcp/`](src/mcp/) | MCP (TBD) |
 

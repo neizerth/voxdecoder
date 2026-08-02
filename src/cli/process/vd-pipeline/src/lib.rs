@@ -1,17 +1,30 @@
 //! `vd-pipeline` — build and execute a VoxDecoder Job.
 
+pub mod artifacts;
 pub mod cli;
 pub mod config;
 pub mod exec;
 pub mod job;
+pub mod meeting_artifact;
 pub mod paths;
+pub mod report;
 pub mod status;
 
-pub use exec::{Binder, ExecError, Executor, InvokeRequest, InvokeResult, SubprocessBinder};
+pub use exec::{
+    Binder, ExecError, ExecFailure, ExecOutcome, Executor, InvokeRequest, InvokeResult,
+    SubprocessBinder,
+};
 pub use job::{
     default_job, load_job_file, resolve_job, ArgValue, ArtifactRef, Capability, DefaultJobArgs,
     Job, JobContext, JobError, JobInput, JobOutput, ResolvedJob, ResolvedStep, Step,
-    TranscribeEngine,
+    TranscribeEngine, WorkflowNode, WorkflowPlan,
+};
+pub use report::{
+    backend_from_options, format_rfc3339, model_from_options, ArtifactStat, ExecutionReport,
+    JobReportStatus, PhaseReport, StepReport, StepReportStatus,
+};
+pub use meeting_artifact::{
+    MeetingArtifact, MeetingTurn, MergeStrategy, SpeakerSegment, SpeakerTimeline,
 };
 
 pub use vd_artifact as artifact;

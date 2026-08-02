@@ -1,9 +1,9 @@
 //! Stub capability binder for integration tests.
 
-use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
 
 use vd_pipeline::{ArgValue, Binder, Capability, ExecError, InvokeRequest, InvokeResult};
 
@@ -15,7 +15,7 @@ pub struct RecordedCall {
 }
 
 pub struct RecordingBinder {
-    pub calls: RefCell<Vec<RecordedCall>>,
+    pub calls: Mutex<Vec<RecordedCall>>,
     pub fail_on: Option<Capability>,
     counter: AtomicUsize,
 }
@@ -23,7 +23,7 @@ pub struct RecordingBinder {
 impl RecordingBinder {
     pub fn new() -> Self {
         Self {
-            calls: RefCell::new(Vec::new()),
+            calls: Mutex::new(Vec::new()),
             fail_on: None,
             counter: AtomicUsize::new(0),
         }
@@ -31,14 +31,14 @@ impl RecordingBinder {
 
     pub fn failing(cap: Capability) -> Self {
         Self {
-            calls: RefCell::new(Vec::new()),
+            calls: Mutex::new(Vec::new()),
             fail_on: Some(cap),
             counter: AtomicUsize::new(0),
         }
     }
 
     fn invoke_inner(&self, req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
-        self.calls.borrow_mut().push(RecordedCall {
+        self.calls.lock().unwrap().push(RecordedCall {
             capability: req.capability,
             input: req.input.clone(),
             options: req.options.clone(),
@@ -71,4 +71,8 @@ impl Binder for &RecordingBinder {
     fn invoke(&self, req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
         self.invoke_inner(req)
     }
+}
+
+pub fn nodes(steps: Vec<vd_pipeline::Step>) -> Vec<vd_pipeline::WorkflowNode> {
+    steps.into_iter().map(Into::into).collect()
 }

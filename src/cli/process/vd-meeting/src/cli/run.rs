@@ -109,6 +109,7 @@ fn assemble_request(args: &RunArgs) -> Result<(MeetingRequest, Option<BuildOptio
             role: InputRole::Context,
             path: ctx.clone(),
             participant: None,
+            purposes: Vec::new(),
         });
     }
     if let Some(dir) = &args.output_dir {
@@ -124,6 +125,7 @@ fn parse_input_spec(spec: &str) -> Result<InputSource, CliError> {
     let mut role = None;
     let mut path = None;
     let mut participant = None;
+    let mut purposes = Vec::new();
     for part in spec.split(',') {
         let (k, v) = part
             .split_once('=')
@@ -137,6 +139,21 @@ fn parse_input_spec(spec: &str) -> Result<InputSource, CliError> {
             }
             "path" => path = Some(PathBuf::from(v.trim())),
             "participant" => participant = Some(v.trim().to_string()),
+            "purposes" => {
+                for p in v.split('|') {
+                    let p = p.trim();
+                    if p.is_empty() {
+                        continue;
+                    }
+                    purposes.push(
+                        crate::model::InputPurpose::parse(p).ok_or_else(|| {
+                            CliError::usage(format!(
+                                "unknown purpose: {p} (expected transcript|timeline)"
+                            ))
+                        })?,
+                    );
+                }
+            }
             other => {
                 return Err(CliError::usage(format!("unknown --input key: {other}")));
             }
@@ -146,6 +163,7 @@ fn parse_input_spec(spec: &str) -> Result<InputSource, CliError> {
         role: role.ok_or_else(|| CliError::usage("--input needs role=…"))?,
         path: path.ok_or_else(|| CliError::usage("--input needs path=…"))?,
         participant,
+        purposes,
     })
 }
 

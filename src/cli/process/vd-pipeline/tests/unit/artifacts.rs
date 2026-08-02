@@ -17,7 +17,7 @@ fn job_with_steps(steps: Vec<Step>) -> Job {
         max_parallel: None,
         resources: Default::default(),
         continue_on_error: false,
-        steps,
+        steps: steps.into_iter().map(Into::into).collect(),
     }
 }
 

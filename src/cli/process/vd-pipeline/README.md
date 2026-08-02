@@ -2,12 +2,16 @@
 
 Layout: [STRUCTURE.md](STRUCTURE.md).  
 CLI / Job surface: [cli.md](cli.md).  
+Workflow RFC: [WORKFLOW.md](WORKFLOW.md).  
 Stack overview: [../README.md](../README.md) · [vd-meeting](../vd-meeting/) · [vd-diarize](../vd-diarize/) · [vd-postprocess](../vd-postprocess/) · [../../fix/README.md](../../fix/README.md).  
 Shared crates: [`vd-artifact`](../../../crates/vd-artifact/), [`vd-output`](../../../crates/vd-output/), [`vd-progress`](../../../crates/vd-progress/).  
 Rust gates: [RUST.md](RUST.md).
 
 **Status: implemented** (linear Jobs today; DAG / named outputs / parallelism — schema + Executor contract, rolling out).  
 Workspace member: `src/cli/process/vd-pipeline`.
+
+**Progress** (`vd-progress`): live UI on stderr — no timings.  
+**Report** (`--report` / `--report-dir`): durable `ExecutionReport` JSON with per-step `duration_ms`.
 
 ## Core rule
 
@@ -108,7 +112,7 @@ Downstream steps reference artifacts by name — they do not hard-code filesyste
 
 ```bash
 vd-pipeline run -i meeting.ogg
-vd-pipeline run -i meeting.ogg --asr gigaam -m v2_rnnt --docs ./docs
+vd-pipeline run -i meeting.ogg --asr gigaam -m v3_e2e_ctc --docs ./docs
 ```
 
 builds the **same** Job a file would describe (linear transcribe → fix-*), then submits it to the Executor.

@@ -1,13 +1,43 @@
-//! Input roles / sources.
+//! Input roles / sources / purposes.
 
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+/// Why this source is in the meeting (orthogonal to `role`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InputPurpose {
+    /// Build a transcript branch (transcribe → fix-*).
+    Transcript,
+    /// Feed diarization / SpeakerTimeline (usually a room mix).
+    Timeline,
+}
+
+impl InputPurpose {
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "transcript" => Some(Self::Transcript),
+            "timeline" => Some(Self::Timeline),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Transcript => "transcript",
+            Self::Timeline => "timeline",
+        }
+    }
+}
+
+/// Provenance / kind of audio source (not the same as purpose).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum InputRole {
-    Merged,
+    /// Multi-speaker / room recording (wire: `room`; alias `merged`).
+    #[serde(alias = "merged")]
+    Room,
     Participant,
     Context,
 }
@@ -15,7 +45,7 @@ pub enum InputRole {
 impl InputRole {
     pub fn parse(s: &str) -> Option<Self> {
         match s {
-            "merged" => Some(Self::Merged),
+            "room" | "merged" => Some(Self::Room),
             "participant" => Some(Self::Participant),
             "context" => Some(Self::Context),
             _ => None,
@@ -24,7 +54,7 @@ impl InputRole {
 
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::Merged => "merged",
+            Self::Room => "room",
             Self::Participant => "participant",
             Self::Context => "context",
         }
@@ -37,4 +67,7 @@ pub struct InputSource {
     pub path: PathBuf,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub participant: Option<String>,
+    /// Empty = planner fills defaults from role + sibling inputs + diarization policy.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub purposes: Vec<InputPurpose>,
 }

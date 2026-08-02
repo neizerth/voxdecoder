@@ -1,4 +1,4 @@
-//! Job document types.
+//! Job document types — workflow tree (`sequence` / `parallel`) + capability leaves.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -24,7 +24,87 @@ pub struct Job {
     pub max_parallel: Option<u32>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub resources: BTreeMap<String, u32>,
-    pub steps: Vec<Step>,
+    /// Root workflow: each entry is a node (`use: …` leaf, or `sequence` / `parallel`).
+    /// A flat list of capability steps is an implicit sequence (compat).
+    pub steps: Vec<WorkflowNode>,
+}
+
+impl Job {
+    /// Depth-first capability leaves in declaration order.
+    pub fn leaf_steps(&self) -> Vec<&Step> {
+        let mut out = Vec::new();
+        for n in &self.steps {
+            n.collect_leaves(&mut out);
+        }
+        out
+    }
+
+    pub fn leaf_count(&self) -> usize {
+        self.leaf_steps().len()
+    }
+}
+
+/// Workflow tree node. Untagged: maps with `sequence` / `parallel` keys, else a capability [`Step`].
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum WorkflowNode {
+    Sequence {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
+        sequence: Vec<WorkflowNode>,
+    },
+    Parallel {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
+        parallel: Vec<WorkflowNode>,
+    },
+    Step(Step),
+}
+
+impl WorkflowNode {
+    pub fn step(step: Step) -> Self {
+        Self::Step(step)
+    }
+
+    pub fn sequence(nodes: Vec<Self>) -> Self {
+        Self::Sequence {
+            id: None,
+            sequence: nodes,
+        }
+    }
+
+    pub fn parallel(nodes: Vec<Self>) -> Self {
+        Self::Parallel {
+            id: None,
+            parallel: nodes,
+        }
+    }
+
+    pub fn collect_leaves<'a>(&'a self, out: &mut Vec<&'a Step>) {
+        match self {
+            Self::Step(s) => out.push(s),
+            Self::Sequence { sequence, .. } => {
+                for n in sequence {
+                    n.collect_leaves(out);
+                }
+            }
+            Self::Parallel { parallel, .. } => {
+                for n in parallel {
+                    n.collect_leaves(out);
+                }
+            }
+        }
+    }
+
+    pub fn is_control(&self) -> bool {
+        !matches!(self, Self::Step(_))
+    }
+}
+
+impl From<Step> for WorkflowNode {
+    fn from(step: Step) -> Self {
+        Self::Step(step)
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -64,6 +144,12 @@ pub struct Step {
     pub output: Option<PathBuf>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub outputs: BTreeMap<String, PathBuf>,
+    /// Artifact names this step publishes (Epic 2). Empty → fall back to `id` / primary.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub produces: Vec<String>,
+    /// Artifact names this step requires (Epic 2). Empty → fall back to `inputs` / linear sugar.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub consumes: Vec<String>,
     /// Ordering edges to other step `id`s (no data required).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub depends: Vec<String>,
@@ -85,6 +171,8 @@ impl Step {
             inputs: Vec::new(),
             output: None,
             outputs: BTreeMap::new(),
+            produces: Vec::new(),
+            consumes: Vec::new(),
             depends: Vec::new(),
             skip: false,
             resource: None,
@@ -92,8 +180,11 @@ impl Step {
         }
     }
 
-    /// Effective input refs (`inputs`, or sugar `input`).
+    /// Effective input refs (`consumes`, else `inputs`, else sugar `input`).
     pub fn input_refs(&self) -> Vec<&str> {
+        if !self.consumes.is_empty() {
+            return self.consumes.iter().map(String::as_str).collect();
+        }
         if !self.inputs.is_empty() {
             self.inputs.iter().map(String::as_str).collect()
         } else if let Some(i) = &self.input {
@@ -101,6 +192,21 @@ impl Step {
         } else {
             Vec::new()
         }
+    }
+
+    /// Names published into the artifact registry.
+    pub fn produce_names(&self) -> Vec<&str> {
+        if !self.produces.is_empty() {
+            return self.produces.iter().map(String::as_str).collect();
+        }
+        let mut names = Vec::new();
+        if let Some(id) = &self.id {
+            names.push(id.as_str());
+        }
+        for k in self.outputs.keys() {
+            names.push(k.as_str());
+        }
+        names
     }
 }
 
@@ -138,6 +244,17 @@ impl Capability {
 
     pub fn is_reserved(self) -> bool {
         false
+    }
+
+    /// Default artifact kind hint for registry typing (Epic 2 / 6).
+    pub fn default_artifact_kind(self) -> &'static str {
+        match self {
+            Self::Transcribe | Self::FixCasing | Self::FixAsr | Self::FixTerms => "transcript",
+            Self::PrepareContext => "assets",
+            Self::Diarize => "timeline",
+            Self::MeetingMerge => "meeting",
+            Self::Postprocess => "derived",
+        }
     }
 }
 
@@ -207,11 +324,21 @@ pub enum ArtifactRef {
 
 impl ArtifactRef {
     pub fn parse(raw: &str) -> Self {
+        if raw.ends_with("/*") || raw.contains('*') {
+            return Self::Id(raw.to_string());
+        }
         let p = PathBuf::from(raw);
         if raw.contains('/') || raw.contains('\\') || p.extension().is_some() {
             Self::Path(p)
         } else {
             Self::Id(raw.to_string())
+        }
+    }
+
+    pub fn is_wildcard(&self) -> bool {
+        match self {
+            Self::Id(s) => s.contains('*'),
+            Self::Path(_) => false,
         }
     }
 }
@@ -220,14 +347,27 @@ impl ArtifactRef {
 pub struct ResolvedJob {
     pub job: Job,
     pub working_dir: PathBuf,
+    /// Flattened capability leaves (declaration / DFS order).
     pub steps: Vec<ResolvedStep>,
-    /// Topological execution order (indices into `steps` / `job.steps`).
+    /// Execution plan: recursive workflow over leaf indices / control structure.
+    pub plan: WorkflowPlan,
+    /// Legacy topo order of leaf indices (flat jobs / sequence of leaves).
     pub order: Vec<usize>,
+}
+
+/// Resolved workflow plan for the Executor (indices into [`ResolvedJob::steps`]).
+#[derive(Debug, Clone)]
+pub enum WorkflowPlan {
+    Leaf(usize),
+    Sequence(Vec<WorkflowPlan>),
+    Parallel(Vec<WorkflowPlan>),
 }
 
 #[derive(Debug, Clone)]
 pub struct ResolvedStep {
     pub index: u32,
+    /// Dotted path in the workflow tree (e.g. `0`, `1.0`, `1.1`).
+    pub path: String,
     pub capability: Capability,
     pub id: Option<String>,
     pub name: Option<String>,
@@ -235,6 +375,8 @@ pub struct ResolvedStep {
     pub input: Option<PathBuf>,
     pub output: Option<PathBuf>,
     pub outputs: BTreeMap<String, PathBuf>,
+    pub produces: Vec<String>,
+    pub consumes: Vec<String>,
     pub options: BTreeMap<String, ArgValue>,
 }
 

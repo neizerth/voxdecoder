@@ -20,7 +20,7 @@ fn base_job(steps: Vec<Step>) -> Job {
         max_parallel: None,
         resources: Default::default(),
         continue_on_error: false,
-        steps,
+        steps: steps.into_iter().map(Into::into).collect(),
     }
 }
 
@@ -49,7 +49,7 @@ fn steps_run_in_order() {
         progress: ProgressMode::None,
     };
     exec.run(&resolved).unwrap();
-    let caps: Vec<_> = binder.calls.borrow().iter().map(|c| c.capability).collect();
+    let caps: Vec<_> = binder.calls.lock().unwrap().iter().map(|c| c.capability).collect();
     assert_eq!(
         caps,
         vec![
@@ -86,6 +86,6 @@ fn skip_does_not_invoke() {
         progress: ProgressMode::None,
     };
     exec.run(&resolved).unwrap();
-    let caps: Vec<_> = binder.calls.borrow().iter().map(|c| c.capability).collect();
+    let caps: Vec<_> = binder.calls.lock().unwrap().iter().map(|c| c.capability).collect();
     assert_eq!(caps, vec![Capability::Transcribe, Capability::FixAsr]);
 }

@@ -41,10 +41,13 @@ Shorthand: `vd-pipeline -i FILE` ≡ `vd-pipeline run -i FILE`.
 
 ```bash
 vd-pipeline run -i meeting.ogg
-vd-pipeline run -i meeting.ogg --asr gigaam -m v2_rnnt
+vd-pipeline run -i meeting.ogg --asr gigaam -m v3_e2e_ctc
+vd-pipeline run -i meeting.ogg --device metal
 vd-pipeline run -i meeting.ogg --docs ./docs
 vd-pipeline run -i meeting.ogg --progress=json
 vd-pipeline run -i meeting.ogg --dry-run --json
+vd-pipeline run -i meeting.ogg --report report.json
+vd-pipeline run job.yaml --report-dir ./run-out
 ```
 
 | Argument | Short | Default | Description |
@@ -52,16 +55,22 @@ vd-pipeline run -i meeting.ogg --dry-run --json
 | `--input` | `-i` | — | Audio/video → Job `input.audio` (required unless a job file is given) |
 | `--asr` | — | `gigaam` | Transcribe engine → `steps[transcribe].options.engine` |
 | `--model` | `-m` | — | → `steps[transcribe].options.model` |
+| `--device` | — | — | → `steps[transcribe].options.device` (`cpu` \| `metal` \| `cuda` \| `auto`; what the ASR binary accepts) |
+| `--flash` | — | off | → `steps[transcribe].options.flash` (CUDA / non-mac `vd-gigaam` only) |
 | `--docs` | — | — | Docs root → Job `context.docs`; adds a `prepare-context` step when set |
 | `--output-dir` | `-d` | — | → Job `output.dir` |
 | `--working-dir` | — | cwd | → Job `working_dir` (relative paths resolve here) |
 | `--dry-run` | — | — | Print resolved Job and exit (no execution) |
 | `--json` | — | — | With `--dry-run`: Job document on stdout |
-| `--progress` | — | `text` | Progress on stderr: `text` \| `json` |
+| `--progress` | — | `text` | Progress on stderr: `text` \| `json` (UI only; no timings) |
 | `--quiet` | `-q` | — | Disable progress |
 | `--continue-on-error` | — | off | Keep going after a failed step |
 | `--overwrite` | — | — | Default for steps that support overwrite |
+| `--report` | — | — | Write `ExecutionReport` JSON to this path |
+| `--report-dir` | — | — | Write `report.json` + `resolved-job.json` into this directory |
 | `--max-parallel` | — | config / `1` | Cap concurrent ready steps |
+
+`--report` and `--report-dir` are mutually exclusive and require a real run (not `--dry-run`).
 
 Job file vs CLI shorthand: pass a `.yaml` / `.yml` / `.json` (or `-f` / `--file`). Do not mix a job file with `-i` (exit 2).
 
@@ -78,23 +87,20 @@ Job file vs CLI shorthand: pass a `.yaml` / `.yml` / `.json` (or `-f` / `--file`
 
 Single format for files, `--dry-run --json`, builders (`vd-meeting`), and MCP.
 
+`steps` is a **workflow tree**: each entry is a capability leaf (`use: …`) or a control node (`sequence` / `parallel`). A flat list of leaves is an implicit sequence (compat). See [WORKFLOW.md](WORKFLOW.md).
+
 ```yaml
 version: 1
 name: meeting cleanup          # optional job label
 
 working_dir: .
-max_parallel: 2                # optional; Executor concurrency cap
-# resources:                   # optional resource groups
-#   gpu: 1
-#   cpu: 4
-#   io: 8
+max_parallel: 2                # concurrent parallel-branch fan-out
 
 input:
   audio: meeting.ogg
 
 context:
   docs: ./docs
-  # assets: ./.voxdecoder
 
 output:
   dir: ./out
@@ -103,36 +109,23 @@ continue_on_error: false
 
 steps:
   - use: transcribe
-    id: transcript               # primary artifact name
-    name: Initial transcript     # display only
+    id: transcript
+    produces: [transcript]
     options:
       engine: gigaam
-      model: v2_rnnt
-      device: cuda
-      flash: true
-    # resource: gpu              # optional group for scheduling
+      model: v3_e2e_ctc
 
-  - use: prepare-context
-    id: assets
-    outputs:                     # additional named artifacts
-      md: .voxdecoder/md
-      terms: .voxdecoder/terms.yml
-    options:
-      ocr: false
+  - parallel:
+      - use: fix-casing
+        consumes: [transcript]
+        id: cased
+      - use: diarize
+        id: timeline
 
-  - use: fix-casing
-    inputs:
-      - transcript               # preferred
-    # input: transcript          # sugar ≡ inputs: [transcript]
-    id: cased
-
-  - use: fix-asr
-    inputs:
-      - cased
-
-  - use: fix-terms
-    inputs:
-      - cased                    # or omit → previous primary in a linear chain
+  - sequence:
+      - use: fix-asr
+        input: cased
+      - use: fix-terms
 ```
 
 JSON is the same tree.
@@ -163,6 +156,8 @@ JSON is the same tree.
 | `input` | — | Sugar for a single-entry `inputs` |
 | `outputs` | — | Map of extra artifact name → path (implementation may fill paths) |
 | `output` | — | Sugar / explicit path for the primary output |
+| `produces` | — | Artifact names published (else `id` / `outputs`) |
+| `consumes` | — | Artifact names required (else `inputs` / linear sugar) |
 | `depends` | — | Extra step `id`s that must finish first (ordering without data) |
 | `skip` | — | `true` → skip |
 | `resource` | — | Resource group for this step (`gpu` / `cpu` / `io`, …) |
@@ -197,7 +192,7 @@ Independent ready steps may run together up to `max_parallel` and free resource 
 - use: transcribe
   options:
     engine: gigaam
-    model: v2_rnnt
+    model: v3_e2e_ctc
 ```
 
 | Rule | Detail |
@@ -236,7 +231,9 @@ steps:
     id: transcript
     options:
       engine: < --asr >
-      model: < -m >           # if set
+      model: < -m >
+      device: < --device >
+      flash: < --flash >           # if set
   - use: prepare-context      # only if --docs set
   - use: fix-casing
     input: transcript         # sugar still accepted
@@ -306,6 +303,50 @@ Always know **which step**, **index/total** (or running/total for DAG), and **ho
 | `path` | Filesystem path |
 
 Statuses: `pending` \| `running` \| `done` \| `skipped` \| `failed`.
+
+Progress is **UI only** — no `duration_ms`. Timings live in the Execution Report.
+
+---
+
+## Execution report
+
+Durable profiling / audit JSON, separate from `vd-progress`.
+
+```bash
+vd-pipeline run job.yaml --report report.json
+vd-pipeline run job.yaml --report-dir ./out
+# → ./out/report.json
+# → ./out/resolved-job.json
+```
+
+Shape (MVP):
+
+```json
+{
+  "version": 1,
+  "job": "meeting",
+  "status": "ok",
+  "started_at": "2026-08-02T10:00:00.000Z",
+  "finished_at": "2026-08-02T10:01:12.000Z",
+  "duration_ms": 72153,
+  "steps": [
+    {
+      "id": "transcript",
+      "capability": "transcribe",
+      "status": "ok",
+      "started_at": "…",
+      "finished_at": "…",
+      "duration_ms": 48132,
+      "backend": "gigaam",
+      "model": "v3_e2e_ctc",
+      "inputs": [{ "path": "…", "bytes": 1234 }],
+      "outputs": [{ "path": "…", "bytes": 567 }]
+    }
+  ]
+}
+```
+
+`phases` is reserved (empty until child tools feed phase telemetry). On step failure the report is still written when `--report` / `--report-dir` is set.
 
 ---
 

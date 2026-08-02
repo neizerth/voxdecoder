@@ -6,7 +6,7 @@ mod meeting;
 mod options;
 
 pub use document::{load_meeting_file, MeetingDocument};
-pub use input::{InputRole, InputSource};
+pub use input::{InputPurpose, InputRole, InputSource};
 pub use meeting::{
     AlignmentMode, AlignmentOptions, CountBounds, DiarizationEnabled, DiarizationPolicy, Gender,
     GroupConstraints, KnownParticipant, MeetingModel, MeetingOutput, MeetingRequest,
