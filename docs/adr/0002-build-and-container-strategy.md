@@ -173,21 +173,24 @@ Docker images are **Linux** runtime environments.
 
 Metal is never expected inside a container.
 
-Current image families:
+**Canonical images:**
 
 ```text
-voxdecoder/runtime
+voxdecoder/runtime     ← production worker (vd-srv + capabilities); K8s
+voxdecoder/mcp         ← lightweight MCP gateway only
+voxdecoder/dev         ← optional DevContainer (vdctl + toolchain); not production
 ```
 
-Future images:
+There is **no** production `voxdecoder/vdctl` image. [`vdctl`](../src/cli/manage/vdctl/) is host-side Platform CLI; container PID1 is already `vd-srv serve`.
+
+Future **variants** of the runtime image (same contract, different deps):
 
 ```text
 voxdecoder/runtime-cpu
 voxdecoder/runtime-cuda
-voxdecoder/runtime-dev
 ```
 
-All images share the same binaries and Job contract. Only runtime dependencies differ.
+All Runtime variants share the same Job / Runtime API contract. Only native deps (CUDA libs, …) differ.
 
 See [`docs/runtime.md`](../runtime.md).
 
@@ -267,13 +270,17 @@ Scaling = more Runtime replicas. No capability-specific containers.
 
 ## MCP
 
-The MCP server is deployed separately.
+The MCP server is deployed separately (`voxdecoder/mcp`).
 
 ```text
 Client → vd-mcp → vd-srv
 ```
 
 MCP is an interface. It does not execute Jobs. It uses the standard Transport layer.
+
+## Platform CLI (`vdctl`)
+
+Native install / Desktop companion. Spawns or attaches to Runtime on the host; may target a remote Runtime API endpoint (Docker TCP, Kubernetes Service). Does not replace container ENTRYPOINT and is not a third production image.
 
 ---
 
@@ -327,5 +334,7 @@ The build system guarantees:
 * [`Dockerfile`](../../Dockerfile)
 * [`docs/runtime.md`](../runtime.md)
 * [ADR 0001 — Platform Refactoring](0001-platform-refactoring-plan.md)
+* [ADR 0003 — Distribution & Update](0003-distribution-and-update-strategy.md)
+* [`vdctl`](../../src/cli/manage/vdctl/)
 * [`vd-mcp`](../../src/cli/manage/vd-mcp/)
 * [`vd-gigaam` features](../../src/cli/transcribe/vd-gigaam/Cargo.toml)

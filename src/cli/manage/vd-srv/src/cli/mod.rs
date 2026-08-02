@@ -25,12 +25,27 @@ pub enum Command {
     Submit(SubmitArgs),
     Queue,
     Jobs,
-    JobInfo { id: String },
-    Watch { id: String },
-    Events { id: String, follow: bool },
-    Logs { id: String, follow: bool, stderr: bool },
-    Artifacts { id: String },
-    Cancel { id: String },
+    JobInfo {
+        id: String,
+    },
+    Watch {
+        id: String,
+    },
+    Events {
+        id: String,
+        follow: bool,
+    },
+    Logs {
+        id: String,
+        follow: bool,
+        stderr: bool,
+    },
+    Artifacts {
+        id: String,
+    },
+    Cancel {
+        id: String,
+    },
     Top,
     Config(ConfigArgs),
 }
@@ -251,7 +266,9 @@ where
             wait,
             json,
         } => {
-            let stdin = job.as_ref().is_some_and(|p| p.as_os_str() == OsStr::new("-"));
+            let stdin = job
+                .as_ref()
+                .is_some_and(|p| p.as_os_str() == OsStr::new("-"));
             Command::Submit(SubmitArgs {
                 job: if stdin { None } else { job },
                 stdin,
@@ -312,27 +329,32 @@ fn client_cmd(cmd: Command) -> Result<(), CliError> {
         }
         Command::Health | Command::Top => {
             let data = rpc(&ep, "server.health", None)?;
-            println!("{}", serde_json::to_string_pretty(&data).unwrap_or_default());
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&data).unwrap_or_default()
+            );
             Ok(())
         }
         Command::Queue | Command::Jobs => {
             let data = rpc(&ep, "queue.status", None)?;
-            println!("{}", serde_json::to_string_pretty(&data).unwrap_or_default());
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&data).unwrap_or_default()
+            );
             Ok(())
         }
         Command::Submit(args) => submit_cmd(&ep, args),
         Command::JobInfo { id } => {
             let data = rpc(&ep, "job.status", Some(serde_json::json!({"id": id})))?;
-            println!("{}", serde_json::to_string_pretty(&data).unwrap_or_default());
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&data).unwrap_or_default()
+            );
             Ok(())
         }
         Command::Events { id, follow } => follow_events(&ep, &id, follow),
         Command::Watch { id } => follow_events(&ep, &id, true),
-        Command::Logs {
-            id,
-            follow,
-            stderr,
-        } => logs_cmd(&ep, &id, follow, stderr),
+        Command::Logs { id, follow, stderr } => logs_cmd(&ep, &id, follow, stderr),
         Command::Artifacts { id } => {
             let data = rpc(&ep, "artifact.list", Some(serde_json::json!({"id": id})))?;
             if let Some(arr) = data.as_array() {
@@ -342,13 +364,19 @@ fn client_cmd(cmd: Command) -> Result<(), CliError> {
                     }
                 }
             } else {
-                println!("{}", serde_json::to_string_pretty(&data).unwrap_or_default());
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&data).unwrap_or_default()
+                );
             }
             Ok(())
         }
         Command::Cancel { id } => {
             let data = rpc(&ep, "job.cancel", Some(serde_json::json!({"id": id})))?;
-            println!("{}", serde_json::to_string_pretty(&data).unwrap_or_default());
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&data).unwrap_or_default()
+            );
             Ok(())
         }
         Command::Serve(_) | Command::Config(_) => unreachable!(),
@@ -384,7 +412,10 @@ fn submit_cmd(ep: &Endpoint, args: SubmitArgs) -> Result<(), CliError> {
         .unwrap_or("")
         .to_string();
     if args.json {
-        println!("{}", serde_json::to_string_pretty(&data).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&data).unwrap_or_default()
+        );
     } else {
         println!("job: {id}");
     }
@@ -397,13 +428,13 @@ fn submit_cmd(ep: &Endpoint, args: SubmitArgs) -> Result<(), CliError> {
 fn wait_job(ep: &Endpoint, id: &str, json: bool) -> Result<(), CliError> {
     loop {
         let data = rpc(ep, "job.status", Some(serde_json::json!({"id": id})))?;
-        let status = data
-            .get("status")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let status = data.get("status").and_then(|v| v.as_str()).unwrap_or("");
         if matches!(status, "completed" | "failed" | "cancelled") {
             if json {
-                println!("{}", serde_json::to_string_pretty(&data).unwrap_or_default());
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&data).unwrap_or_default()
+                );
             } else {
                 println!("status: {status}");
             }
@@ -426,10 +457,7 @@ fn follow_events(ep: &Endpoint, id: &str, follow: bool) -> Result<(), CliError> 
         if let Some(arr) = data.as_array() {
             for ev in arr.iter().skip(seen) {
                 let kind = ev.get("kind").and_then(|v| v.as_str()).unwrap_or("?");
-                let msg = ev
-                    .get("message")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
+                let msg = ev.get("message").and_then(|v| v.as_str()).unwrap_or("");
                 if msg.is_empty() {
                     println!("{kind}");
                 } else {
@@ -461,10 +489,7 @@ fn logs_cmd(ep: &Endpoint, id: &str, follow: bool, stderr: bool) -> Result<(), C
             "job.logs",
             Some(serde_json::json!({"id": id, "stderr": stderr})),
         )?;
-        let text = data
-            .get("text")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let text = data.get("text").and_then(|v| v.as_str()).unwrap_or("");
         if text.len() > last_len {
             print!("{}", &text[last_len..]);
             last_len = text.len();
@@ -473,10 +498,7 @@ fn logs_cmd(ep: &Endpoint, id: &str, follow: bool, stderr: bool) -> Result<(), C
             return Ok(());
         }
         let info = rpc(ep, "job.status", Some(serde_json::json!({"id": id})))?;
-        let status = info
-            .get("status")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let status = info.get("status").and_then(|v| v.as_str()).unwrap_or("");
         if matches!(status, "completed" | "failed" | "cancelled") {
             return Ok(());
         }
@@ -484,7 +506,11 @@ fn logs_cmd(ep: &Endpoint, id: &str, follow: bool, stderr: bool) -> Result<(), C
     }
 }
 
-fn rpc(ep: &Endpoint, method: &str, params: Option<serde_json::Value>) -> Result<serde_json::Value, CliError> {
+fn rpc(
+    ep: &Endpoint,
+    method: &str,
+    params: Option<serde_json::Value>,
+) -> Result<serde_json::Value, CliError> {
     api::call(ep, method, params).map_err(|e| CliError::with_code(3, e.to_string()))
 }
 
@@ -499,7 +525,8 @@ fn config_cmd(args: ConfigArgs) -> Result<(), CliError> {
             let cfg = config::load(&path).map_err(CliError::usage)?;
             println!(
                 "{}",
-                toml::to_string_pretty(&cfg.raw).map_err(|e| CliError::with_code(1, e.to_string()))?
+                toml::to_string_pretty(&cfg.raw)
+                    .map_err(|e| CliError::with_code(1, e.to_string()))?
             );
             Ok(())
         }

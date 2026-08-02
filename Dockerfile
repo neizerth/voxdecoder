@@ -101,12 +101,11 @@ RUN apt-get update \
     && useradd --system --uid 10001 --home /data --shell /usr/sbin/nologin vox
 
 WORKDIR /app
-COPY docker/vd-mcp-stub.sh /usr/local/bin/vd-mcp
-RUN chmod +x /usr/local/bin/vd-mcp
+COPY --from=builder /src/target/release/vd-mcp /usr/local/bin/
 
 USER vox
 # Same Transport knobs as vd-srv clients — not HTTP.
 ENV VD_TRANSPORT=tcp \
     VD_TCP=runtime:7701
 ENTRYPOINT ["vd-mcp"]
-CMD []
+CMD ["serve"]

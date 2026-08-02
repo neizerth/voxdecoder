@@ -1,0 +1,44 @@
+[package]
+name = "vdctl"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "VoxDecoder Platform CLI — local installation manager"
+publish = false
+
+[[bin]]
+name = "vdctl"
+path = "src/main.rs"
+
+[lib]
+name = "vdctl"
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+clap = { version = "4", features = ["derive", "env"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+toml = "0.8"
+directories = "6"
+vd-srv = { path = "../vd-srv" }
+vd-artifact = { path = "../../../crates/vd-artifact" }
+
+[dev-dependencies]
+tempfile = "3"
+
+[[test]]
+name = "unit"
+path = "tests/unit/mod.rs"
+
+[[test]]
+name = "integration"
+path = "tests/integration/mod.rs"
+
+[[test]]
+name = "e2e"
+path = "tests/e2e/mod.rs"

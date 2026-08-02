@@ -1,10 +1,10 @@
 //! Transport abstraction — bytes in/out; JSON-RPC sits above.
 
+#[cfg(windows)]
+mod pipe;
 mod tcp;
 #[cfg(unix)]
 mod uds;
-#[cfg(windows)]
-mod pipe;
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::SocketAddr;
@@ -144,11 +144,7 @@ pub fn resolve_endpoint(
 }
 
 /// Accept loop for one endpoint; each connection speaks NDJSON JSON-RPC.
-pub fn serve(
-    endpoint: &Endpoint,
-    engine: Engine,
-    stop: Arc<AtomicBool>,
-) -> Result<(), String> {
+pub fn serve(endpoint: &Endpoint, engine: Engine, stop: Arc<AtomicBool>) -> Result<(), String> {
     match endpoint {
         #[cfg(unix)]
         Endpoint::Uds(path) => uds::serve(path, engine, stop),

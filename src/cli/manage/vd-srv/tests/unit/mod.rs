@@ -2,6 +2,7 @@
 
 #![allow(clippy::default_trait_access)]
 
-mod store;
-mod schedule;
+mod plan;
 mod rpc;
+mod schedule;
+mod store;

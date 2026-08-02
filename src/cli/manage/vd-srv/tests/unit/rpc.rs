@@ -15,11 +15,7 @@ fn transport_kind_parse() {
 
 #[test]
 fn request_roundtrip() {
-    let req = Request::call(
-        Id::number(7),
-        "server.ping",
-        Some(serde_json::json!({})),
-    );
+    let req = Request::call(Id::number(7), "server.ping", Some(serde_json::json!({})));
     let s = serde_json::to_string(&req).unwrap();
     let back: Request = serde_json::from_str(&s).unwrap();
     assert_eq!(back.jsonrpc, JSONRPC_VERSION);

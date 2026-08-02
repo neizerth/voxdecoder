@@ -3,8 +3,8 @@
 use std::path::PathBuf;
 
 use vd_pipeline::{Capability, Job, JobInput, Step};
-use vd_srv::store::{JobRecord, JobStatus, Priority, RestartPolicy};
 use vd_srv::pick_job;
+use vd_srv::store::{JobRecord, JobStatus, Priority, RestartPolicy};
 
 fn rec(id: &str, status: JobStatus, priority: Priority) -> JobRecord {
     JobRecord {

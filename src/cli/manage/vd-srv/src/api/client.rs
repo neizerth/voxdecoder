@@ -105,11 +105,7 @@ fn ids_equal(a: &Id, b: &Id) -> bool {
 }
 
 /// One-shot RPC call (connect → call → drop).
-pub fn call(
-    endpoint: &Endpoint,
-    method: &str,
-    params: Option<Value>,
-) -> Result<Value, RpcError> {
+pub fn call(endpoint: &Endpoint, method: &str, params: Option<Value>) -> Result<Value, RpcError> {
     let mut client = JsonRpcClient::connect(endpoint)?;
     client.call(method, params)
 }

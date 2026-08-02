@@ -4,7 +4,7 @@ Layout: [STRUCTURE.md](STRUCTURE.md).
 CLI / API surface: [cli.md](cli.md).  
 Transport / RPC: [TRANSPORT.md](TRANSPORT.md).  
 Platform role: [`docs/runtime.md`](../../../../docs/runtime.md).  
-Related: [`vd-pipeline`](../../process/vd-pipeline/) · [`vd-meeting`](../../process/vd-meeting/) · [`vd-postprocess`](../../process/vd-postprocess/) · [`vd-diarize`](../../process/vd-diarize/) · [`vd-mcp`](../vd-mcp/) (reserved).
+Related: [`vd-pipeline`](../../process/vd-pipeline/) · [`vd-meeting`](../../process/vd-meeting/) · [`vd-postprocess`](../../process/vd-postprocess/) · [`vd-diarize`](../../process/vd-diarize/) · [`vd-mcp`](../vd-mcp/) (planned — MCP Gateway).
 Shared crates: [`vd-artifact`](../../../crates/vd-artifact/), [`vd-progress`](../../../crates/vd-progress/), [`vd-pipeline`](../../process/vd-pipeline/).  
 Rust gates: [RUST.md](RUST.md).
 
@@ -12,7 +12,9 @@ Rust gates: [RUST.md](RUST.md).
 
 > **`vd-srv` is the Runtime Environment for VoxDecoder.**
 >
-> It owns Worker Pool, Resource Classes, Queue, Event/Artifact stores, Health, Transport, API, and scheduling. Capability logic remains in the shared Executor (lib preferred, CLI subprocess fallback). Builders submit Jobs; Runtime runs them.
+> It owns **Planners** (Domain Request → Job), Worker Pool, Resource Classes, Queue, Event/Artifact stores, Health, Transport, and scheduling. Capability logic remains in the shared Executor (lib preferred, CLI subprocess fallback).
+>
+> **Runtime API** is the public contract. Clients — Desktop, Web UI, CLI (`--via-srv`), REST/gRPC, and [`vd-mcp`](../vd-mcp/) — depend only on this API. Planners and capabilities may evolve behind it. `vd-mcp` forwards Requests; it does not host Planners.
 
 **v1 scope:** Job-granularity workers (full Job → shared `Executor`); node records + Event Store for queue/watch; JSON-RPC 2.0 control plane over transport abstraction (UDS primary; optional TCP) — see [TRANSPORT.md](TRANSPORT.md); filesystem Job Store. Per-node dispatch and Windows Named Pipe are next.
 
@@ -50,7 +52,7 @@ Capabilities
 
 | Layer | Role |
 |-------|------|
-| **Frontends** (`vd-pipeline` CLI, `vd-meeting`, MCP, HTTP, local socket, future GUI) | Plan / submit / cancel / observe Jobs |
+| **Frontends / Runtime API clients** (`vd-pipeline` CLI, `vd-meeting`, `vd-mcp`, HTTP, Desktop, …) | Plan (where needed) · submit · cancel · observe via Runtime API |
 | **vd-srv** | Execution engine: persist, schedule **nodes**, Resource Classes, workers, observability |
 | **Executor** (`vd-pipeline`) | Run one resolved Job node (capability + options + I/O) |
 | **Capabilities** | Domain work (`transcribe`, `fix-*`, `diarize`, …) |

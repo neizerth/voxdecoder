@@ -35,14 +35,7 @@ pub fn run(args: ServeArgs) -> Result<(), CliError> {
     } else {
         let tcp = args.tcp.as_deref().or(cfg.raw.tcp.as_deref());
         tcp.and_then(|addr| {
-            api::resolve_endpoint(
-                api::TransportKind::Tcp,
-                None,
-                None,
-                Some(addr),
-                &data,
-            )
-            .ok()
+            api::resolve_endpoint(api::TransportKind::Tcp, None, None, Some(addr), &data).ok()
         })
     };
 

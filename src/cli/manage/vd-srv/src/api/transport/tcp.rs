@@ -13,9 +13,7 @@ use super::{run_session, Duplex};
 
 pub fn serve(addr: SocketAddr, engine: Engine, stop: Arc<AtomicBool>) -> Result<(), String> {
     let listener = TcpListener::bind(addr).map_err(|e| e.to_string())?;
-    listener
-        .set_nonblocking(true)
-        .map_err(|e| e.to_string())?;
+    listener.set_nonblocking(true).map_err(|e| e.to_string())?;
 
     while !stop.load(Ordering::SeqCst) {
         match listener.accept() {
@@ -38,9 +36,8 @@ pub fn serve(addr: SocketAddr, engine: Engine, stop: Arc<AtomicBool>) -> Result<
 }
 
 pub fn connect(addr: SocketAddr) -> Result<Duplex, String> {
-    let stream = TcpStream::connect(addr).map_err(|e| {
-        format!("cannot connect to {addr}: {e} (is vd-srv serve running?)")
-    })?;
+    let stream = TcpStream::connect(addr)
+        .map_err(|e| format!("cannot connect to {addr}: {e} (is vd-srv serve running?)"))?;
     let writer = stream.try_clone().map_err(|e| e.to_string())?;
     Ok(Duplex {
         reader: BufReader::new(Box::new(stream) as Box<dyn std::io::Read + Send>),

@@ -4,6 +4,7 @@ use serde_json::{json, Value};
 use vd_pipeline::Job;
 
 use crate::engine::Engine;
+use crate::plan::{plan_audio, plan_meeting, wants_execute, AudioRequest, MeetingPlanRequest};
 use crate::store::{Priority, RestartPolicy};
 
 use super::rpc::{code, ErrorObject, Request, Response};
@@ -28,16 +29,21 @@ pub fn handle(engine: &Engine, req: Request) -> Option<Response> {
             "version": env!("CARGO_PKG_VERSION"),
         })),
         "server.health" => Ok(health(engine)),
+        "server.info" => Ok(server_info(engine)),
         "server.stop" => {
             engine.stop();
             Ok(json!({"stopping": true}))
         }
         "job.submit" => job_submit(engine, req.params.as_ref()),
+        "plan.audio" => plan_audio_request(engine, req.params.as_ref()),
+        "plan.meeting" => plan_meeting_request(engine, req.params.as_ref()),
         "job.cancel" => job_id_op(engine, req.params.as_ref(), |e, id| {
-            e.cancel(id).map(|j| serde_json::to_value(j).unwrap_or_default())
+            e.cancel(id)
+                .map(|j| serde_json::to_value(j).unwrap_or_default())
         }),
         "job.status" => job_id_op(engine, req.params.as_ref(), |e, id| {
-            e.job(id).map(|j| serde_json::to_value(j).unwrap_or_default())
+            e.job(id)
+                .map(|j| serde_json::to_value(j).unwrap_or_default())
         }),
         "job.list" => engine
             .list()
@@ -90,6 +96,56 @@ fn health(engine: &Engine) -> Value {
     })
 }
 
+fn server_info(engine: &Engine) -> Value {
+    json!({
+        "name": "vd-srv",
+        "version": env!("CARGO_PKG_VERSION"),
+        "api_version": "0.1",
+        "planners": ["audio", "meeting"],
+        "capabilities": ["preprocess", "transcribe", "prepare_context", "fix_casing", "fix_asr", "fix_terms", "diarize", "meeting"],
+        "models": [],
+        "runners": [],
+        "resource_classes": [],
+        "health": health(engine),
+    })
+}
+
+fn plan_audio_request(engine: &Engine, params: Option<&Value>) -> Result<Value, ErrorObject> {
+    let params = params.ok_or_else(|| ErrorObject::invalid_params("params required"))?;
+    let request: AudioRequest = serde_json::from_value(params.clone())
+        .map_err(|e| ErrorObject::invalid_params(format!("invalid audio request: {e}")))?;
+    let store = engine
+        .job_store()
+        .map_err(|e| ErrorObject::application(e.to_string()))?;
+    let job = plan_audio(&request, &engine.data_dir(), Some(&store))
+        .map_err(|e| ErrorObject::application(e.to_string()))?;
+    if !wants_execute(params) {
+        return Ok(json!({ "job": job }));
+    }
+    engine
+        .submit(job, Priority::default(), RestartPolicy::default())
+        .map(|record| serde_json::to_value(record).unwrap_or_default())
+        .map_err(|e| ErrorObject::application(e.to_string()))
+}
+
+fn plan_meeting_request(engine: &Engine, params: Option<&Value>) -> Result<Value, ErrorObject> {
+    let params = params.ok_or_else(|| ErrorObject::invalid_params("params required"))?;
+    let request: MeetingPlanRequest = serde_json::from_value(params.clone())
+        .map_err(|e| ErrorObject::invalid_params(format!("invalid meeting request: {e}")))?;
+    let store = engine
+        .job_store()
+        .map_err(|e| ErrorObject::application(e.to_string()))?;
+    let job = plan_meeting(&request, &engine.data_dir(), Some(&store))
+        .map_err(|e| ErrorObject::application(e.to_string()))?;
+    if !wants_execute(params) {
+        return Ok(json!({ "job": job }));
+    }
+    engine
+        .submit(job, Priority::default(), RestartPolicy::default())
+        .map(|record| serde_json::to_value(record).unwrap_or_default())
+        .map_err(|e| ErrorObject::application(e.to_string()))
+}
+
 fn job_submit(engine: &Engine, params: Option<&Value>) -> Result<Value, ErrorObject> {
     let p = params.ok_or_else(|| ErrorObject::invalid_params("params required"))?;
     let job = if let Some(j) = p.get("job") {
@@ -126,7 +182,10 @@ fn job_logs(engine: &Engine, params: Option<&Value>) -> Result<Value, ErrorObjec
         .get("id")
         .and_then(|v| v.as_str())
         .ok_or_else(|| ErrorObject::invalid_params("params.id required"))?;
-    let stderr = p.get("stderr").and_then(serde_json::Value::as_bool).unwrap_or(false);
+    let stderr = p
+        .get("stderr")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
     engine
         .logs(id, stderr)
         .map(|t| json!({"text": t}))

@@ -34,8 +34,8 @@ pub fn remap_segments_value(v: &mut Value, map: &TimeMap) {
 }
 
 fn remap_start_end(obj: &mut Value, map: &TimeMap) {
-    let start = obj.get("start").and_then(|x| x.as_f64());
-    let end = obj.get("end").and_then(|x| x.as_f64());
+    let start = obj.get("start").and_then(serde_json::Value::as_f64);
+    let end = obj.get("end").and_then(serde_json::Value::as_f64);
     if let (Some(s), Some(e)) = (start, end) {
         let (ns, ne) = map.remap_interval(s, e);
         if let Some(o) = obj.as_object_mut() {

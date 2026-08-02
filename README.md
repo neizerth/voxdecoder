@@ -45,35 +45,33 @@ License: [MIT](LICENSE)
 | **`vd-pipeline`** | DAG of capabilities (`transcribe`, `diarize`, `meeting-merge`, `postprocess`, …) |
 | **`vd-postprocess`** | Graph of recipe nodes (`LLM`, `process`, `http`, `mcp`, …) |
 
-Job builders feed the **Runtime Environment**; leaf tools own their graphs:
+Job builders and **Runtime API clients** feed the platform:
 
 ```text
-                Builders
-
-   vd-pipeline CLI · vd-meeting · vd-mcp · Desktop · HTTP
-                        │
-                        ▼
-                       Job
-                        ▼
-              Runtime Environment (vd-srv)
-               Worker Pool · Resources · Queue
-               Event/Artifact store · Health · Transport
-                        ▼
-                     Executor
-                        ▼
-                   Capabilities
-              (lib preferred · CLI fallback)
+Clients
+  Desktop · CLI · MCP · REST · Web
+        │
+        ▼
+Runtime API (stable)
+        │
+        ▼
+Runtime (vd-srv)
+  Planner · Scheduler · Resource Manager · Executor
+        │
+        ▼
+Capabilities
+  (lib preferred · CLI fallback)
 ```
 
 | Role | Responsibility | Examples |
 |------|----------------|----------|
-| **Builder** | Builds a Job | `vd-pipeline` CLI, `vd-meeting`, `vd-mcp`, Desktop |
-| **Runtime** | Job lifecycle, schedule, resources, observe, health, transport | **`vd-srv`** |
+| **Runtime API client** | Speaks only the Runtime API | **`vd-mcp`**, Desktop, Web, CLI `--via-srv`, REST/gRPC |
+| **Runtime** | Domain Request → Job (Planner); schedule; resources; observe | **`vd-srv`** |
 | **Executor** | Runs the capability DAG (+ TimeMap remap) | shared Executor (`vd-pipeline`) |
 | **Capability** | Domain work | `vd-gigaam`, `vd-preprocess`, `vd-fix-*`, … |
 
-Foreground without Runtime: `vd-pipeline run` / `vd-meeting` still work one-shot.  
-Background / Docker / k8s: [`vd-srv`](src/cli/manage/vd-srv/) is the Runtime (PID 1). Capabilities run in-process via shared libraries where available, with CLI subprocess as fallback.
+Foreground without Runtime: `vd-pipeline run` / `vd-meeting` may still plan/run locally.  
+Background / Docker / k8s: [`vd-srv`](src/cli/manage/vd-srv/) is the Runtime. [`vd-mcp`](src/cli/manage/vd-mcp/) only forwards Requests — Planners live in the Runtime.
 
 Containers: [`docs/runtime.md`](docs/runtime.md).  
 Build / backends: [`docs/adr/0002-build-and-container-strategy.md`](docs/adr/0002-build-and-container-strategy.md).  
@@ -192,7 +190,7 @@ vd-fix-terms run -i transcript.fixed.txt --terms ./.voxdecoder
 | CLI | Role | Status | Spec |
 |-----|------|--------|------|
 | [`vd-srv`](src/cli/manage/vd-srv/) | **Runtime** — queue · schedule · Worker Pool · persist → shared Executor | implemented (v1) | [readme](src/cli/manage/vd-srv/README.md) · [cli](src/cli/manage/vd-srv/cli.md) · [structure](src/cli/manage/vd-srv/STRUCTURE.md) · [transport](src/cli/manage/vd-srv/TRANSPORT.md) · [runtime](docs/runtime.md) |
-| [`vd-mcp`](src/cli/manage/vd-mcp/) | MCP Builder (clients → Runtime); separate image, no GPU | reserved | [readme](src/cli/manage/vd-mcp/README.md) |
+| [`vd-mcp`](src/cli/manage/vd-mcp/) | MCP Gateway — Runtime API client (forwards Requests; no Planner) | planned | [readme](src/cli/manage/vd-mcp/README.md) · [cli](src/cli/manage/vd-mcp/cli.md) · [structure](src/cli/manage/vd-mcp/STRUCTURE.md) |
 | `vd-unit` | — | TBD | — |
 
 ---
@@ -215,11 +213,12 @@ Overview: [src/crates/](src/crates/).
 |------|------|
 | [`docs/adr/`](docs/adr/) | Platform ADRs / RFCs |
 | [`docs/runtime.md`](docs/runtime.md) | Runtime Environment + container images |
+| [`docs/input-source.md`](docs/input-source.md) | Shared `InputSource` (`path` \| `uri` \| `artifact` \| `blob`) |
 | [`docs/adr/0002-build-and-container-strategy.md`](docs/adr/0002-build-and-container-strategy.md) | Native vs Docker builds, backends, matrix |
 | [`Dockerfile`](Dockerfile) | One build → `runtime` / `mcp` targets |
 | [`src/cli/`](src/cli/) | User-facing CLIs |
 | [`src/cli/process/`](src/cli/process/) | Filter / Job / recipe / meeting tools |
-| [`src/cli/manage/`](src/cli/manage/) | Runtime (`vd-srv`) · MCP Builder (`vd-mcp`, reserved) · other operator tools |
+| [`src/cli/manage/`](src/cli/manage/) | Runtime (`vd-srv`) · MCP Gateway (`vd-mcp`, planned) · other operator tools |
 | [`src/crates/`](src/crates/) | Shared Rust libraries |
 
 ---

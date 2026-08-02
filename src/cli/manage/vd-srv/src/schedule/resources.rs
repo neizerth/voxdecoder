@@ -62,9 +62,7 @@ impl ResourceManager {
 }
 
 /// Aggregate resource needs for a Job (sum of non-terminal nodes).
-pub fn job_resource_need(
-    nodes: &[crate::store::NodeRecord],
-) -> BTreeMap<String, u32> {
+pub fn job_resource_need(nodes: &[crate::store::NodeRecord]) -> BTreeMap<String, u32> {
     let mut need = BTreeMap::new();
     for n in nodes {
         if n.status.is_terminal() {

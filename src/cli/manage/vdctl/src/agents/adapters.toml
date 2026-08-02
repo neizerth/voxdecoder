@@ -1,0 +1,158 @@
+# Built-in AI client adapters for `vdctl discover` / `mcp list` / `mcp register`.
+# Override: place `agents.toml` next to `vdctl.toml` (same config dir).
+#
+# Top-level fields apply on every OS; `[agent.macos|linux|windows]` add OS-specific
+# paths (merged). Path tokens: `~`, `$HOME`, `$XDG_CONFIG_HOME`,
+# `%APPDATA%`, `%LOCALAPPDATA%`, `%USERPROFILE%`.
+#
+# mcp_format: mcp_servers | servers | none
+# skill_dirs: where `skills/<id>/skill.md` is installed for that AI client
+
+[[agent]]
+id = "claude"
+name = "Claude Desktop"
+mcp_format = "mcp_servers"
+skill_dirs = ["~/.claude/skills"]
+
+[agent.macos]
+app_paths = [
+  "/Applications/Claude.app",
+  "~/Applications/Claude.app",
+]
+config_paths = [
+  "~/Library/Application Support/Claude/claude_desktop_config.json",
+]
+skill_dirs = ["~/Library/Application Support/Claude/skills"]
+
+[agent.linux]
+app_paths = [
+  "/opt/Claude/claude",
+  "~/.local/share/Claude",
+]
+config_paths = [
+  "~/.config/Claude/claude_desktop_config.json",
+  "$XDG_CONFIG_HOME/Claude/claude_desktop_config.json",
+]
+
+[agent.windows]
+app_paths = [
+  "%LOCALAPPDATA%/AnthropicClaude/claude.exe",
+  "%LOCALAPPDATA%/Programs/Claude/Claude.exe",
+]
+config_paths = [
+  "%APPDATA%/Claude/claude_desktop_config.json",
+]
+skill_dirs = ["%USERPROFILE%/.claude/skills"]
+
+[[agent]]
+id = "cursor"
+name = "Cursor"
+mcp_format = "mcp_servers"
+marker_dirs = ["~/.cursor"]
+config_paths = ["~/.cursor/mcp.json"]
+skill_dirs = ["~/.cursor/skills"]
+
+[agent.macos]
+app_paths = [
+  "/Applications/Cursor.app",
+  "~/Applications/Cursor.app",
+]
+config_paths = [
+  "~/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/mcp.json",
+]
+
+[agent.linux]
+app_paths = [
+  "/opt/Cursor/cursor",
+  "/usr/share/cursor",
+  "~/.local/share/cursor",
+]
+bins = ["cursor"]
+
+[agent.windows]
+app_paths = [
+  "%LOCALAPPDATA%/Programs/cursor/Cursor.exe",
+  "%LOCALAPPDATA%/Programs/Cursor/Cursor.exe",
+]
+config_paths = [
+  "%USERPROFILE%/.cursor/mcp.json",
+]
+skill_dirs = ["%USERPROFILE%/.cursor/skills"]
+
+[[agent]]
+id = "chatgpt"
+name = "ChatGPT Desktop"
+mcp_format = "none"
+skill_dirs = ["~/.voxdecoder/skills/chatgpt"]
+
+[agent.macos]
+app_paths = [
+  "/Applications/ChatGPT.app",
+  "~/Applications/ChatGPT.app",
+]
+
+[agent.linux]
+app_paths = [
+  "/opt/ChatGPT/chatgpt",
+  "~/.local/share/ChatGPT",
+]
+
+[agent.windows]
+app_paths = [
+  "%LOCALAPPDATA%/Programs/ChatGPT/ChatGPT.exe",
+  "%LOCALAPPDATA%/OpenAI/ChatGPT/ChatGPT.exe",
+]
+skill_dirs = ["%USERPROFILE%/.voxdecoder/skills/chatgpt"]
+
+[[agent]]
+id = "vscode"
+name = "VS Code"
+mcp_format = "servers"
+bins = ["code"]
+skill_dirs = ["~/.vscode/skills"]
+
+[agent.macos]
+app_paths = [
+  "/Applications/Visual Studio Code.app",
+  "~/Applications/Visual Studio Code.app",
+]
+config_paths = [
+  "~/Library/Application Support/Code/User/mcp.json",
+]
+
+[agent.linux]
+app_paths = [
+  "/usr/share/code",
+  "/usr/share/code-oss",
+  "/opt/visual-studio-code",
+  "~/.local/share/code",
+]
+config_paths = [
+  "~/.config/Code/User/mcp.json",
+  "~/.config/Code - OSS/User/mcp.json",
+  "$XDG_CONFIG_HOME/Code/User/mcp.json",
+]
+
+[agent.windows]
+app_paths = [
+  "%LOCALAPPDATA%/Programs/Microsoft VS Code/Code.exe",
+  "%ProgramFiles%/Microsoft VS Code/Code.exe",
+]
+config_paths = [
+  "%APPDATA%/Code/User/mcp.json",
+]
+skill_dirs = ["%USERPROFILE%/.vscode/skills"]
+
+[[agent]]
+id = "codex"
+name = "Codex CLI"
+mcp_format = "none"
+bins = ["codex"]
+marker_dirs = ["~/.codex"]
+config_paths = ["~/.codex/config.toml"]
+skill_dirs = ["~/.codex/skills"]
+
+[agent.windows]
+marker_dirs = ["%USERPROFILE%/.codex"]
+config_paths = ["%USERPROFILE%/.codex/config.toml"]
+skill_dirs = ["%USERPROFILE%/.codex/skills"]

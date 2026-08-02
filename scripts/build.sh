@@ -20,7 +20,9 @@ profile=(--release)
 force_cpu=0
 features=()
 packages=(
+  -p vdctl
   -p vd-srv
+  -p vd-mcp
   -p vd-pipeline
   -p vd-meeting
   -p vd-preprocess

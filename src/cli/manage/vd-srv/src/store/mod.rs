@@ -179,6 +179,43 @@ impl JobStore {
         self.write_json(&self.job_dir(id).join("artifacts.json"), &arts.to_vec())
     }
 
+    /// Resolve `artifact_id` or `job_id:artifact_id` / `job_id/artifact_id` to a path.
+    pub fn resolve_artifact(&self, artifact_ref: &str) -> Result<PathBuf, StoreError> {
+        let scoped = artifact_ref
+            .split_once(':')
+            .or_else(|| artifact_ref.split_once('/'));
+        if let Some((job_id, art_id)) = scoped {
+            return self
+                .read_artifacts(job_id)?
+                .into_iter()
+                .find(|a| a.id == art_id)
+                .map(|a| a.path)
+                .ok_or_else(|| {
+                    StoreError::NotFound(format!(
+                        "artifact not found: {art_id} in job {job_id}"
+                    ))
+                });
+        }
+
+        let mut matches = Vec::new();
+        for job_id in self.list_ids()? {
+            for entry in self.read_artifacts(&job_id)? {
+                if entry.id == artifact_ref {
+                    matches.push((job_id.clone(), entry.path));
+                }
+            }
+        }
+        match matches.as_slice() {
+            [(_, path)] => Ok(path.clone()),
+            [] => Err(StoreError::NotFound(format!(
+                "artifact not found: {artifact_ref}"
+            ))),
+            _ => Err(StoreError::Usage(format!(
+                "ambiguous artifact id `{artifact_ref}`; use job_id:artifact_id"
+            ))),
+        }
+    }
+
     pub fn read_log(&self, id: &str, stderr: bool) -> Result<String, StoreError> {
         let name = if stderr { "stderr.log" } else { "stdout.log" };
         let path = self.job_dir(id).join(name);
@@ -195,7 +232,8 @@ impl JobStore {
     }
 
     fn write_json<T: Serialize>(&self, path: &Path, value: &T) -> Result<(), StoreError> {
-        let body = serde_json::to_string_pretty(value).map_err(|e| StoreError::Io(e.to_string()))?;
+        let body =
+            serde_json::to_string_pretty(value).map_err(|e| StoreError::Io(e.to_string()))?;
         fs::write(path, body).map_err(|e| StoreError::Io(e.to_string()))
     }
 }

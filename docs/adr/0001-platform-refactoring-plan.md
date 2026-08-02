@@ -417,6 +417,8 @@ One Dockerfile, images by process role:
 
 * [docs/runtime.md](../runtime.md)
 * [ADR 0002 — Build & Container Strategy](0002-build-and-container-strategy.md)
+* [ADR 0003 — Distribution & Update](0003-distribution-and-update-strategy.md)
+* [`vdctl`](../../src/cli/manage/vdctl/)
 * [`vd-mcp`](../../src/cli/manage/vd-mcp/)
 * [src/cli/process/README.md](../../src/cli/process/README.md)
 * [vd-pipeline WORKFLOW.md](../../src/cli/process/vd-pipeline/WORKFLOW.md)

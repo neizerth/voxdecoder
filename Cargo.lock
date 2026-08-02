@@ -2885,6 +2885,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "vd-mcp"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "directories",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tempfile",
+ "thiserror 2.0.19",
+ "toml",
+ "vd-artifact",
+ "vd-srv",
+]
+
+[[package]]
 name = "vd-meeting"
 version = "0.1.0"
 dependencies = [
@@ -2984,8 +3000,24 @@ dependencies = [
  "thiserror 2.0.19",
  "toml",
  "vd-artifact",
+ "vd-meeting",
  "vd-pipeline",
  "vd-progress",
+]
+
+[[package]]
+name = "vdctl"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "directories",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.19",
+ "toml",
+ "vd-artifact",
+ "vd-srv",
 ]
 
 [[package]]

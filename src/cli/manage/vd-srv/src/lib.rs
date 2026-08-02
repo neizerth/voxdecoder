@@ -18,14 +18,13 @@ pub mod cli;
 pub mod config;
 pub mod engine;
 pub mod paths;
+pub mod plan;
 pub mod schedule;
 pub mod store;
 
 pub use engine::{Engine, EngineError};
 pub use schedule::{pick_job, ResourceManager};
-pub use store::{
-    JobRecord, JobStatus, JobStore, NodeStatus, Priority, RestartPolicy, StoreError,
-};
+pub use store::{JobRecord, JobStatus, JobStore, NodeStatus, Priority, RestartPolicy, StoreError};
 
 use std::ffi::OsString;
 use std::process::ExitCode;

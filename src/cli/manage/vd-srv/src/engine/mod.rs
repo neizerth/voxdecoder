@@ -95,7 +95,17 @@ impl Engine {
     }
 
     pub fn data_dir(&self) -> PathBuf {
-        self.inner.lock().map(|i| i.data_dir.clone()).unwrap_or_default()
+        self.inner
+            .lock()
+            .map(|i| i.data_dir.clone())
+            .unwrap_or_default()
+    }
+
+    pub fn job_store(&self) -> Result<JobStore, EngineError> {
+        self.inner
+            .lock()
+            .map(|i| i.store.clone())
+            .map_err(|e| EngineError::Other(e.to_string()))
     }
 
     pub fn submit(
@@ -104,38 +114,59 @@ impl Engine {
         priority: Priority,
         restart: RestartPolicy,
     ) -> Result<JobRecord, EngineError> {
-        let inner = self.inner.lock().map_err(|e| EngineError::Other(e.to_string()))?;
+        let inner = self
+            .inner
+            .lock()
+            .map_err(|e| EngineError::Other(e.to_string()))?;
         let record = inner.store.create(job, priority, restart)?;
         Ok(record)
     }
 
     pub fn job(&self, id: &str) -> Result<JobRecord, EngineError> {
-        let inner = self.inner.lock().map_err(|e| EngineError::Other(e.to_string()))?;
+        let inner = self
+            .inner
+            .lock()
+            .map_err(|e| EngineError::Other(e.to_string()))?;
         Ok(inner.store.load(id)?)
     }
 
     pub fn list(&self) -> Result<Vec<JobRecord>, EngineError> {
-        let inner = self.inner.lock().map_err(|e| EngineError::Other(e.to_string()))?;
+        let inner = self
+            .inner
+            .lock()
+            .map_err(|e| EngineError::Other(e.to_string()))?;
         Ok(inner.store.list()?)
     }
 
     pub fn events(&self, id: &str) -> Result<Vec<crate::store::EventRecord>, EngineError> {
-        let inner = self.inner.lock().map_err(|e| EngineError::Other(e.to_string()))?;
+        let inner = self
+            .inner
+            .lock()
+            .map_err(|e| EngineError::Other(e.to_string()))?;
         Ok(inner.store.read_events(id)?)
     }
 
     pub fn artifacts(&self, id: &str) -> Result<Vec<ArtifactEntry>, EngineError> {
-        let inner = self.inner.lock().map_err(|e| EngineError::Other(e.to_string()))?;
+        let inner = self
+            .inner
+            .lock()
+            .map_err(|e| EngineError::Other(e.to_string()))?;
         Ok(inner.store.read_artifacts(id)?)
     }
 
     pub fn logs(&self, id: &str, stderr: bool) -> Result<String, EngineError> {
-        let inner = self.inner.lock().map_err(|e| EngineError::Other(e.to_string()))?;
+        let inner = self
+            .inner
+            .lock()
+            .map_err(|e| EngineError::Other(e.to_string()))?;
         Ok(inner.store.read_log(id, stderr)?)
     }
 
     pub fn cancel(&self, id: &str) -> Result<JobRecord, EngineError> {
-        let mut inner = self.inner.lock().map_err(|e| EngineError::Other(e.to_string()))?;
+        let mut inner = self
+            .inner
+            .lock()
+            .map_err(|e| EngineError::Other(e.to_string()))?;
         let mut rec = inner.store.load(id)?;
         if rec.status.is_terminal() {
             return Ok(rec);
@@ -182,7 +213,10 @@ impl Engine {
 
     fn tick(&self) -> Result<(), EngineError> {
         let (job_id, job, lease, job_dir) = {
-            let mut inner = self.inner.lock().map_err(|e| EngineError::Other(e.to_string()))?;
+            let mut inner = self
+                .inner
+                .lock()
+                .map_err(|e| EngineError::Other(e.to_string()))?;
             let workers = inner.cfg.workers as usize;
             let busy = inner.running.len();
             let jobs = inner.store.list()?;
@@ -250,7 +284,10 @@ impl Engine {
         result: Result<PathBuf, String>,
         lease: BTreeMap<String, u32>,
     ) -> Result<(), EngineError> {
-        let mut inner = self.inner.lock().map_err(|e| EngineError::Other(e.to_string()))?;
+        let mut inner = self
+            .inner
+            .lock()
+            .map_err(|e| EngineError::Other(e.to_string()))?;
         let mut rec = inner.store.load(id)?;
         inner.resources.release(&lease);
         inner.leases.remove(id);
