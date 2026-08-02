@@ -27,7 +27,7 @@ pub fn install_mcp(adapter: &AgentAdapter, spec: &McpServerSpec, dry_run: bool) 
     };
 
     if dry_run {
-        eprintln!("  [dry-run] would register MCP in {}", path.display());
+        eprintln!("  [dry-run] would install Bundle MCP in {}", path.display());
         return Ok(());
     }
 
@@ -68,7 +68,7 @@ pub fn uninstall_mcp(adapter: &AgentAdapter, dry_run: bool) -> Result<(), Error>
     }
 
     if dry_run {
-        eprintln!("  [dry-run] would unregister MCP from {}", path.display());
+        eprintln!("  [dry-run] would uninstall Bundle MCP from {}", path.display());
         return Ok(());
     }
 

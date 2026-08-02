@@ -3018,6 +3018,7 @@ dependencies = [
  "toml",
  "vd-artifact",
  "vd-srv",
+ "zip 2.4.2",
 ]
 
 [[package]]

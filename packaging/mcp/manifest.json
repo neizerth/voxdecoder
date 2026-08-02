@@ -1,0 +1,14 @@
+{
+  "name": "voxdecoder",
+  "display_name": "VoxDecoder",
+  "version": "0.1.0",
+  "description": "VoxDecoder Runtime gateway for AI clients (MCP).",
+  "author": {
+    "name": "VoxDecoder"
+  },
+  "server": {
+    "type": "stdio",
+    "entry_point": "vd-mcp"
+  },
+  "keywords": ["voxdecoder", "audio", "meeting", "mcp"]
+}

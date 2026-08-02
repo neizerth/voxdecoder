@@ -1,4 +1,4 @@
-# Built-in AI client adapters for `vdctl discover` / `mcp list` / `mcp register`.
+# Built-in AI client adapters for `vdctl discover` / `mcp list` / `mcp install`.
 # Override: place `agents.toml` next to `vdctl.toml` (same config dir).
 #
 # Top-level fields apply on every OS; `[agent.macos|linux|windows]` add OS-specific

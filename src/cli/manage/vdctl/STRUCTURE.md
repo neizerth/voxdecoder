@@ -57,10 +57,11 @@ src/cli/manage/vdctl/
 │   ├── config/                  # vdctl.toml · auto_build · auto_start_mcp · optional workspace=
 │   ├── resolve/                 # Workspace (cargo metadata) | Installed (install root)
 │   ├── lifecycle/               # up / down (no "service" CLI)
-│   ├── mcp/                     # process + register / unregister hosts
+│   ├── mcp/                     # process + Bundle build/install/verify (ADR 0005)
+│   │   └── bundle.rs
 │   ├── agents/                  # AI discovery via adapters.toml (+ mcp_config write)
-│   │   └── adapters.toml        # built-in agent catalog (OS paths, skill_dirs, mcp_format)
-│   ├── skills/                  # discover/validate/install Skills (skills/*/skill.md)
+│   │   └── adapters.toml
+│   ├── skills/                  # discover/validate; sync → $VD_HOME/skills
 │   ├── client/                  # Runtime API Operator (+ api)
 │   ├── doctor/
 │   ├── discover/                # discover + inspect (JSON-first; includes agents)

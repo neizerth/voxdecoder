@@ -62,6 +62,20 @@ pub fn models_dir() -> PathBuf {
     home_dir().join("models")
 }
 
+/// Installed Skills root (`$VD_HOME/skills`).
+pub fn skills_dir() -> PathBuf {
+    home_dir().join("skills")
+}
+
+/// Built MCP Bundles (`$VD_HOME/bundles`).
+pub fn bundles_dir() -> PathBuf {
+    home_dir().join("bundles")
+}
+
+pub fn mcp_bundle_path() -> PathBuf {
+    bundles_dir().join("voxdecoder.mcpb")
+}
+
 pub fn runtime_data_dir() -> PathBuf {
     vd_srv::paths::data_dir()
 }

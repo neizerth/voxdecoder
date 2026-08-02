@@ -25,6 +25,7 @@ serde_json = "1"
 thiserror = "2"
 toml = "0.8"
 directories = "6"
+zip = { version = "2", default-features = false, features = ["deflate"] }
 vd-srv = { path = "../vd-srv" }
 vd-artifact = { path = "../../../crates/vd-artifact" }
 

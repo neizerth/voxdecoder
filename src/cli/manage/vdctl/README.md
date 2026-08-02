@@ -133,44 +133,39 @@ Start / stop / observe the Runtime belonging to this installation. Same commands
 
 ```bash
 vdctl mcp start | stop | restart | status
-vdctl mcp register | unregister | list
+vdctl mcp build | install | update | uninstall | verify | list
 ```
 
-Default `mcp register` discovers Skills, detects AI apps, writes MCP config for `vd-mcp`, installs Skills into each app, then verifies. Filters: `--apps`, `--skills`, `--exclude`, `--no-skills`, `--dry-run`.
+Default `mcp install` ([ADR 0005](../../../../docs/adr/0005-mcp-bundle-and-skill-distribution.md)): sync Skills → `$VD_HOME/skills`, build `voxdecoder.mcpb`, install Bundle into AI apps, verify. Filters: `--apps`, `--skills`, `--exclude`, `--no-skills`, `--dry-run`.
 
 ---
 
 ## Skills & AI integration
 
 ```text
-Runtime  ≠  MCP  ≠  Skills
+Runtime  ≠  MCP Bundle  ≠  Skills
 ```
 
 | Component | Responsibility |
 |-----------|----------------|
 | **skills/** | Skill definitions (`skills/<id>/skill.md`) |
-| **vdctl** | Discover, validate, install, update, remove Skills + MCP registration |
-| **vd-mcp** | MCP Gateway only (never discovers/installs Skills) |
+| **packaging/mcp/** | MCP Bundle source (`manifest.json`) |
+| **vdctl** | Bundle Builder, Skill lifecycle, AI installers |
+| **vd-mcp** | Gateway only (never discovers/installs Skills) |
 | **vd-srv** | Runtime |
 
 ```bash
 vdctl discover
 vdctl skills list | inspect <id> | validate | status
-vdctl mcp register
-vdctl mcp register --apps cursor --skills vd-audio --dry-run
+vdctl mcp build
+vdctl mcp install
+vdctl mcp install --apps cursor --skills vd-audio --dry-run
+vdctl mcp verify
 ```
 
-Repo layout (no registry file):
+Skills install to `$VD_HOME/skills` (shared). Bundle is independent of Skills.
 
-```text
-skills/
-  vd-audio/skill.md
-  vd-meeting/skill.md
-```
-
-`recipes` process data inside VoxDecoder; `skills` teach a specific AI client how to use VoxDecoder via MCP.
-
-AI adapters: [`adapters.toml`](src/agents/adapters.toml) (+ OS blocks / `skill_dirs` / `mcp_format`).
+AI adapters: [`adapters.toml`](src/agents/adapters.toml). See [ADR 0005](../../../../docs/adr/0005-mcp-bundle-and-skill-distribution.md).
 
 ---
 
@@ -301,4 +296,5 @@ No Cargo required. Only **`vdctl`** expected on the global PATH; other binaries 
 | [cli.md](cli.md) | Full command surface |
 | [STRUCTURE.md](STRUCTURE.md) | Crate layout |
 | [ADR 0003](../../../../docs/adr/0003-distribution-and-update-strategy.md) | Distribution & update |
+| [ADR 0005](../../../../docs/adr/0005-mcp-bundle-and-skill-distribution.md) | MCP Bundle & Skills |
 | [`docs/runtime.md`](../../../../docs/runtime.md) | Runtime Environment |

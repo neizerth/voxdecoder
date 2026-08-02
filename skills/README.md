@@ -13,8 +13,9 @@ Only directories containing `skill.md` are Skills. Everything else is ignored.
 ```bash
 vdctl skills list
 vdctl skills validate
-vdctl mcp register          # Runtime MCP + all Skills → all AI apps
-vdctl mcp register --dry-run
+vdctl mcp build
+vdctl mcp install          # Skills → $VD_HOME/skills + Bundle → AI apps
+vdctl mcp install --dry-run
 ```
 
-See [`vdctl` README](../src/cli/manage/vdctl/README.md#skills--ai-integration).
+See [`vdctl` README](../src/cli/manage/vdctl/README.md#skills--ai-integration) · [ADR 0005](../docs/adr/0005-mcp-bundle-and-skill-distribution.md).

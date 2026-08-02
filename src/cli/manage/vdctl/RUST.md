@@ -17,4 +17,4 @@ cargo clippy -p vdctl --all-targets --no-deps -- -D warnings
 cargo test -p vdctl
 ```
 
-v0: Workspace/Installed resolution, `up`/`down`/`wait`/`doctor`/`info`/`discover` (agents + skills), `mcp register`/`unregister`/`list`, `skills list|inspect|validate|status`. Release ops refused in Workspace. Platform `install`/`update`/`uninstall` remain stubs pending [ADR 0003](../../../../docs/adr/0003-distribution-and-update-strategy.md).
+v0: Workspace/Installed resolution, Runtime lifecycle, `discover` (agents + skills), MCP Bundle (`mcp build|install|update|uninstall|verify`), `skills list|inspect|validate|status`. Platform `install`/`update`/`uninstall` from Releases remain stubs ([ADR 0003](../../../../docs/adr/0003-distribution-and-update-strategy.md)). AI integration: [ADR 0005](../../../../docs/adr/0005-mcp-bundle-and-skill-distribution.md).

@@ -4,7 +4,7 @@
 **Type:** ADR  
 **Date:** 2026-08-02
 
-**Related:** [`vdctl`](../../src/cli/manage/vdctl/) · [`vd-srv`](../../src/cli/manage/vd-srv/) · [`vd-mcp`](../../src/cli/manage/vd-mcp/) · [`docs/runtime.md`](../runtime.md) · [ADR 0002 — Build & Container](0002-build-and-container-strategy.md)
+**Related: [`vdctl`](../../src/cli/manage/vdctl/) · [`vd-srv`](../../src/cli/manage/vd-srv/) · [`vd-mcp`](../../src/cli/manage/vd-mcp/) · [`docs/runtime.md`](../runtime.md) · [ADR 0002 — Build & Container](0002-build-and-container-strategy.md) · [ADR 0005 — MCP Bundle & Skills](0005-mcp-bundle-and-skill-distribution.md)
 
 ---
 

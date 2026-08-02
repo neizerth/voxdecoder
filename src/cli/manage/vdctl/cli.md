@@ -78,23 +78,24 @@ vdctl wait [--timeout N]
 
 ```bash
 vdctl mcp start | stop | restart | status
-vdctl mcp register | unregister | list
-vdctl mcp register --apps cursor
-vdctl mcp register --skills vd-audio,vd-meeting
-vdctl mcp register --exclude vd-meeting
-vdctl mcp register --no-skills
-vdctl mcp register --dry-run
+vdctl mcp build
+vdctl mcp install | update | uninstall | verify | list
+vdctl mcp install --apps cursor
+vdctl mcp install --skills vd-audio,vd-meeting
+vdctl mcp install --exclude vd-meeting
+vdctl mcp install --no-skills
+vdctl mcp install --dry-run
 ```
 
-Default `register`: discover Skills → detect AI apps → install MCP (`vd-mcp`) → install all Skills → verify.
+Default `install` (ADR 0005): sync Skills → `$VD_HOME/skills` → build `voxdecoder.mcpb` → install Bundle into AI apps → verify.
 
-`unregister` removes MCP + Skills (or `--skills` / `--no-skills` / `--apps` filters). No Runtime restart.
+`register` / `unregister` retired → use `install` / `uninstall`.
 
 ---
 
 ## Skills
 
-Platform assets under repo `skills/<id>/skill.md` (directory name = id). **`vdctl` owns the lifecycle**; `vd-mcp` never discovers or installs Skills.
+Platform assets under `skills/<id>/skill.md` → installed to `$VD_HOME/skills`. **`vdctl` owns the lifecycle**; `vd-mcp` never discovers or installs Skills.
 
 ```bash
 vdctl skills list [--json]
@@ -104,7 +105,7 @@ vdctl skills status [--json]
 ```
 
 ```text
-Runtime  ≠  MCP  ≠  Skills
+Runtime  ≠  MCP Bundle  ≠  Skills
 ```
 
 ---
@@ -127,7 +128,7 @@ vdctl paths | env | version
 vdctl discover | inspect [--json]
 ```
 
-`discover` shows Applications + Skills. Adapters: built-in `src/agents/adapters.toml`, override `agents.toml` / `VDCTL_AGENTS`. OS blocks `[agent.macos|linux|windows]`.
+`discover` shows Applications + Skills. Adapters: `src/agents/adapters.toml` (+ OS blocks). Bundle packaging: `packaging/mcp/`.
 
 ```bash
 vdctl discover --json
@@ -164,4 +165,4 @@ vdctl run · submit · transcribe · pipeline · service …
 
 ## Related
 
-[README.md](README.md) · [STRUCTURE.md](STRUCTURE.md) · [ADR 0003](../../../../docs/adr/0003-distribution-and-update-strategy.md)
+[README.md](README.md) · [STRUCTURE.md](STRUCTURE.md) · [ADR 0003](../../../../docs/adr/0003-distribution-and-update-strategy.md) · [ADR 0005](../../../../docs/adr/0005-mcp-bundle-and-skill-distribution.md)

@@ -141,38 +141,54 @@ enum McpAction {
     Start,
     Stop,
     Restart,
+    /// Gateway process + Bundle status.
     Status,
-    /// Register Runtime MCP (+ install Skills) into AI apps.
-    Register {
-        /// Comma-separated app ids (e.g. claude,cursor).
-        #[arg(long)]
-        apps: Option<String>,
-        /// Comma-separated skill ids to install.
-        #[arg(long)]
-        skills: Option<String>,
-        /// Comma-separated skill ids to skip.
-        #[arg(long)]
-        exclude: Option<String>,
-        /// Register Runtime MCP only (skip Skills).
-        #[arg(long)]
-        no_skills: bool,
+    /// Build `$VD_HOME/bundles/voxdecoder.mcpb`.
+    Build {
         #[arg(long)]
         dry_run: bool,
     },
-    /// Remove MCP and/or Skills from AI apps.
-    Unregister {
+    /// Sync Skills, build Bundle, install into AI apps, verify.
+    Install {
         #[arg(long)]
         apps: Option<String>,
         #[arg(long)]
         skills: Option<String>,
         #[arg(long)]
         exclude: Option<String>,
-        /// Remove MCP registration only.
         #[arg(long)]
         no_skills: bool,
         #[arg(long)]
         dry_run: bool,
     },
+    /// Rebuild Bundle and reinstall (same as install).
+    Update {
+        #[arg(long)]
+        apps: Option<String>,
+        #[arg(long)]
+        skills: Option<String>,
+        #[arg(long)]
+        exclude: Option<String>,
+        #[arg(long)]
+        no_skills: bool,
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Remove Bundle and/or Skills from AI apps.
+    Uninstall {
+        #[arg(long)]
+        apps: Option<String>,
+        #[arg(long)]
+        skills: Option<String>,
+        #[arg(long)]
+        exclude: Option<String>,
+        #[arg(long)]
+        no_skills: bool,
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Verify Bundle, Gateway, Runtime, Skills.
+    Verify,
     List,
 }
 
@@ -267,15 +283,16 @@ where
             McpAction::Stop => mcp::stop(&platform),
             McpAction::Restart => mcp::restart(&platform),
             McpAction::Status => mcp::status(&platform, root.json),
-            McpAction::Register {
+            McpAction::Build { dry_run } => mcp::build(&platform, dry_run),
+            McpAction::Install {
                 apps,
                 skills,
                 exclude,
                 no_skills,
                 dry_run,
-            } => mcp::register(
+            } => mcp::install(
                 &platform,
-                &mcp::RegisterOpts {
+                &mcp::InstallOpts {
                     apps: mcp::parse_csv_list(apps.as_deref()),
                     skills: mcp::parse_csv_list(skills.as_deref()),
                     exclude: mcp::parse_csv_list(exclude.as_deref()).unwrap_or_default(),
@@ -283,15 +300,15 @@ where
                     dry_run,
                 },
             ),
-            McpAction::Unregister {
+            McpAction::Update {
                 apps,
                 skills,
                 exclude,
                 no_skills,
                 dry_run,
-            } => mcp::unregister(
+            } => mcp::update(
                 &platform,
-                &mcp::RegisterOpts {
+                &mcp::InstallOpts {
                     apps: mcp::parse_csv_list(apps.as_deref()),
                     skills: mcp::parse_csv_list(skills.as_deref()),
                     exclude: mcp::parse_csv_list(exclude.as_deref()).unwrap_or_default(),
@@ -299,6 +316,23 @@ where
                     dry_run,
                 },
             ),
+            McpAction::Uninstall {
+                apps,
+                skills,
+                exclude,
+                no_skills,
+                dry_run,
+            } => mcp::uninstall(
+                &platform,
+                &mcp::InstallOpts {
+                    apps: mcp::parse_csv_list(apps.as_deref()),
+                    skills: mcp::parse_csv_list(skills.as_deref()),
+                    exclude: mcp::parse_csv_list(exclude.as_deref()).unwrap_or_default(),
+                    no_skills,
+                    dry_run,
+                },
+            ),
+            McpAction::Verify => mcp::verify(&platform, root.json),
             McpAction::List => mcp::list(&platform, root.json),
         },
         Command_::Skills { action } => match action {

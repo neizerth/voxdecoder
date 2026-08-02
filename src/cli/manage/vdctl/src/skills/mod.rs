@@ -51,15 +51,22 @@ pub struct SkillStatusRow {
     pub apps: Vec<SkillAppStatus>,
 }
 
-/// Resolve skills catalog root: workspace `skills/` or installed `$VD_HOME/skills`.
-pub fn skills_root(platform: &Platform) -> PathBuf {
-    if let Some(ws) = &platform.workspace {
+/// Source catalog: workspace `skills/` when present.
+pub fn source_root(platform: &Platform) -> Option<PathBuf> {
+    platform.workspace.as_ref().and_then(|ws| {
         let candidate = ws.join("skills");
-        if candidate.is_dir() {
-            return candidate;
-        }
-    }
-    crate::paths::home_dir().join("skills")
+        candidate.is_dir().then_some(candidate)
+    })
+}
+
+/// Installed Skills root (`$VD_HOME/skills`) — ADR 0005.
+pub fn installed_root() -> PathBuf {
+    crate::paths::skills_dir()
+}
+
+/// Resolve skills catalog for discovery: repo source, else `$VD_HOME/skills`.
+pub fn skills_root(platform: &Platform) -> PathBuf {
+    source_root(platform).unwrap_or_else(installed_root)
 }
 
 pub fn discover(platform: &Platform) -> DiscoverReport {
@@ -315,7 +322,7 @@ pub fn status(platform: &Platform, json: bool) -> Result<(), Error> {
                     let adapter = agents::adapter_by_id(&a.id);
                     let installed = adapter
                         .as_ref()
-                        .map(|ad| skill_installed(ad, &skill.id))
+                        .map(|ad| skill_linked_in_app(ad, &skill.id))
                         .unwrap_or(false);
                     SkillAppStatus {
                         id: a.id.clone(),
@@ -326,14 +333,25 @@ pub fn status(platform: &Platform, json: bool) -> Result<(), Error> {
                 .collect(),
         })
         .collect();
-    let value = json!({ "skills": rows, "root": report.root });
+    let value = json!({
+        "skills": rows,
+        "root": report.root,
+        "installed_root": installed_root().display().to_string(),
+    });
     crate::output::emit_value(json, value, |v| {
         let Some(arr) = v["skills"].as_array() else {
             return;
         };
         for s in arr {
-            println!("{}", s["id"].as_str().unwrap_or(""));
+            let id = s["id"].as_str().unwrap_or("");
+            println!("{id}");
             println!();
+            let home = if skill_installed_in_home(id) {
+                "✔"
+            } else {
+                "✘"
+            };
+            println!("  {:<16} {home}", "platform");
             if let Some(apps) = s["apps"].as_array() {
                 let width = apps
                     .iter()
@@ -360,13 +378,40 @@ pub fn status(platform: &Platform, json: bool) -> Result<(), Error> {
     })
 }
 
-pub fn skill_installed(adapter: &AgentAdapter, skill_id: &str) -> bool {
-    adapter.skill_dir_paths().iter().any(|root| {
-        root.join(skill_id).join(SKILL_FILE).is_file()
-    })
+pub fn skill_installed_in_home(skill_id: &str) -> bool {
+    installed_root().join(skill_id).join(SKILL_FILE).is_file()
 }
 
-pub fn install_skill(
+pub fn skill_linked_in_app(adapter: &AgentAdapter, skill_id: &str) -> bool {
+    adapter
+        .skill_dir_paths()
+        .iter()
+        .any(|root| root.join(skill_id).join(SKILL_FILE).is_file())
+}
+
+/// Copy selected Skills into `$VD_HOME/skills` (shared platform install).
+pub fn sync_to_home(platform: &Platform, skills: &[Skill], dry_run: bool) -> Result<(), Error> {
+    let dest_root = installed_root();
+    if dry_run {
+        eprintln!("  [dry-run] would sync {} skill(s) → {}", skills.len(), dest_root.display());
+        return Ok(());
+    }
+    fs::create_dir_all(&dest_root).map_err(|e| Error::Message(e.to_string()))?;
+    for skill in skills {
+        let src = PathBuf::from(&skill.path);
+        let dest = dest_root.join(&skill.id);
+        if dest.exists() {
+            fs::remove_dir_all(&dest).map_err(|e| Error::Message(e.to_string()))?;
+        }
+        copy_dir_recursive(&src, &dest)?;
+        println!("  ✔ {} → {}", skill.id, dest.display());
+        let _ = platform;
+    }
+    Ok(())
+}
+
+/// Link/copy a Skill from `$VD_HOME/skills` into an AI client's skill_dirs.
+pub fn link_skill_to_app(
     adapter: &AgentAdapter,
     skill: &Skill,
     dry_run: bool,
@@ -376,35 +421,43 @@ pub fn install_skill(
         eprintln!("  · {} — no skill_dirs in adapter (skipped)", adapter.name);
         return Ok(());
     }
+    let home_skill = installed_root().join(&skill.id);
+    let src = if home_skill.join(SKILL_FILE).is_file() {
+        home_skill
+    } else {
+        PathBuf::from(&skill.path)
+    };
     let dest_root = &dirs[0];
     let dest = dest_root.join(&skill.id);
-    let dest_md = dest.join(SKILL_FILE);
 
     if dry_run {
         eprintln!(
-            "  [dry-run] would install {} → {}",
+            "  [dry-run] would link {} → {}",
             skill.id,
-            dest_md.display()
+            dest.display()
         );
         return Ok(());
     }
 
-    fs::create_dir_all(&dest).map_err(|e| Error::Message(e.to_string()))?;
-    fs::copy(&skill.skill_md, &dest_md).map_err(|e| Error::Message(e.to_string()))?;
+    fs::create_dir_all(dest_root).map_err(|e| Error::Message(e.to_string()))?;
+    if dest.exists() {
+        fs::remove_dir_all(&dest).map_err(|e| Error::Message(e.to_string()))?;
+    }
 
-    let src = PathBuf::from(&skill.path);
-    let readme = src.join("README.md");
-    if readme.is_file() {
-        let _ = fs::copy(&readme, dest.join("README.md"));
+    #[cfg(unix)]
+    {
+        if std::os::unix::fs::symlink(&src, &dest).is_ok() {
+            return Ok(());
+        }
     }
-    let examples = src.join("examples");
-    if examples.is_dir() {
-        copy_dir_recursive(&examples, &dest.join("examples"))?;
-    }
-    Ok(())
+    copy_dir_recursive(&src, &dest)
 }
 
-pub fn remove_skill(adapter: &AgentAdapter, skill_id: &str, dry_run: bool) -> Result<(), Error> {
+pub fn unlink_skill_from_app(
+    adapter: &AgentAdapter,
+    skill_id: &str,
+    dry_run: bool,
+) -> Result<(), Error> {
     for root in adapter.skill_dir_paths() {
         let dest = root.join(skill_id);
         if !dest.exists() {
