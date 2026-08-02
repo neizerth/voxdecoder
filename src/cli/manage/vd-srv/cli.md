@@ -4,9 +4,9 @@
 
 **Status: implemented (v1).**
 
-Product notes: [README.md](README.md). Layout: [STRUCTURE.md](STRUCTURE.md).
+Product notes: [README.md](README.md). Layout: [STRUCTURE.md](STRUCTURE.md). Transport: [TRANSPORT.md](TRANSPORT.md).
 
-v1: Unix socket control plane; Job-granularity workers; `submit` accepts file or `-` (stdin YAML/JSON).
+v1: JSON-RPC 2.0 control plane over UDS (optional TCP); Job-granularity workers; `submit` accepts file or `-` (stdin YAML/JSON). See [TRANSPORT.md](TRANSPORT.md).
 
 ---
 
@@ -65,17 +65,21 @@ HTTP (when enabled): `GET /live` · `GET /ready` · `POST /jobs` · `GET /jobs` 
 vd-srv serve
 vd-srv serve --data-dir ~/.local/share/voxdecoder/srv
 vd-srv serve --socket /tmp/vd-srv.sock
-vd-srv serve --http 127.0.0.1:7700
+vd-srv serve --transport uds
+vd-srv serve --tcp 127.0.0.1:7701
 vd-srv serve --workers 2
 ```
 
 | Argument | Default | Description |
 |----------|---------|-------------|
 | `--data-dir` | platform data dir | Durable root |
-| `--socket` | under data-dir | Local control socket |
-| `--http` | off | HTTP bind address |
+| `--socket` | under data-dir | Unix domain socket path (IPC) |
+| `--tcp` | off | TCP bind; also adds a secondary listener when primary is IPC |
+| `--transport` | `auto` | `auto` · `uds` · `pipe` · `tcp` — see [TRANSPORT.md](TRANSPORT.md) |
 | `--workers` | config / `1` | Worker Pool size |
 | `--foreground` | on | Stay attached |
+
+Control plane: JSON-RPC 2.0 (newline-framed) over the selected transport.
 
 Resource Class capacities come from config (`resource_classes`), not only CLI one-offs.
 
@@ -312,8 +316,11 @@ First-class keys:
 |-----|------|
 | `workers` | Worker Pool size |
 | `resource_classes` | Entity map: name → capacity (and future metadata) |
-| `http` | Bind / enable HTTP API |
-| `socket` | Local control socket path |
+| `transport` | `auto` · `uds` · `pipe` · `tcp` |
+| `socket` | Unix domain socket path |
+| `tcp` | Optional TCP bind (`127.0.0.1:7701`) |
+| `pipe` | Windows named pipe path (stub until implemented) |
+| `http` | Reserved for HTTP/WebSocket bridge |
 | `retention` | `artifacts` / `logs` / `events` TTLs |
 | `history` | How many terminal Jobs to keep indexed |
 | `log_level` | Server log verbosity |

@@ -6,13 +6,13 @@ use std::ffi::{OsStr, OsString};
 use std::fmt;
 use std::fs;
 use std::io::{self, Read};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::thread;
 use std::time::Duration;
 
 use clap::{Parser, Subcommand};
 
-use crate::api::{self, Request, Response};
+use crate::api::{self, Endpoint};
 use crate::config;
 use crate::paths;
 
@@ -39,6 +39,8 @@ pub enum Command {
 pub struct ServeArgs {
     pub data_dir: Option<PathBuf>,
     pub socket: Option<PathBuf>,
+    pub tcp: Option<String>,
+    pub transport: Option<api::TransportKind>,
     pub workers: Option<u32>,
     pub foreground: bool,
 }
@@ -120,6 +122,12 @@ enum RootCommand {
         data_dir: Option<PathBuf>,
         #[arg(long = "socket")]
         socket: Option<PathBuf>,
+        /// Optional TCP listen address (also enables a secondary listener when primary is IPC)
+        #[arg(long = "tcp")]
+        tcp: Option<String>,
+        /// auto | uds | pipe | tcp
+        #[arg(long = "transport")]
+        transport: Option<String>,
         #[arg(long = "workers")]
         workers: Option<u32>,
         #[arg(long = "foreground", default_value_t = true)]
@@ -212,14 +220,27 @@ where
         RootCommand::Serve {
             data_dir,
             socket,
+            tcp,
+            transport,
             workers,
             foreground,
-        } => Command::Serve(ServeArgs {
-            data_dir,
-            socket,
-            workers,
-            foreground,
-        }),
+        } => {
+            let transport = transport
+                .as_deref()
+                .map(|s| {
+                    api::TransportKind::parse(s)
+                        .ok_or_else(|| CliError::usage(format!("unknown transport: {s}")))
+                })
+                .transpose()?;
+            Command::Serve(ServeArgs {
+                data_dir,
+                socket,
+                tcp,
+                transport,
+                workers,
+                foreground,
+            })
+        }
         RootCommand::Stop => Command::Stop,
         RootCommand::Ping => Command::Ping,
         RootCommand::Health => Command::Health,
@@ -270,75 +291,71 @@ pub fn dispatch(cmd: Command) -> Result<(), CliError> {
     }
 }
 
-fn socket_path() -> Result<PathBuf, CliError> {
+fn endpoint() -> Result<Endpoint, CliError> {
     let cfg = config::load(&paths::config_path()).map_err(CliError::usage)?;
     let data = config::effective_data_dir(&cfg.raw, None);
-    Ok(config::effective_socket(&cfg.raw, &data))
+    config::effective_endpoint(&cfg.raw, &data, None, None, None).map_err(CliError::usage)
 }
 
 fn client_cmd(cmd: Command) -> Result<(), CliError> {
-    let sock = socket_path()?;
+    let ep = endpoint()?;
     match cmd {
         Command::Ping => {
-            let resp = call(&sock, &Request::Ping)?;
-            print_resp(&resp, false)?;
+            let data = rpc(&ep, "server.ping", None)?;
+            println!("{data}");
             Ok(())
         }
         Command::Stop => {
-            let resp = call(&sock, &Request::Stop)?;
-            print_resp(&resp, false)?;
+            let data = rpc(&ep, "server.stop", None)?;
+            println!("{data}");
             Ok(())
         }
         Command::Health | Command::Top => {
-            let resp = call(&sock, &Request::Health)?;
-            print_resp(&resp, true)?;
+            let data = rpc(&ep, "server.health", None)?;
+            println!("{}", serde_json::to_string_pretty(&data).unwrap_or_default());
             Ok(())
         }
         Command::Queue | Command::Jobs => {
-            let resp = call(&sock, &Request::Queue)?;
-            print_resp(&resp, true)?;
+            let data = rpc(&ep, "queue.status", None)?;
+            println!("{}", serde_json::to_string_pretty(&data).unwrap_or_default());
             Ok(())
         }
-        Command::Submit(args) => submit_cmd(&sock, args),
+        Command::Submit(args) => submit_cmd(&ep, args),
         Command::JobInfo { id } => {
-            let resp = call(&sock, &Request::JobInfo { id })?;
-            print_resp(&resp, true)?;
+            let data = rpc(&ep, "job.status", Some(serde_json::json!({"id": id})))?;
+            println!("{}", serde_json::to_string_pretty(&data).unwrap_or_default());
             Ok(())
         }
-        Command::Events { id, follow } => follow_events(&sock, &id, follow),
-        Command::Watch { id } => follow_events(&sock, &id, true),
+        Command::Events { id, follow } => follow_events(&ep, &id, follow),
+        Command::Watch { id } => follow_events(&ep, &id, true),
         Command::Logs {
             id,
             follow,
             stderr,
-        } => logs_cmd(&sock, &id, follow, stderr),
+        } => logs_cmd(&ep, &id, follow, stderr),
         Command::Artifacts { id } => {
-            let resp = call(&sock, &Request::Artifacts { id })?;
-            if let Some(data) = &resp.data {
-                if let Some(arr) = data.as_array() {
-                    for a in arr {
-                        if let Some(p) = a.get("path").and_then(|v| v.as_str()) {
-                            println!("{p}");
-                        }
+            let data = rpc(&ep, "artifact.list", Some(serde_json::json!({"id": id})))?;
+            if let Some(arr) = data.as_array() {
+                for a in arr {
+                    if let Some(p) = a.get("path").and_then(|v| v.as_str()) {
+                        println!("{p}");
                     }
-                } else {
-                    print_resp(&resp, true)?;
                 }
             } else {
-                print_resp(&resp, false)?;
+                println!("{}", serde_json::to_string_pretty(&data).unwrap_or_default());
             }
             Ok(())
         }
         Command::Cancel { id } => {
-            let resp = call(&sock, &Request::Cancel { id })?;
-            print_resp(&resp, true)?;
+            let data = rpc(&ep, "job.cancel", Some(serde_json::json!({"id": id})))?;
+            println!("{}", serde_json::to_string_pretty(&data).unwrap_or_default());
             Ok(())
         }
         Command::Serve(_) | Command::Config(_) => unreachable!(),
     }
 }
 
-fn submit_cmd(sock: &Path, args: SubmitArgs) -> Result<(), CliError> {
+fn submit_cmd(ep: &Endpoint, args: SubmitArgs) -> Result<(), CliError> {
     let raw = if args.stdin {
         let mut buf = String::new();
         io::stdin()
@@ -351,51 +368,42 @@ fn submit_cmd(sock: &Path, args: SubmitArgs) -> Result<(), CliError> {
             .ok_or_else(|| CliError::usage("submit needs JOB path or -"))?;
         fs::read_to_string(&path).map_err(|e| CliError::with_code(3, e.to_string()))?
     };
-    let resp = call(
-        sock,
-        &Request::Submit {
-            job: None,
-            job_yaml: Some(raw),
-            priority: args.priority.clone(),
-            restart: args.restart.clone(),
-        },
-    )?;
-    if !resp.ok {
-        return Err(CliError::with_code(
-            1,
-            resp.error.unwrap_or_else(|| "submit failed".into()),
-        ));
+    let mut params = serde_json::json!({
+        "job_yaml": raw,
+    });
+    if let Some(p) = &args.priority {
+        params["priority"] = serde_json::json!(p);
     }
-    let id = resp
-        .data
-        .as_ref()
-        .and_then(|d| d.get("id"))
+    if let Some(r) = &args.restart {
+        params["restart"] = serde_json::json!(r);
+    }
+    let data = rpc(ep, "job.submit", Some(params))?;
+    let id = data
+        .get("id")
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
     if args.json {
-        println!("{}", serde_json::to_string_pretty(&resp.data).unwrap_or_default());
+        println!("{}", serde_json::to_string_pretty(&data).unwrap_or_default());
     } else {
         println!("job: {id}");
     }
     if args.wait && !id.is_empty() {
-        wait_job(sock, &id, args.json)?;
+        wait_job(ep, &id, args.json)?;
     }
     Ok(())
 }
 
-fn wait_job(sock: &Path, id: &str, json: bool) -> Result<(), CliError> {
+fn wait_job(ep: &Endpoint, id: &str, json: bool) -> Result<(), CliError> {
     loop {
-        let resp = call(sock, &Request::JobInfo { id: id.into() })?;
-        let status = resp
-            .data
-            .as_ref()
-            .and_then(|d| d.get("status"))
+        let data = rpc(ep, "job.status", Some(serde_json::json!({"id": id})))?;
+        let status = data
+            .get("status")
             .and_then(|v| v.as_str())
             .unwrap_or("");
         if matches!(status, "completed" | "failed" | "cancelled") {
             if json {
-                println!("{}", serde_json::to_string_pretty(&resp.data).unwrap_or_default());
+                println!("{}", serde_json::to_string_pretty(&data).unwrap_or_default());
             } else {
                 println!("status: {status}");
             }
@@ -411,12 +419,11 @@ fn wait_job(sock: &Path, id: &str, json: bool) -> Result<(), CliError> {
     }
 }
 
-fn follow_events(sock: &Path, id: &str, follow: bool) -> Result<(), CliError> {
+fn follow_events(ep: &Endpoint, id: &str, follow: bool) -> Result<(), CliError> {
     let mut seen = 0usize;
     loop {
-        let resp = call(sock, &Request::Events { id: id.into() })?;
-        ensure_ok(&resp)?;
-        if let Some(arr) = resp.data.as_ref().and_then(|d| d.as_array()) {
+        let data = rpc(ep, "job.events", Some(serde_json::json!({"id": id})))?;
+        if let Some(arr) = data.as_array() {
             for ev in arr.iter().skip(seen) {
                 let kind = ev.get("kind").and_then(|v| v.as_str()).unwrap_or("?");
                 let msg = ev
@@ -446,21 +453,16 @@ fn follow_events(sock: &Path, id: &str, follow: bool) -> Result<(), CliError> {
     }
 }
 
-fn logs_cmd(sock: &Path, id: &str, follow: bool, stderr: bool) -> Result<(), CliError> {
+fn logs_cmd(ep: &Endpoint, id: &str, follow: bool, stderr: bool) -> Result<(), CliError> {
     let mut last_len = 0usize;
     loop {
-        let resp = call(
-            sock,
-            &Request::Logs {
-                id: id.into(),
-                stderr,
-            },
+        let data = rpc(
+            ep,
+            "job.logs",
+            Some(serde_json::json!({"id": id, "stderr": stderr})),
         )?;
-        ensure_ok(&resp)?;
-        let text = resp
-            .data
-            .as_ref()
-            .and_then(|d| d.get("text"))
+        let text = data
+            .get("text")
             .and_then(|v| v.as_str())
             .unwrap_or("");
         if text.len() > last_len {
@@ -470,11 +472,9 @@ fn logs_cmd(sock: &Path, id: &str, follow: bool, stderr: bool) -> Result<(), Cli
         if !follow {
             return Ok(());
         }
-        let info = call(sock, &Request::JobInfo { id: id.into() })?;
+        let info = rpc(ep, "job.status", Some(serde_json::json!({"id": id})))?;
         let status = info
-            .data
-            .as_ref()
-            .and_then(|d| d.get("status"))
+            .get("status")
             .and_then(|v| v.as_str())
             .unwrap_or("");
         if matches!(status, "completed" | "failed" | "cancelled") {
@@ -484,31 +484,8 @@ fn logs_cmd(sock: &Path, id: &str, follow: bool, stderr: bool) -> Result<(), Cli
     }
 }
 
-fn call(sock: &Path, req: &Request) -> Result<Response, CliError> {
-    api::call(sock, req).map_err(|e| CliError::with_code(3, e))
-}
-
-fn ensure_ok(resp: &Response) -> Result<(), CliError> {
-    if resp.ok {
-        Ok(())
-    } else {
-        Err(CliError::with_code(
-            1,
-            resp.error.clone().unwrap_or_else(|| "error".into()),
-        ))
-    }
-}
-
-fn print_resp(resp: &Response, pretty: bool) -> Result<(), CliError> {
-    ensure_ok(resp)?;
-    if let Some(data) = &resp.data {
-        if pretty {
-            println!("{}", serde_json::to_string_pretty(data).unwrap_or_default());
-        } else {
-            println!("{data}");
-        }
-    }
-    Ok(())
+fn rpc(ep: &Endpoint, method: &str, params: Option<serde_json::Value>) -> Result<serde_json::Value, CliError> {
+    api::call(ep, method, params).map_err(|e| CliError::with_code(3, e.to_string()))
 }
 
 fn config_cmd(args: ConfigArgs) -> Result<(), CliError> {
@@ -544,6 +521,8 @@ fn config_cmd(args: ConfigArgs) -> Result<(), CliError> {
                     .as_ref()
                     .map(|p| p.display().to_string())
                     .unwrap_or_default(),
+                "tcp" => cfg.raw.tcp.clone().unwrap_or_default(),
+                "transport" => format!("{:?}", cfg.raw.transport).to_ascii_lowercase(),
                 other => {
                     return Err(CliError::usage(format!("unknown key: {other}")));
                 }
@@ -567,6 +546,11 @@ fn config_cmd(args: ConfigArgs) -> Result<(), CliError> {
                 }
                 "data_dir" => cfg.raw.data_dir = Some(PathBuf::from(value)),
                 "socket" => cfg.raw.socket = Some(PathBuf::from(value)),
+                "tcp" => cfg.raw.tcp = Some(value),
+                "transport" => {
+                    cfg.raw.transport = api::TransportKind::parse(&value)
+                        .ok_or_else(|| CliError::usage(format!("unknown transport: {value}")))?;
+                }
                 other => return Err(CliError::usage(format!("unknown key: {other}"))),
             }
             config::save(&path, &cfg.raw).map_err(|e| CliError::with_code(1, e))?;

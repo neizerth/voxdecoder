@@ -4,3 +4,4 @@
 
 mod store;
 mod schedule;
+mod rpc;

@@ -16,6 +16,15 @@ pub struct ServerConfig {
     pub resource_classes: BTreeMap<String, ResourceClassConfig>,
     #[serde(default)]
     pub http: Option<String>,
+    /// Optional TCP listen address (`127.0.0.1:7701`). Enables TCP transport when set.
+    #[serde(default)]
+    pub tcp: Option<String>,
+    /// Windows named pipe path (ignored on Unix until pipe transport ships).
+    #[serde(default)]
+    pub pipe: Option<String>,
+    /// `auto` | `uds` | `pipe` | `tcp`
+    #[serde(default)]
+    pub transport: crate::api::TransportKind,
     #[serde(default)]
     pub socket: Option<PathBuf>,
     #[serde(default)]
@@ -66,6 +75,9 @@ impl Default for ServerConfig {
             workers: default_workers(),
             resource_classes,
             http: None,
+            tcp: None,
+            pipe: None,
+            transport: crate::api::TransportKind::Auto,
             socket: None,
             retention: RetentionConfig::default(),
             history: default_history(),
@@ -134,6 +146,22 @@ pub fn effective_socket(cfg: &ServerConfig, data: &Path) -> PathBuf {
     cfg.socket
         .clone()
         .unwrap_or_else(|| paths::default_socket_path(data))
+}
+
+pub fn effective_endpoint(
+    cfg: &ServerConfig,
+    data: &Path,
+    transport_override: Option<crate::api::TransportKind>,
+    socket_override: Option<&Path>,
+    tcp_override: Option<&str>,
+) -> Result<crate::api::Endpoint, String> {
+    crate::api::resolve_endpoint(
+        transport_override.unwrap_or(cfg.transport),
+        socket_override.or(cfg.socket.as_deref()),
+        cfg.pipe.as_deref(),
+        tcp_override.or(cfg.tcp.as_deref()),
+        data,
+    )
 }
 
 pub mod defaults {

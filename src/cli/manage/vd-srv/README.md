@@ -2,6 +2,7 @@
 
 Layout: [STRUCTURE.md](STRUCTURE.md).  
 CLI / API surface: [cli.md](cli.md).  
+Transport / RPC: [TRANSPORT.md](TRANSPORT.md).  
 Related: [`vd-pipeline`](../../process/vd-pipeline/) · [`vd-meeting`](../../process/vd-meeting/) · [`vd-postprocess`](../../process/vd-postprocess/) · [`vd-diarize`](../../process/vd-diarize/) · `vd-mcp` (planned).  
 Shared crates: [`vd-artifact`](../../../crates/vd-artifact/), [`vd-progress`](../../../crates/vd-progress/), [`vd-pipeline`](../../process/vd-pipeline/).  
 Rust gates: [RUST.md](RUST.md).
@@ -12,7 +13,7 @@ Rust gates: [RUST.md](RUST.md).
 >
 > It owns scheduling, persistence, resource management, observability, and background execution. Capability logic remains in the shared Executor.
 
-**v1 scope:** Job-granularity workers (full Job → shared `Executor`); node records + Event Store for queue/watch; Unix control socket; filesystem Job Store. Per-node dispatch is the next increment.
+**v1 scope:** Job-granularity workers (full Job → shared `Executor`); node records + Event Store for queue/watch; JSON-RPC 2.0 control plane over transport abstraction (UDS primary; optional TCP) — see [TRANSPORT.md](TRANSPORT.md); filesystem Job Store. Per-node dispatch and Windows Named Pipe are next.
 
 The queue is only one subsystem. Scheduler, Resource Manager, Worker Pool, and Event Store together form the long-running execution engine that serves CLI, MCP, HTTP, and a future GUI the same way. `vd-pipeline` and `vd-meeting` plan Jobs; `vd-srv` runs them in durable mode.
 

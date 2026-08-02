@@ -4,9 +4,9 @@
 
 **Status: implemented (v1).** Path: `src/cli/manage/vd-srv`.
 
-Related: [README.md](README.md) · [cli.md](cli.md) · [RUST.md](RUST.md) · [`vd-pipeline`](../../process/vd-pipeline/) · [`vd-meeting`](../../process/vd-meeting/)
+Related: [README.md](README.md) · [cli.md](cli.md) · [TRANSPORT.md](TRANSPORT.md) · [RUST.md](RUST.md) · [`vd-pipeline`](../../process/vd-pipeline/) · [`vd-meeting`](../../process/vd-meeting/)
 
-**v1 note:** workers dispatch **whole Jobs** to the shared Executor; node FSM + Event Store power queue/watch. Fine-grained per-node Worker dispatch is next.
+**v1 note:** workers dispatch **whole Jobs** to the shared Executor; node FSM + Event Store power queue/watch; control plane is JSON-RPC 2.0 over UDS (optional TCP). Fine-grained per-node Worker dispatch and Windows Named Pipe are next — see [TRANSPORT.md](TRANSPORT.md).
 
 ---
 
@@ -50,6 +50,7 @@ src/cli/manage/vd-srv/
 ├── README.md
 ├── cli.md
 ├── STRUCTURE.md
+├── TRANSPORT.md                # JSON-RPC + IPC / TCP transport contract
 ├── RUST.md
 ├── src/
 │   ├── main.rs
@@ -57,7 +58,7 @@ src/cli/manage/vd-srv/
 │   ├── paths.rs
 │   ├── cli/                    # serve · submit · watch · logs · events · artifacts · top · …
 │   ├── config/                 # workers · resource_classes · http · socket · retention · …
-│   ├── api/                    # HTTP + local socket + (future) MCP bridge
+│   ├── api/                    # JSON-RPC + transport (uds · tcp · pipe stub)
 │   ├── store/
 │   │   ├── job.rs              # Job Store (source of truth)
 │   │   ├── event.rs            # Event Store (immutable, append-only)

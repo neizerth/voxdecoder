@@ -132,7 +132,7 @@ vd-fix-terms run -i transcript.fixed.txt --terms ./.voxdecoder
 | CLI | Role | Status | Spec |
 |-----|------|--------|------|
 | `vd-unit` | — | TBD | — |
-| [`vd-srv`](src/cli/manage/vd-srv/) | Execution engine (node schedule · Resource Classes · Worker Pool · persist → shared Executor) | implemented (v1) | [readme](src/cli/manage/vd-srv/README.md) · [cli](src/cli/manage/vd-srv/cli.md) · [structure](src/cli/manage/vd-srv/STRUCTURE.md) |
+| [`vd-srv`](src/cli/manage/vd-srv/) | Execution engine (node schedule · Resource Classes · Worker Pool · persist → shared Executor) | implemented (v1) | [readme](src/cli/manage/vd-srv/README.md) · [cli](src/cli/manage/vd-srv/cli.md) · [structure](src/cli/manage/vd-srv/STRUCTURE.md) · [transport](src/cli/manage/vd-srv/TRANSPORT.md) |
 | `vd-mcp` | MCP server (same Job schema as `vd-pipeline`) | TBD | — |
 
 ---
