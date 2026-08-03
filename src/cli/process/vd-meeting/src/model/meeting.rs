@@ -158,6 +158,9 @@ impl DiarizationEnabled {
 pub struct AlignmentOptions {
     #[serde(default)]
     pub mode: AlignmentMode,
+    /// What anchors final meeting timing: diarize timeline, room mix, or tracks only.
+    #[serde(default)]
+    pub reference: AlignmentReference,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tolerance_ms: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -168,6 +171,7 @@ impl Default for AlignmentOptions {
     fn default() -> Self {
         Self {
             mode: AlignmentMode::Longest,
+            reference: AlignmentReference::Auto,
             tolerance_ms: None,
             allow_clock_drift: None,
         }
@@ -198,6 +202,42 @@ impl AlignmentMode {
             Self::Longest => "longest",
             Self::Start => "start",
             Self::End => "end",
+        }
+    }
+}
+
+/// Timing / speaker-layout reference for `meeting-merge`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AlignmentReference {
+    /// Timeline if diarize ran; else room mix when present; else tracks only.
+    #[default]
+    Auto,
+    /// Room mix as master clock (no diarize required).
+    Mix,
+    /// Require diarize `SpeakerTimeline`.
+    Timeline,
+    /// Ignore mix / timeline — participant transcripts only.
+    None,
+}
+
+impl AlignmentReference {
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "auto" => Some(Self::Auto),
+            "mix" | "room" => Some(Self::Mix),
+            "timeline" | "diarize" => Some(Self::Timeline),
+            "none" | "tracks" | "tracks_only" => Some(Self::None),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Mix => "mix",
+            Self::Timeline => "timeline",
+            Self::None => "none",
         }
     }
 }

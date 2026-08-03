@@ -8,24 +8,62 @@ Keep Skills independent from Runtime internals — call MCP tools only.
 
 Video tracks are supported: preprocess extracts audio with **ffmpeg** before ASR / diarization.
 
+**Online URLs** (YouTube, direct media links, …) are first-class for media roles (`room` / `merged` / `participant`). Pass them as `inputs[].url`. The Runtime resolves each URL into local artifacts **before** DAG build (ADR 0008 / `vd-input`). You do **not** invent download steps or call `vd-url` yourself. **`role: context` cannot use `url`** — docs stay on `path` / `uri`.
+
 **Language:** This Skill is written in English. Reply to the user in their language (or the agent's configured conversation language). Do not switch user-facing messages to English just because this document is English.
+
+## Input recognition
+
+Each media input uses exactly one of:
+
+| User gives | MCP field on `inputs[]` |
+|------------|-------------------------|
+| Local audio / video file | `path: "/abs/or/runtime/path"` |
+| `file://…` | `uri: "file://…"` |
+| YouTube / http(s) media URL | `url: "https://…"` |
+| Prior Runtime artifact id | `artifact: "…"` |
+
+Convenience: a single shared recording may also be `audio.url` / `audio.path` (Runtime treats it as `role: room`).
+
+### When the user pastes only a link
+
+If the user gives a YouTube / http(s) media URL and **no** local file:
+
+1. Treat it as `inputs[].url` (usually `role: room`) — do **not** ask them to download first.
+2. Confirm the URL and role with the user.
+3. Optionally ask about subtitles for YouTube-like sources: `ignore` (default) · `prefer` · `require` → per-input `subtitles`.
+4. Continue with classification / diarization / docs as usual.
+
+Do not refuse URL-only meeting requests. Do not require a filesystem path when a URL is present for media.
+
+Detect common URL shapes liberally:
+
+- `https://youtu.be/…`
+- `https://www.youtube.com/watch?v=…`
+- `https://…` ending in media extensions (`.mp3`, `.wav`, `.m4a`, `.mp4`, …)
+- Other http(s) links the user clearly intends as a recording source
+
+If both a file and a URL appear for the **same** input, ask which one to use (XOR InputSource).
 
 ## Workflow
 
-1. Collect file paths the user wants processed (folder listing or explicit paths).
-2. **Classify inputs by filename** (see **Filename heuristics** below) into:
-   - shared mix → `role: room` (alias `merged`)
-   - per-speaker tracks → `role: participant` + `participant: <id>`
-   - accompanying docs/materials → `role: context`
-3. Infer **speaker gender** from names in filenames when the user’s prompt does not state it (see **Gender**). Confirm uncertain guesses before execute.
-4. If a **shared mix** exists and the user did **not** explicitly enable or disable diarization, **propose diarization** (`meeting.diarization.enabled: true` or `auto`) and wait for confirmation.
-5. Confirm the assembled `inputs` + meeting model with the user.
+1. Collect **media sources** the user wants processed — local paths **and/or** URLs (folder listing, explicit paths, or pasted links).
+2. **Classify inputs** (see **Filename heuristics** below; for URLs, ask the user for role when the link alone is ambiguous) into:
+   - shared mix → `role: room` (alias `merged`) — `path` or `url`
+   - per-speaker tracks → `role: participant` + `participant: <id>` — `path` or `url`
+   - accompanying docs/materials → `role: context` — **`path` / `uri` only** (no `url`)
+3. Infer **speaker gender** from names in filenames (or known participant labels) when the user’s prompt does not state it (see **Gender**). Confirm uncertain guesses before execute.
+4. If a **shared mix** and **participant tracks** both exist, ask how to use the mix (**Choices UX**, numbered) — see **Mix + tracks**:
+   1. Diarize on mix
+   2. Align to mix without diarize (recommended if they decline diarize)
+   3. Tracks only (ignore mix)
+5. Confirm the assembled `inputs` + meeting model with the user (include URLs, mix mode, any `subtitles` choices).
 6. Call `process_meeting` with `execute: true` only after confirmation.
 7. Follow the **Runtime Contract** below for status, artifacts, cancellation, failures, and recovery.
 
 ## Filename heuristics
 
-Apply case-insensitively to the **basename** (ignore extension). Prefer explicit user labels over heuristics.
+Apply case-insensitively to the **basename** (ignore extension) for **path** inputs. Prefer explicit user labels over heuristics. For **URL-only** inputs with no useful basename, ask the user for `role` / `participant` instead of guessing.
 
 ### Shared mix (`role: room` / `merged`)
 
@@ -51,7 +89,8 @@ If both a mix and speaker files exist, assign roles accordingly — do not treat
 
 Documents and non-media materials for **vd-assets** (glossaries, agendas, attendee lists, PDFs, markdown):
 
-- Pass as an `inputs[]` entry with `role: context` and `path` to the folder or file.
+- Pass as an `inputs[]` entry with `role: context` and `path` (or `uri`) to the folder or file.
+- **Never** set `url` on context inputs — Runtime rejects it.
 - Ask the user for materials if they mentioned slides/docs but did not attach paths.
 - Do not put PDF/DOCX contents into chat instead of `role: context`.
 
@@ -64,16 +103,32 @@ When a participant file (or known name) is present and the user prompt does **no
 3. If unsure, ask once; do not invent gender for ambiguous nicknames (`Alex`, `Саша`, `Женя`) without confirmation.
 4. Never override an explicit gender from the user prompt.
 
+## Mix + tracks
+
+When both a room mix and per-speaker tracks are present, the mix is **not** only for diarization. Present a **numbered** choice:
+
+1. **Diarize on mix** — labels who spoke when on the shared recording; match to tracks.  
+   → `meeting.diarization.enabled: true` (or `auto`), `meeting.alignment.reference: timeline` (or omit / `auto`).
+2. **Align to mix without diarize** — text/speakers from tracks; mix is the **timing reference** for the final meeting document (no `diarize` step).  
+   → `meeting.diarization.enabled: false`, `meeting.alignment.reference: mix` (or `auto` with diarize off).
+3. **Tracks only** — ignore the mix entirely.  
+   → `meeting.diarization.enabled: false`, `meeting.alignment.reference: none`.
+
+If the user declines diarize but still wants the mix used for “who/when” timing, pick **2** — do not drop the mix.
+
+Room-only (no participant tracks): propose diarize as before; mix can also be transcribed (`purposes` defaults include `transcript` when diarization is off).
+
 ## Diarization
 
 | Situation | Action |
 |-----------|--------|
-| Shared mix present; user did not mention diarization | **Propose** enabling diarization; explain it labels speakers on the mix. Wait for yes/no. |
-| User asked for diarization / speaker labels on the mix | Set `meeting.diarization.enabled: true` (or `auto`). |
-| User said no diarization / “only tracks” | Set `enabled: false`. |
-| Only per-speaker tracks, no mix | Usually skip diarization; still confirm if ambiguous. |
+| Mix + tracks; user did not choose a mode | Offer **Mix + tracks** choices (1/2/3 above). |
+| User asked for diarization / speaker labels on the mix | Mode **1**. |
+| User wants mix for timing but not diarize | Mode **2** (align to mix). |
+| User said ignore mix / “only tracks” | Mode **3**. |
+| Only per-speaker tracks, no mix | Skip diarization; `alignment.reference` stays default. |
 
-Default Runtime policy is `auto` when unset — still ask when a mix is present so the user knows the Job may run diarize.
+Default Runtime diarization policy is `auto` when unset — still ask when a mix is present so the user picks how the mix is used.
 
 ## Accompanying documents
 
@@ -96,35 +151,22 @@ This Skill starts long-running Runtime Jobs.
 - When reporting status to the user, include `progress` (0–100) and `phase` from `get_job` when present (e.g. `42% · step_start:transcribe`).
 - Do not use HTTP polling (`curl`, `/health`, `/jobs/…`).
 - Do not inspect Runtime sockets directly.
-- Do not spam-poll `get_job`. Progress advances mainly at pipeline step boundaries; a stable percent mid-step (especially during `transcribe` / diarize) is normal.
+- Poll `get_job` every **10s** (see below). Progress advances mainly at pipeline step boundaries; a stable percent mid-step (especially during `transcribe` / diarize) is normal.
 
 **Ballpark duration** (wall clock, local Metal / CPU; wide variance):
 
 - Short inputs: often **a few minutes** of Job time.
 - Full meetings (long audio + merge / diarize): often **several minutes to tens of minutes**.
+- URL import adds download time up front (often minutes for long YouTube / video sources).
 - Tell the user the estimate is rough.
 
-**Adaptive polling** (wakeup / schedule — not a bare long `sleep`):
-
-1. After submit, wait a **short** interval (**15–30s**), then call `get_job` once.
-2. Record elapsed wall time `T` and `progress` `P` (0–100). Tell the user status (`P%` · `phase`).
-3. If still `running` and `P` ≥ 1, estimate time to 100%:
-
-   ```text
-   ETA ≈ T * (100 - P) / P
-   ```
-
-   (If `P` is 0 or missing, use the ballpark above and fall back to a **60–120s** wait.)
-4. Schedule the **next** `get_job` near that ETA, but clamp the wait:
-
-   - **minimum** between polls: **30s** (never poll more often)
-   - **maximum** between polls: **3 minutes** (recheck even if ETA is far / stuck)
-5. Repeat from step 2 until terminal status. Recalculate ETA after every sample — do not lock the first estimate forever.
-6. Only escalate after several spaced checks with no percent/`phase` change and no Runtime error.
+**Polling:** call `get_job` every **10s** until `completed`, `failed`, or `cancelled`. Report `progress` / `phase` when present. Only escalate after several checks with no percent/`phase` change and no Runtime error.
 
 ### Results
 
 - When the Job reaches `completed`, use `list_artifacts` with the Job `id` to discover outputs.
+- Present the main meeting / transcript artifact(s) as **clickable markdown links** (`[basename](file:///abs/path)`), not bare path strings.
+- Offer a **numbered** follow-up: show in chat / open file / both / done.
 
 ### Cancellation
 
@@ -166,6 +208,12 @@ or
 vdctl mcp install
 ```
 
+If a Job fails with Metal / GPU resource errors (e.g. `Failed to create metal resource: Buffer`):
+
+- Prefer **retry** — `vd-gigaam` chunks long audio (≤20s windows) for Metal and auto-retries on CPU if a buffer alloc still fails.
+- If it still fails, or for an explicit CPU path: set `device: "cpu"` on `process_meeting` / `process_audio` and re-run (same inputs). Do not switch engine just for Metal OOM.
+- Do not retry the identical Metal-only setup in a loop without CPU.
+
 If a Job is already running / the Runtime answers:
 
 - Use Runtime tools (`get_job`, `cancel_job`, `list_artifacts`).
@@ -179,6 +227,11 @@ If a Job is already running / the Runtime answers:
 process_meeting inputs=[room:mix.wav, participant:alice.wav, context:./docs] → …
 # Video mix → extract-audio inside preprocess
 process_meeting inputs=[room:meeting.mp4] + diarization → …
+# Single room recording from YouTube / http(s)
+process_meeting inputs=[room url:https://youtu.be/…] → …
+process_meeting (audio.url: https://youtu.be/…, subtitles: prefer) → …
+# Room URL + local participant tracks + docs
+process_meeting inputs=[room url:https://…, participant:alice.wav, context:./docs] → …
 process_meeting → job_id → get_job (until completed) → list_artifacts
 process_meeting → job_id → cancel_job
 ```
@@ -186,3 +239,5 @@ process_meeting → job_id → cancel_job
 ## Notes
 
 Reply in the user's / agent's conversation language (see Language above).
+
+URL import uses the shared Runtime resolver (`vd-input` / `vd-url`). Meeting planners see resolved local audio paths — do not inject `import-url` into Jobs yourself.

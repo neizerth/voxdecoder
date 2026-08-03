@@ -4,6 +4,7 @@ pub mod audio;
 pub mod cli;
 pub mod config;
 pub mod gigaam;
+pub mod metal_fallback;
 pub mod output;
 pub mod paths;
 pub mod platform;

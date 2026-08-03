@@ -4,6 +4,7 @@ use candle_core::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
 use serde::Serialize;
 
+use super::chunk;
 use super::config::{GigaLoadOptions, TranscribeOptions};
 use super::decoder::ctc;
 use super::encoder::conformer::{ConformerConfig, ConformerEncoder, CtcHead};
@@ -110,6 +111,54 @@ impl GigaModel {
         samples: &[f32],
         opts: TranscribeOptions,
     ) -> Result<Transcript, ModelError> {
+        let ranges = chunk::chunk_ranges(samples.len(), chunk::MAX_CHUNK_SAMPLES);
+        if ranges.is_empty() {
+            return Ok(Transcript {
+                text: String::new(),
+                segments: Vec::new(),
+                words: None,
+            });
+        }
+        if ranges.len() == 1 {
+            return self.transcribe_window(samples, 0.0, opts);
+        }
+
+        let sr = f64::from(self.mel.sample_rate);
+        let mut texts = Vec::new();
+        let mut segments = Vec::new();
+        let mut words = if opts.word_timestamps {
+            Some(Vec::new())
+        } else {
+            None
+        };
+
+        for (start, end) in ranges {
+            let offset_sec = start as f64 / sr;
+            let part = self.transcribe_window(&samples[start..end], offset_sec, opts.clone())?;
+            if !part.text.is_empty() {
+                texts.push(part.text);
+            }
+            segments.extend(part.segments);
+            if let (Some(acc), Some(w)) = (words.as_mut(), part.words) {
+                acc.extend(w);
+            }
+            // Flush Metal command buffers so pooled temps can be reused between chunks.
+            let _ = self.device.synchronize();
+        }
+
+        Ok(Transcript {
+            text: texts.join(" "),
+            segments,
+            words,
+        })
+    }
+
+    fn transcribe_window(
+        &self,
+        samples: &[f32],
+        offset_sec: f64,
+        opts: TranscribeOptions,
+    ) -> Result<Transcript, ModelError> {
         let features = mel::extract_log_mel(samples, self.mel);
         if features.n_frames == 0 {
             return Ok(Transcript {
@@ -153,13 +202,22 @@ impl GigaModel {
         let text = self.card.decode_tokens(&token_ids);
 
         let words = if opts.word_timestamps {
-            Some(frames_to_words(
-                &self.card,
-                &token_ids,
-                &token_frames,
-                samples.len(),
-                enc_len,
-            ))
+            Some(
+                frames_to_words(
+                    &self.card,
+                    &token_ids,
+                    &token_frames,
+                    samples.len(),
+                    enc_len,
+                )
+                .into_iter()
+                .map(|mut w| {
+                    w.start += offset_sec;
+                    w.end += offset_sec;
+                    w
+                })
+                .collect(),
+            )
         } else {
             None
         };
@@ -170,8 +228,8 @@ impl GigaModel {
             let dur = samples.len() as f64 / f64::from(self.mel.sample_rate);
             vec![Segment {
                 text: text.clone(),
-                start: 0.0,
-                end: dur,
+                start: offset_sec,
+                end: offset_sec + dur,
             }]
         };
 

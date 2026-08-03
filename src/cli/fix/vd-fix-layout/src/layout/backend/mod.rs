@@ -68,7 +68,35 @@ pub(super) fn layout_paragraphs(
     }
 
     // Normalize accidental multi-blank runs by joining with exactly `\n\n`.
-    out_blocks.join("\n\n")
+    let joined = out_blocks.join("\n\n");
+    // Last-line defense: upstream fixers may still emit bare `..` (collapse also
+    // lives in vd-fix-casing; keep layout idempotent when it is the final step).
+    collapse_duplicate_periods(&joined)
+}
+
+/// `...`+ → ellipsis `…`; bare `..` → single `.`.
+fn collapse_duplicate_periods(s: &str) -> String {
+    let chars: Vec<char> = s.chars().collect();
+    let mut out = String::with_capacity(s.len());
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == '.' {
+            let mut n = 0usize;
+            while i + n < chars.len() && chars[i + n] == '.' {
+                n += 1;
+            }
+            if n >= 3 {
+                out.push('…');
+            } else {
+                out.push('.');
+            }
+            i += n;
+            continue;
+        }
+        out.push(chars[i]);
+        i += 1;
+    }
+    out
 }
 
 fn group_sentences(

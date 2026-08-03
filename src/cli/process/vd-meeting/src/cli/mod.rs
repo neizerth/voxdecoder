@@ -62,6 +62,9 @@ pub struct RunCli {
     pub asr: Option<String>,
     #[arg(short = 'm', long = "model")]
     pub model: Option<String>,
+    /// Inference device for ASR (cpu|metal|auto)
+    #[arg(long = "device")]
+    pub device: Option<String>,
     #[arg(long = "overwrite")]
     pub overwrite: bool,
     #[arg(long = "max-parallel")]
@@ -203,6 +206,7 @@ fn validate_run(cli: RunCli, force_dry: bool) -> Result<RunArgs, CliError> {
         working_dir: cli.working_dir,
         asr: cli.asr,
         model: cli.model,
+        device: cli.device,
         overwrite: cli.overwrite,
         max_parallel: cli.max_parallel,
         continue_on_error: cli.continue_on_error,

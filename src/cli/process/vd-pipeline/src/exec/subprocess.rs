@@ -391,40 +391,156 @@ fn run_postprocess(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
 }
 
 fn run_meeting_merge(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
-    // Stub merge: write a minimal Meeting Artifact JSON so Jobs validate end-to-end.
-    // Full alignment / speaker matching lands with the real meeting-merge implementation.
     let out = req.output.clone().unwrap_or_else(|| {
-        req.output_dir
-            .as_ref()
-            .map_or_else(
-                || req.working_dir.join("meeting.json"),
-                |d| d.join("meeting.json"),
-            )
+        req.output_dir.as_ref().map_or_else(
+            || req.working_dir.join("meeting.json"),
+            |d| d.join("meeting.json"),
+        )
     });
     if let Some(parent) = out.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|e| ExecError::Step(format!("meeting-merge mkdir: {e}")))?;
     }
 
-    let participants = req
-        .options
-        .get("participants")
-        .cloned()
-        .unwrap_or(ArgValue::Map(BTreeMap::new()));
     let alignment = req
         .options
         .get("alignment")
         .cloned()
         .unwrap_or(ArgValue::Map(BTreeMap::new()));
+    let reference = alignment
+        .as_map()
+        .and_then(|m| m.get("reference"))
+        .and_then(ArgValue::as_string)
+        .unwrap_or_else(|| "auto".into());
+
+    let mix_path = req
+        .options
+        .get("mix")
+        .and_then(ArgValue::as_string)
+        .map(PathBuf::from);
+    let timeline_path = req
+        .options
+        .get("timeline")
+        .and_then(ArgValue::as_string)
+        .map(PathBuf::from);
+
+    let mut text_paths: Vec<(String, PathBuf)> = Vec::new();
+    if let Some(map) = req.options.get("text_paths").and_then(ArgValue::as_map) {
+        for (id, v) in map {
+            if let Some(p) = v.as_string() {
+                text_paths.push((speaker_from_text_id(&id), PathBuf::from(p)));
+            }
+        }
+    }
+    if text_paths.is_empty() {
+        // Fallback: primary input is a transcript.
+        text_paths.push(("speaker".into(), req.input.clone()));
+    }
+
+    let mix_duration = mix_path.as_ref().and_then(|p| probe_duration_sec(p));
+    let timeline = timeline_path
+        .as_ref()
+        .and_then(|p| load_speaker_timeline(p).ok());
+
+    let mut turns = Vec::new();
+    let mut cursor = 0.0_f64;
+    for (speaker, path) in &text_paths {
+        let text = std::fs::read_to_string(path).unwrap_or_default();
+        let text = text.trim().to_string();
+        if text.is_empty() {
+            continue;
+        }
+        if let Some(segs) = load_transcript_segments(path) {
+            for seg in segs {
+                let mut end = seg.end_sec;
+                if let Some(max) = mix_duration {
+                    end = end.min(max);
+                }
+                turns.push(crate::meeting_artifact::MeetingTurn {
+                    speaker: speaker.clone(),
+                    start_sec: seg.start_sec,
+                    end_sec: end.max(seg.start_sec),
+                    text: seg.text,
+                });
+            }
+        } else {
+            // No timed segments: place each track as one turn on a sequential clock.
+            let dur = 1.0_f64;
+            let mut end = cursor + dur;
+            if let Some(max) = mix_duration {
+                end = end.min(max).max(cursor);
+            }
+            turns.push(crate::meeting_artifact::MeetingTurn {
+                speaker: speaker.clone(),
+                start_sec: cursor,
+                end_sec: end,
+                text,
+            });
+            cursor = end;
+        }
+    }
+    turns.sort_by(|a, b| {
+        a.start_sec
+            .partial_cmp(&b.start_sec)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    let participants: Vec<String> = {
+        let mut seen = BTreeMap::new();
+        for t in &turns {
+            seen.entry(t.speaker.clone()).or_insert(());
+        }
+        if let Some(map) = req
+            .options
+            .get("participants")
+            .and_then(ArgValue::as_map)
+            .and_then(|m| m.get("known"))
+            .and_then(ArgValue::as_map)
+        {
+            for (id, v) in map {
+                let name = v
+                    .as_map()
+                    .and_then(|m| m.get("name"))
+                    .and_then(ArgValue::as_string)
+                    .unwrap_or_else(|| id.clone());
+                seen.entry(name).or_insert(());
+            }
+        }
+        seen.into_keys().collect()
+    };
+
+    let effective_reference = if timeline.is_some()
+        && (reference == "timeline" || reference == "auto")
+    {
+        "timeline"
+    } else if mix_path.is_some() && (reference == "mix" || reference == "auto") {
+        "mix"
+    } else {
+        "none"
+    };
+
+    let artifact = crate::meeting_artifact::MeetingArtifact {
+        version: 1,
+        title: None,
+        participants: participants.clone(),
+        turns,
+        timeline,
+    };
 
     let body = serde_json::json!({
-        "version": 1,
+        "version": artifact.version,
         "artifact_type": "meeting",
-        "stub": true,
-        "input": req.input.display().to_string(),
-        "alignment": arg_to_json(&alignment),
-        "participants": arg_to_json(&participants),
-        "notes": "Stub meeting-merge; replace with real alignment when ready.",
+        "title": artifact.title,
+        "participants": artifact.participants,
+        "turns": artifact.turns,
+        "timeline": artifact.timeline,
+        "alignment": {
+            "mode": alignment.as_map().and_then(|m| m.get("mode")).and_then(ArgValue::as_string).unwrap_or_else(|| "longest".into()),
+            "reference": effective_reference,
+            "mix": mix_path.as_ref().map(|p| p.display().to_string()),
+            "mix_duration_sec": mix_duration,
+            "requested_reference": reference,
+        },
     });
     let text = serde_json::to_string_pretty(&body)
         .map_err(|e| ExecError::Step(format!("meeting-merge json: {e}")))?;
@@ -437,25 +553,99 @@ fn run_meeting_merge(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
     })
 }
 
-fn arg_to_json(v: &ArgValue) -> serde_json::Value {
-    match v {
-        ArgValue::Bool(b) => serde_json::Value::Bool(*b),
-        ArgValue::Number(n) => serde_json::json!(n),
-        ArgValue::String(s) => serde_json::Value::String(s.clone()),
-        ArgValue::Strings(xs) => {
-            serde_json::Value::Array(xs.iter().cloned().map(serde_json::Value::String).collect())
+fn speaker_from_text_id(id: &str) -> String {
+    id.strip_suffix(".text")
+        .or_else(|| id.strip_suffix(".fixed"))
+        .unwrap_or(id)
+        .to_string()
+}
+
+#[derive(Debug)]
+struct SegTurn {
+    start_sec: f64,
+    end_sec: f64,
+    text: String,
+}
+
+fn load_transcript_segments(transcript: &Path) -> Option<Vec<SegTurn>> {
+    let stem = transcript.file_stem()?.to_str()?;
+    // meeting.fixed.txt → look for meeting.segments.json / meeting.fixed.segments.json
+    let parent = transcript.parent()?;
+    let candidates = [
+        parent.join(format!("{stem}.segments.json")),
+        parent.join(
+            stem.strip_suffix(".fixed")
+                .map(|s| format!("{s}.segments.json"))
+                .unwrap_or_default(),
+        ),
+        parent.join(format!(
+            "{}.segments.json",
+            stem.trim_end_matches(".fixed")
+        )),
+    ];
+    for c in candidates {
+        if c.as_os_str().is_empty() || !c.is_file() {
+            continue;
         }
-        ArgValue::List(xs) => {
-            serde_json::Value::Array(xs.iter().map(arg_to_json).collect())
-        }
-        ArgValue::Map(m) => {
-            let mut obj = serde_json::Map::new();
-            for (k, v) in m {
-                obj.insert(k.clone(), arg_to_json(v));
+        let raw = std::fs::read_to_string(&c).ok()?;
+        let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
+        let segs = v.get("segments")?.as_array()?;
+        let mut out = Vec::new();
+        for s in segs {
+            let start = s.get("start").and_then(|x| x.as_f64()).or_else(|| {
+                s.get("start_sec").and_then(|x| x.as_f64())
+            })?;
+            let end = s.get("end").and_then(|x| x.as_f64()).or_else(|| {
+                s.get("end_sec").and_then(|x| x.as_f64())
+            })?;
+            let text = s
+                .get("text")
+                .or_else(|| s.get("Caption"))
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            if !text.is_empty() {
+                out.push(SegTurn {
+                    start_sec: start,
+                    end_sec: end,
+                    text,
+                });
             }
-            serde_json::Value::Object(obj)
+        }
+        if !out.is_empty() {
+            return Some(out);
         }
     }
+    None
+}
+
+fn load_speaker_timeline(
+    path: &Path,
+) -> Result<crate::meeting_artifact::SpeakerTimeline, ExecError> {
+    let raw = std::fs::read_to_string(path)
+        .map_err(|e| ExecError::Step(format!("read timeline: {e}")))?;
+    serde_json::from_str(&raw).map_err(|e| ExecError::Step(format!("parse timeline: {e}")))
+}
+
+fn probe_duration_sec(path: &Path) -> Option<f64> {
+    let out = Command::new("ffprobe")
+        .args([
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+        ])
+        .arg(path)
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&out.stdout);
+    s.trim().parse().ok()
 }
 
 fn run_diarize(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {

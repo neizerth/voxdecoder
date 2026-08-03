@@ -8,7 +8,7 @@ pub mod planner;
 pub mod status;
 
 pub use model::{
-    AlignmentMode, AlignmentOptions, BuildOptions, CountBounds, DiarizationEnabled,
+    AlignmentMode, AlignmentOptions, AlignmentReference, BuildOptions, CountBounds, DiarizationEnabled,
     DiarizationPolicy, ExecutorOptions, Gender, GroupConstraints, InputPurpose, InputRole,
     InputSource, KnownParticipant, MeetingModel, MeetingOutput, MeetingRequest,
     ParticipantConstraints, Participants, TranscribeDefaults,

@@ -21,6 +21,7 @@ pub struct RunArgs {
     pub working_dir: Option<PathBuf>,
     pub asr: Option<String>,
     pub model: Option<String>,
+    pub device: Option<String>,
     pub overwrite: bool,
     pub max_parallel: Option<u32>,
     pub continue_on_error: bool,
@@ -211,6 +212,9 @@ fn merge_build_options(
     }
     if let Some(m) = &args.model {
         options.transcribe.model = Some(m.clone());
+    }
+    if let Some(d) = &args.device {
+        options.transcribe.device = Some(d.clone());
     }
     if args.overwrite {
         options.transcribe.overwrite = true;

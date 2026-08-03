@@ -124,7 +124,7 @@ fn input_source_schema() -> Value {
         "properties": {
             "path": {"type":"string"},
             "uri": {"type":"string"},
-            "url": {"type":"string","description":"Online media (http/https); Planning inserts import-url"},
+            "url": {"type":"string","description":"Online media (http/https); Planning resolves via vd-input / vd-url before Job build"},
             "artifact": {"type":"string"},
             "blob": {"type":"string"}
         }
@@ -151,11 +151,11 @@ fn audio_schema() -> Value {
             "subtitles": {
                 "type":"string",
                 "enum":["ignore","prefer","require"],
-                "description":"Subtitle policy for audio.url import-url (default ignore)."
+                "description":"Subtitle policy for audio.url (default ignore)."
             },
             "provider": {
                 "type":"string",
-                "description":"Optional import-url resolver hint (auto|youtube|direct|…)."
+                "description":"Optional URL resolver hint (auto|youtube|direct|…)."
             },
             "overwrite": {
                 "type":"boolean",
@@ -210,7 +210,11 @@ fn meeting_schema() -> Value {
             "execute": {"type":"boolean","default":true},
             "run": {"type":"boolean","description":"Alias for execute"},
             "engine": {"type":"string"},
-            "model": {"type":"string"}
+            "model": {"type":"string"},
+            "device": {
+                "type":"string",
+                "description":"ASR device (cpu|metal|auto). On macOS defaults to metal when omitted. Metal OOM auto-retries on CPU inside vd-gigaam."
+            }
         }
     })
 }

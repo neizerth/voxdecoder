@@ -98,31 +98,51 @@ pub fn execute(args: RunArgs) -> Result<(), CliError> {
         path: None,
     });
 
-    progress.emit(&ProgressEvent::phase("loading_model", 5));
-
-    let model = GigaModel::load(GigaLoadOptions {
-        model: resolved.plan.model.clone(),
-        device: resolved.plan.device,
-        fp16_encoder: resolved.plan.fp16_encoder,
-        flash: resolved.plan.flash,
-        download_root: resolved.plan.download_root.clone(),
-    })
-    .map_err(map_model_err)?;
-
     let samples = crate::audio::load_pcm16k_mono(&resolved.input)
         .map_err(|e| CliError::with_code(1, e.to_string()))?;
 
+    let load_opts = |device: resolve::Device| GigaLoadOptions {
+        model: resolved.plan.model.clone(),
+        device,
+        fp16_encoder: resolved.plan.fp16_encoder,
+        flash: resolved.plan.flash,
+        download_root: resolved.plan.download_root.clone(),
+    };
+    let tx_opts = TranscribeOptions {
+        word_timestamps: resolved.plan.word_timestamps,
+    };
+
+    let allow_cpu_fallback = resolved.plan.device != resolve::Device::Cpu;
+    progress.emit(&ProgressEvent::phase("loading_model", 5));
+    let mut model = match GigaModel::load(load_opts(resolved.plan.device)) {
+        Ok(m) => m,
+        Err(err)
+            if allow_cpu_fallback
+                && crate::metal_fallback::is_metal_resource_error(&err.to_string()) =>
+        {
+            eprintln!("warning: Metal GPU resource failed ({err}); retrying on CPU");
+            progress.emit(&ProgressEvent::phase("loading_model", 5));
+            GigaModel::load(load_opts(resolve::Device::Cpu)).map_err(map_model_err)?
+        }
+        Err(err) => return Err(map_model_err(err)),
+    };
+
     progress.emit(&ProgressEvent::phase("transcribing", 55));
-
-    let transcript = model
-        .transcribe(
-            &samples,
-            TranscribeOptions {
-                word_timestamps: resolved.plan.word_timestamps,
-            },
-        )
-        .map_err(map_model_err)?;
-
+    let transcript = match model.transcribe(&samples, tx_opts.clone()) {
+        Ok(t) => t,
+        Err(err)
+            if allow_cpu_fallback
+                && crate::metal_fallback::is_metal_resource_error(&err.to_string()) =>
+        {
+            eprintln!("warning: Metal GPU resource failed ({err}); retrying on CPU");
+            drop(model);
+            progress.emit(&ProgressEvent::phase("loading_model", 5));
+            model = GigaModel::load(load_opts(resolve::Device::Cpu)).map_err(map_model_err)?;
+            progress.emit(&ProgressEvent::phase("transcribing", 55));
+            model.transcribe(&samples, tx_opts).map_err(map_model_err)?
+        }
+        Err(err) => return Err(map_model_err(err)),
+    };
     writer::write_outputs(
         &resolved.plan.output,
         resolved.plan.segments.as_deref(),

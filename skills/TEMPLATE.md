@@ -27,7 +27,7 @@ This Skill starts long-running Runtime Jobs.
 - When reporting status to the user, include `progress` (0–100) and `phase` from `get_job` when present.
 - Do not use HTTP polling (`curl`, `/health`, `/jobs/…`).
 - Do not inspect Runtime sockets directly.
-- Do not spam-poll `get_job`. Progress advances mainly at pipeline step boundaries; a stable percent mid-step is normal.
+- Poll `get_job` every **10s** (see below). Progress advances mainly at pipeline step boundaries; a stable percent mid-step is normal.
 
 **Ballpark duration** (wall clock, local Metal / CPU; wide variance):
 
@@ -35,23 +35,7 @@ This Skill starts long-running Runtime Jobs.
 - Longer media / meetings: often **several minutes to tens of minutes**.
 - Preprocess `speed` (1.5× / 2× / 2.2×) shortens ASR wall time; tell the user the estimate is rough.
 
-**Adaptive polling** (wakeup / schedule — not a bare long `sleep`):
-
-1. After submit, wait a **short** interval (**15–30s**), then call `get_job` once.
-2. Record elapsed wall time `T` and `progress` `P` (0–100). Tell the user status (`P%` · `phase`).
-3. If still `running` and `P` ≥ 1, estimate time to 100%:
-
-   ```text
-   ETA ≈ T * (100 - P) / P
-   ```
-
-   (If `P` is 0 or missing, use the ballpark above and fall back to a **60–120s** wait.)
-4. Schedule the **next** `get_job` near that ETA, but clamp the wait:
-
-   - **minimum** between polls: **30s** (never poll more often)
-   - **maximum** between polls: **3 minutes** (recheck even if ETA is far / stuck)
-5. Repeat from step 2 until terminal status. Recalculate ETA after every sample — do not lock the first estimate forever.
-6. Only escalate after several spaced checks with no percent/`phase` change and no Runtime error.
+**Polling:** call `get_job` every **10s** until `completed`, `failed`, or `cancelled`. Report `progress` / `phase` when present. Only escalate after several checks with no percent/`phase` change and no Runtime error.
 
 ### Results
 
@@ -96,6 +80,11 @@ or
 ```text
 vdctl mcp install
 ```
+
+If a Job fails with Metal / GPU resource errors (e.g. `Failed to create metal resource: Buffer`):
+
+- Prefer **retry** — ASR may auto-retry on CPU after Metal buffer failures.
+- If it still fails: set `device: "cpu"` and re-run.
 
 If a Job is already running / the Runtime answers:
 

@@ -8,8 +8,8 @@ mod options;
 pub use document::{load_meeting_file, MeetingDocument};
 pub use input::{InputPurpose, InputRole, InputSource};
 pub use meeting::{
-    AlignmentMode, AlignmentOptions, CountBounds, DiarizationEnabled, DiarizationPolicy, Gender,
-    GroupConstraints, KnownParticipant, MeetingModel, MeetingOutput, MeetingRequest,
-    ParticipantConstraints, Participants,
+    AlignmentMode, AlignmentOptions, AlignmentReference, CountBounds, DiarizationEnabled,
+    DiarizationPolicy, Gender, GroupConstraints, KnownParticipant, MeetingModel, MeetingOutput,
+    MeetingRequest, ParticipantConstraints, Participants,
 };
 pub use options::{BuildOptions, ExecutorOptions, TranscribeDefaults};

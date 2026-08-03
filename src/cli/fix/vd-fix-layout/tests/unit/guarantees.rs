@@ -35,3 +35,25 @@ fn empty_and_short_ok() {
     let result = fixer.fix("Hi.", FixOptions::default()).unwrap();
     assert_eq!(result.text.trim(), "Hi.");
 }
+
+#[test]
+fn collapses_duplicate_periods_from_upstream() {
+    let dir = TempDir::new().unwrap();
+    let fixer = LayoutFixer::load(LayoutLoadOptions {
+        language: Language::Ru,
+        models_dir: dir.path().to_path_buf(),
+        density: ParagraphDensity::Normal,
+        use_timemap: false,
+        timemap: None,
+    })
+    .unwrap();
+    let input = "Баня очень похожа на сауну, но имеет свои особенности.. Каждый турист должен сходить в баню..";
+    let result = fixer.fix(input, FixOptions::default()).unwrap();
+    assert!(
+        !result.text.contains(".."),
+        "layout must collapse bare .. from upstream: {}",
+        result.text
+    );
+    assert!(result.text.contains("особенности."));
+    assert!(result.text.contains("баню."));
+}

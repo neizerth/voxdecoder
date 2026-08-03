@@ -205,6 +205,7 @@ fn meeting_plan_from_audio_convenience() {
         options: Default::default(),
         engine: None,
         model: None,
+        device: None,
         document: None,
         meeting_yaml: None,
     };
@@ -235,6 +236,7 @@ fn meeting_plan_from_inputs() {
         options: Default::default(),
         engine: None,
         model: None,
+        device: None,
         document: None,
         meeting_yaml: None,
     };
@@ -267,6 +269,7 @@ fn meeting_plan_url_resolves_without_import_url_step() {
         options: Default::default(),
         engine: None,
         model: None,
+        device: None,
         document: None,
         meeting_yaml: None,
     };

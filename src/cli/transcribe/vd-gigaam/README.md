@@ -57,7 +57,7 @@ If we ever bypass the official preprocessor, match GigaAM training front-end:
 
 Whisper-style Slaney mel is a common root cause of garbled GigaAM output. Implement HTK mel (and the rest of this table) in the Rust audio path; do not reuse a Whisper feature extractor.
 
-Long audio: official `transcribe_longform` pulls **pyannote / HF** — out of scope for `vd-gigaam` (no longform / diarize / HF in [cli.md](cli.md)). Chunk or truncate at our boundary, or leave long-form to another tool.
+Long audio: official GigaAM `.transcribe` is for clips **≤25s**. `vd-gigaam` automatically splits longer inputs into **≤20s** non-overlapping windows (Metal-safe attention buffer sizes), then concatenates text / offsets timestamps. VAD-based longform remains out of scope.
 
 ---
 

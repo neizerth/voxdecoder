@@ -374,6 +374,26 @@ impl<B: Binder + Sync> Executor<B> {
                 return Err(err);
             }
         }
+        if step.capability == Capability::MeetingMerge {
+            if let Err(e) =
+                resolve_meeting_merge_inputs(&mut options, job_step, &artifacts_map, &resolved.working_dir)
+            {
+                let err = ExecError::Step(e);
+                status::emit_error(progress, "step_failed", &err.to_string());
+                let now = SystemTime::now();
+                state.step_reports.push(make_step_report(
+                    step,
+                    StepReportStatus::Failed,
+                    now,
+                    now,
+                    std::time::Duration::ZERO,
+                    Some(&input),
+                    &[],
+                ));
+                state.any_failed = true;
+                return Err(err);
+            }
+        }
         if step.capability == Capability::FixLayout
             && options.get("use_timemap").and_then(ArgValue::as_bool) != Some(false)
         {
@@ -627,5 +647,62 @@ fn resolve_postprocess_inputs(
         resolved.insert(name, ArgValue::String(path.display().to_string()));
     }
     options.insert("inputs".into(), ArgValue::Map(resolved));
+    Ok(())
+}
+
+fn resolve_meeting_merge_inputs(
+    options: &mut BTreeMap<String, ArgValue>,
+    step: &crate::job::Step,
+    artifacts: &HashMap<String, PathBuf>,
+    working_dir: &Path,
+) -> Result<(), String> {
+    let mut resolved = BTreeMap::new();
+    for raw in step.input_refs() {
+        let path = match ArtifactRef::parse(raw) {
+            ArtifactRef::Id(id) => artifacts
+                .get(&id)
+                .cloned()
+                .ok_or_else(|| format!("meeting-merge input artifact not produced: {id}"))?,
+            ArtifactRef::Path(p) => {
+                if p.is_absolute() {
+                    p
+                } else {
+                    working_dir.join(p)
+                }
+            }
+        };
+        resolved.insert(raw.to_string(), ArgValue::String(path.display().to_string()));
+    }
+    // Also resolve named option refs (texts / mix / timeline) when they are artifact ids.
+    for key in ["mix", "timeline"] {
+        if let Some(raw) = options.get(key).and_then(ArgValue::as_string) {
+            if let ArtifactRef::Id(id) = ArtifactRef::parse(&raw) {
+                if let Some(p) = artifacts.get(&id) {
+                    options.insert(key.into(), ArgValue::String(p.display().to_string()));
+                }
+            } else if let ArtifactRef::Path(p) = ArtifactRef::parse(&raw) {
+                let path = if p.is_absolute() {
+                    p
+                } else {
+                    working_dir.join(p)
+                };
+                options.insert(key.into(), ArgValue::String(path.display().to_string()));
+            }
+        }
+    }
+    if let Some(ArgValue::Strings(ids)) = options.get("texts").cloned() {
+        let mut text_paths = BTreeMap::new();
+        for id in ids {
+            let path = resolved
+                .get(&id)
+                .and_then(ArgValue::as_string)
+                .map(PathBuf::from)
+                .or_else(|| artifacts.get(&id).cloned())
+                .ok_or_else(|| format!("meeting-merge text artifact missing: {id}"))?;
+            text_paths.insert(id, ArgValue::String(path.display().to_string()));
+        }
+        options.insert("text_paths".into(), ArgValue::Map(text_paths));
+    }
+    options.insert("resolved_inputs".into(), ArgValue::Map(resolved));
     Ok(())
 }

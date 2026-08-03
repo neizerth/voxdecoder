@@ -28,6 +28,8 @@ pub struct TranscribeDefaults {
     pub engine: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device: Option<String>,
     #[serde(default, skip_serializing_if = "is_false")]
     pub overwrite: bool,
 }

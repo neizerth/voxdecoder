@@ -14,11 +14,17 @@ pub fn append_merge(
     resolved: &ResolvedMeeting,
     text_ids: &[String],
     timeline_id: Option<&str>,
+    mix_ref: Option<&str>,
     options: &BuildOptions,
 ) -> Result<(), PlanError> {
     let mut inputs: Vec<String> = text_ids.to_vec();
     if let Some(t) = timeline_id {
         inputs.push(t.to_string());
+    }
+    if let Some(m) = mix_ref {
+        if !inputs.iter().any(|i| i == m) {
+            inputs.push(m.to_string());
+        }
     }
 
     let mut step = Step::new(Capability::MeetingMerge);
@@ -29,14 +35,18 @@ pub fn append_merge(
     }
 
     let mut opts = overwrite_opt(options);
+    opts.insert("alignment".into(), alignment_to_arg(&resolved.meeting));
+    opts.insert("participants".into(), participants_to_arg(&resolved.meeting));
     opts.insert(
-        "alignment".into(),
-        alignment_to_arg(&resolved.meeting),
+        "texts".into(),
+        ArgValue::Strings(text_ids.iter().cloned().collect()),
     );
-    opts.insert(
-        "participants".into(),
-        participants_to_arg(&resolved.meeting),
-    );
+    if let Some(t) = timeline_id {
+        opts.insert("timeline".into(), ArgValue::String(t.to_string()));
+    }
+    if let Some(m) = mix_ref {
+        opts.insert("mix".into(), ArgValue::String(m.to_string()));
+    }
     step.options = opts;
     steps.push(step);
     Ok(())
@@ -47,6 +57,10 @@ fn alignment_to_arg(m: &MeetingModel) -> ArgValue {
     map.insert(
         "mode".into(),
         ArgValue::String(m.alignment.mode.as_str().into()),
+    );
+    map.insert(
+        "reference".into(),
+        ArgValue::String(m.alignment.reference.as_str().into()),
     );
     if let Some(ms) = m.alignment.tolerance_ms {
         map.insert("tolerance_ms".into(), ArgValue::Number(f64::from(ms)));
@@ -66,8 +80,6 @@ fn participants_to_arg(m: &MeetingModel) -> ArgValue {
             .iter()
             .map(known_to_arg)
             .collect();
-        // Represent list as nested maps under indexed keys — Job ArgValue has no Array-of-map.
-        // Use Strings of JSON for known list to keep schema simple, OR Map with id keys.
         let mut known_map = BTreeMap::new();
         for k in &m.participants.known {
             let id = k.id.clone().unwrap_or_else(|| "unknown".into());

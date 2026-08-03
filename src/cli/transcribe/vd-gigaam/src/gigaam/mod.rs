@@ -1,6 +1,7 @@
 //! GigaAM-only inference stack.
 
 pub mod catalog;
+pub mod chunk;
 pub mod config;
 pub mod decoder;
 pub mod encoder;

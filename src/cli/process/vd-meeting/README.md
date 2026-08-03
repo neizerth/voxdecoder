@@ -119,10 +119,12 @@ Omit `purposes` to use defaults:
 | Role | Situation | Default purposes |
 |------|-----------|------------------|
 | `participant` | any | `[transcript]` |
-| `room` | with participant tracks | `[timeline]` only (mix for diarize, **no** room ASR) |
+| `room` | with participant tracks | `[timeline]` only (mix for diarize **or** merge alignment reference — **no** room ASR by default) |
 | `room` | alone, diarization auto/true | `[transcript, timeline]` |
 | `room` | alone, diarization false | `[transcript]` |
 | `context` | any | (none) |
+
+With participant tracks, the room mix can still feed **`meeting-merge` without diarization**: set `meeting.diarization.enabled: false` and `meeting.alignment.reference: mix` (or `auto`). The planner passes prepared room audio into merge as a timing reference; track transcripts supply text and speaker identity. `alignment.reference: none` ignores the mix (tracks only). Full acoustic force-align remains future work — MVP uses track segment clocks clamped to mix duration when available.
 
 ### Input roles
 
@@ -222,6 +224,11 @@ meeting:
 
   alignment:
     mode: longest
+    # reference: auto          # auto | mix | timeline | none
+    #   auto: timeline if diarize ran, else mix if room present, else none
+    #   mix: room audio into meeting-merge (no diarize required)
+    #   timeline: require diarize timeline
+    #   none: tracks only (ignore mix)
     # tolerance_ms: 500
     # allow_clock_drift: false
 ```

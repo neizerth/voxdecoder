@@ -228,6 +228,8 @@ pub struct MeetingPlanRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub document: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub meeting_yaml: Option<String>,
@@ -239,10 +241,11 @@ pub fn plan_meeting(
     store: Option<&JobStore>,
 ) -> Result<Job, PlanError> {
     let (meeting_req, mut options) = materialize_meeting(request, data_dir, store)?;
-    if request.engine.is_some() || request.model.is_some() {
+    if request.engine.is_some() || request.model.is_some() || request.device.is_some() {
         options.transcribe = TranscribeDefaults {
             engine: request.engine.clone().or(options.transcribe.engine),
             model: request.model.clone().or(options.transcribe.model),
+            device: request.device.clone().or(options.transcribe.device),
             overwrite: options.transcribe.overwrite,
         };
     }
