@@ -52,14 +52,13 @@ pub fn ffmpeg_available() -> bool {
 }
 
 pub fn gigaam_models_root() -> PathBuf {
-    let models_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../transcribe/vd-gigaam/models");
+    let models_root =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../transcribe/vd-gigaam/models");
     models_root.canonicalize().unwrap_or(models_root)
 }
 
 pub fn ctc_model_ready(models_root: &Path) -> bool {
-    models_root
-        .join("v3_e2e_ctc/model.safetensors")
-        .is_file()
+    models_root.join("v3_e2e_ctc/model.safetensors").is_file()
 }
 
 /// Prefer target-dir siblings (`vd-gigaam`, `vd-preprocess`, …) on PATH.

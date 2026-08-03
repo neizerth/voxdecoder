@@ -3,6 +3,7 @@
 use std::fs;
 
 use tempfile::TempDir;
+use vd_fix_asr::asr::stages::ConfidencePolicy;
 use vd_fix_asr::asr::{AsrFixer, AsrLoadOptions};
 use vd_fix_asr::context::{load_materials, SpanContext};
 use vd_fix_asr::types::{FixOptions, Language};
@@ -21,6 +22,9 @@ fn repairs_githap_to_githab() {
         language: Language::Ru,
         context_paths: vec![],
         neighbor_window: 1,
+        confidence_policy: ConfidencePolicy::default(),
+        dictionary_paths: vec![],
+        project_dir: None,
     })
     .unwrap();
     let mats = fixer.materials();
@@ -43,6 +47,9 @@ fn neighbor_does_not_strip_case_ending() {
         language: Language::Ru,
         context_paths: vec![],
         neighbor_window: 1,
+        confidence_policy: ConfidencePolicy::default(),
+        dictionary_paths: vec![],
+        project_dir: None,
     })
     .unwrap();
     let mats = fixer.materials();
@@ -72,6 +79,9 @@ fn context_vocabulary_can_correct_close_token() {
         language: Language::En,
         context_paths: vec![ctx_file],
         neighbor_window: 0,
+        confidence_policy: ConfidencePolicy::default(),
+        dictionary_paths: vec![],
+        project_dir: None,
     })
     .unwrap();
     let mats = fixer.materials();

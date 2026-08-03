@@ -27,14 +27,15 @@ fn dry_run_default_json() {
         .clone();
     let v: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
     let steps = v["steps"].as_array().unwrap();
-    assert_eq!(steps.len(), 7);
+    assert_eq!(steps.len(), 8);
     assert_eq!(steps[0]["use"], "preprocess");
     assert_eq!(steps[0]["id"], "prepared");
     assert_eq!(steps[1]["use"], "transcribe");
     assert_eq!(steps[1]["id"], "transcript");
     assert_eq!(steps[2]["use"], "prepare-context");
     assert_eq!(steps[3]["use"], "fix-casing");
-    assert_eq!(steps[6]["use"], "fix-layout");
+    assert_eq!(steps[5]["use"], "fix-disfluency");
+    assert_eq!(steps[7]["use"], "fix-layout");
     assert_eq!(v["context"]["docs"], ".");
 }
 

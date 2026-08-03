@@ -33,9 +33,7 @@ pub fn is_video_path(path: &Path) -> bool {
             .and_then(|e| e.to_str())
             .map(|e| e.to_ascii_lowercase())
             .as_deref(),
-        Some(
-            "mp4" | "mkv" | "mov" | "webm" | "avi" | "m4v" | "mpeg" | "mpg" | "flv" | "wmv"
-        )
+        Some("mp4" | "mkv" | "mov" | "webm" | "avi" | "m4v" | "mpeg" | "mpg" | "flv" | "wmv")
     )
 }
 
@@ -129,6 +127,13 @@ pub fn default_job(args: &DefaultJobArgs) -> Job {
         Step {
             options: overwrite_opts(args.overwrite),
             ..Step::new(Capability::FixAsr)
+        }
+        .into(),
+    );
+    steps.push(
+        Step {
+            options: overwrite_opts(args.overwrite),
+            ..Step::new(Capability::FixDisfluency)
         }
         .into(),
     );

@@ -1,0 +1,52 @@
+# Builtin language pack — universal punctuation and formatting rules
+
+# Double period normalization
+- id: double-period
+  confidence: certain
+  when:
+    type: regex
+    pattern: '\.\.+'
+  action:
+    type: replace
+    with: '.'
+
+# Multiple exclamation marks
+- id: multiple-exclamation
+  confidence: certain
+  when:
+    type: regex
+    pattern: '!{2,}'
+  action:
+    type: replace
+    with: '!'
+
+# Multiple question marks
+- id: multiple-question
+  confidence: certain
+  when:
+    type: regex
+    pattern: '\?{2,}'
+  action:
+    type: replace
+    with: '?'
+
+# Mixed punctuation (??! or !?)
+- id: mixed-punctuation
+  confidence: certain
+  when:
+    type: regex
+    pattern: '[?!]{2,}'
+  action:
+    type: replace
+    with: '?'
+
+# Comma followed by space and lowercase (should be capitalized after period)
+# This is context-dependent; simplified version removes repeated commas
+- id: double-comma
+  confidence: certain
+  when:
+    type: regex
+    pattern: ',,+'
+  action:
+    type: replace
+    with: ','

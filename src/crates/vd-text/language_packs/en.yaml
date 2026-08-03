@@ -1,0 +1,167 @@
+# English language pack — English-specific filler words, discourse markers, normalization
+
+# English filler words (hesitation sounds and common fillers)
+- id: en-filler-um
+  confidence: certain
+  when:
+    type: token
+    value: 'um'
+  action:
+    type: remove
+
+- id: en-filler-uh
+  confidence: certain
+  when:
+    type: token
+    value: 'uh'
+  action:
+    type: remove
+
+- id: en-filler-uhh
+  confidence: certain
+  when:
+    type: token
+    value: 'uhh'
+  action:
+    type: remove
+
+- id: en-filler-umm
+  confidence: certain
+  when:
+    type: token
+    value: 'umm'
+  action:
+    type: remove
+
+- id: en-filler-ummm
+  confidence: certain
+  when:
+    type: token
+    value: 'ummm'
+  action:
+    type: remove
+
+- id: en-filler-hmm
+  confidence: certain
+  when:
+    type: token
+    value: 'hmm'
+  action:
+    type: remove
+
+- id: en-filler-ahh
+  confidence: certain
+  when:
+    type: token
+    value: 'ahh'
+  action:
+    type: remove
+
+- id: en-filler-err
+  confidence: certain
+  when:
+    type: token
+    value: 'err'
+  action:
+    type: remove
+
+# English discourse markers (often optional)
+- id: en-discourse-like
+  confidence: likely
+  when:
+    type: token
+    value: 'like'
+  action:
+    type: remove
+
+- id: en-discourse-you-know
+  confidence: likely
+  when:
+    type: token
+    value: 'you know'
+  action:
+    type: remove
+
+- id: en-discourse-basically
+  confidence: likely
+  when:
+    type: token
+    value: 'basically'
+  action:
+    type: remove
+
+- id: en-discourse-actually
+  confidence: likely
+  when:
+    type: token
+    value: 'actually'
+  action:
+    type: remove
+
+- id: en-discourse-i-mean
+  confidence: likely
+  when:
+    type: token
+    value: 'I mean'
+  action:
+    type: remove
+
+- id: en-discourse-sort-of
+  confidence: likely
+  when:
+    type: token
+    value: 'sort of'
+  action:
+    type: remove
+
+- id: en-discourse-kind-of
+  confidence: likely
+  when:
+    type: token
+    value: 'kind of'
+  action:
+    type: remove
+
+# Repeated word rule (for "hello hello" → "hello")
+- id: en-repeated-word
+  confidence: likely
+  when:
+    type: repeated_word
+  action:
+    type: remove_second
+
+# Merged word (token split): "goodmorning" → "good morning"
+- id: en-merged-word
+  confidence: likely
+  when:
+    type: merged_word
+  action:
+    type: split
+
+# Common English contractions and normalizations
+- id: en-normalize-dont
+  confidence: certain
+  when:
+    type: token
+    value: 'dont'
+  action:
+    type: replace
+    with: "don't"
+
+- id: en-normalize-cant
+  confidence: certain
+  when:
+    type: token
+    value: 'cant'
+  action:
+    type: replace
+    with: "can't"
+
+- id: en-normalize-wont
+  confidence: certain
+  when:
+    type: token
+    value: 'wont'
+  action:
+    type: replace
+    with: "won't"

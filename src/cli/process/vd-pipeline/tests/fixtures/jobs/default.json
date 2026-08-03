@@ -39,6 +39,9 @@
       "use": "fix-asr"
     },
     {
+      "use": "fix-disfluency"
+    },
+    {
       "use": "fix-terms"
     },
     {

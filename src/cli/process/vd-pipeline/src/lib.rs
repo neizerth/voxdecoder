@@ -19,12 +19,12 @@ pub use job::{
     ArtifactRef, Capability, DefaultJobArgs, Job, JobContext, JobError, JobInput, JobOutput,
     ResolvedJob, ResolvedStep, Step, TranscribeEngine, WorkflowNode, WorkflowPlan,
 };
+pub use meeting_artifact::{
+    MeetingArtifact, MeetingTurn, MergeStrategy, SpeakerSegment, SpeakerTimeline,
+};
 pub use report::{
     backend_from_options, format_rfc3339, model_from_options, ArtifactStat, ExecutionReport,
     JobReportStatus, PhaseReport, StepReport, StepReportStatus,
-};
-pub use meeting_artifact::{
-    MeetingArtifact, MeetingTurn, MergeStrategy, SpeakerSegment, SpeakerTimeline,
 };
 
 pub use vd_artifact as artifact;

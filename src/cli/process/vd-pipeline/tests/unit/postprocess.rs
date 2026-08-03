@@ -17,7 +17,10 @@ fn postprocess_requires_recipes() {
         max_parallel: None,
         resources: Default::default(),
         continue_on_error: false,
-        steps: vec![Step::new(Capability::Postprocess)].into_iter().map(Into::into).collect(),
+        steps: vec![Step::new(Capability::Postprocess)]
+            .into_iter()
+            .map(Into::into)
+            .collect(),
     };
     let err = resolve_job(job).unwrap_err();
     assert_eq!(err.exit_code(), 2);

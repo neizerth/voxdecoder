@@ -153,9 +153,8 @@ impl<'de> Deserialize<'de> for DiarizationEnabled {
             }
 
             fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
-                DiarizationEnabled::parse(v).ok_or_else(|| {
-                    E::unknown_variant(v, &["auto", "true", "false"])
-                })
+                DiarizationEnabled::parse(v)
+                    .ok_or_else(|| E::unknown_variant(v, &["auto", "true", "false"]))
             }
         }
 

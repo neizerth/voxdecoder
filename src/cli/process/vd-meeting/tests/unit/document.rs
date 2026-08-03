@@ -65,7 +65,8 @@ meeting:
 
 #[test]
 fn json_enabled_bool_true() {
-    let raw = r#"{"inputs":[{"role":"room","path":"m.wav"}],"meeting":{"diarization":{"enabled":true}}}"#;
+    let raw =
+        r#"{"inputs":[{"role":"room","path":"m.wav"}],"meeting":{"diarization":{"enabled":true}}}"#;
     let req: vd_meeting::MeetingRequest = serde_json::from_str(raw).unwrap();
     assert_eq!(req.meeting.diarization.enabled, DiarizationEnabled::True);
 }

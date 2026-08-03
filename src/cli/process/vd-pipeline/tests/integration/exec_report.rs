@@ -43,7 +43,10 @@ fn report_records_step_order_and_timings() {
                 output: Some(PathBuf::from("/work/c.txt")),
                 ..Step::new(Capability::FixCasing)
             },
-        ].into_iter().map(Into::into).collect(),
+        ]
+        .into_iter()
+        .map(Into::into)
+        .collect(),
     };
     let resolved = resolve_job(job).unwrap();
     // Small sleep so wall clock advances between steps (stub is instant).
@@ -94,7 +97,10 @@ fn report_on_failure_is_partial() {
                 output: Some(PathBuf::from("/work/c.txt")),
                 ..Step::new(Capability::FixCasing)
             },
-        ].into_iter().map(Into::into).collect(),
+        ]
+        .into_iter()
+        .map(Into::into)
+        .collect(),
     };
     let resolved = resolve_job(job).unwrap();
     let exec = Executor {

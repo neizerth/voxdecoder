@@ -4,7 +4,7 @@ Local ASR wording fixer (misheard words, homophones, ru/en mix-ups).
 
 **Rewrites only wording needed to restore meaning.** The input artifact type and structure are preserved.
 
-**Status: implemented (builtin rules backend).** Pack downloads are still a possible future — see below.
+**Status: implemented — staged deterministic pipeline (ADR 0010).** Pack downloads are still a possible future — see below.
 
 **Language default: `ru`** — Russian with English insertions (see [TODO-languages.md](TODO-languages.md)).
 
@@ -70,15 +70,16 @@ Existing outputs → exit 2 unless `--overwrite` (or `--in-place`).
 
 #### Behavior
 
-**Rewrites only wording needed to restore meaning.**
+**Rewrites only wording needed to restore meaning; never rewrites for style.**
 
-Changes **words / local meaning** when recognition was wrong:
+Six deterministic stages (ADR 0010), in order:
 
-- misrecognized words
-- homophones
-- Russian / English mix-ups
-- technical terms distorted by ASR
-- obvious errors that break meaning
+1. Spacing — tabs, space runs, line endings
+2. Punctuation — duplicate marks, `...`→`…`, space-before-punctuation
+3. Duplicates — adjacent repeated words, repeated filler syllables, within-token doubling
+4. Merge/split — dictionary-assisted word-boundary repair
+5. Alphabet — Latin/Cyrillic homoglyph normalization, only at extremely high confidence
+6. Dictionary — curated ASR-mistake lookup + context/neighbor fuzzy correction
 
 Does not:
 
@@ -115,8 +116,53 @@ It **may** change words, but **only inside transcript text spans**.
 | `--json` | — | — | With `--dry-run`: machine-readable plan on stdout |
 | `--progress` | — | `text` | Progress on stderr: `text` or `json` |
 | `--quiet` | `-q` | — | Disable progress on stderr |
+| `--strict` | — | — | Apply only `Certain`-confidence rules (ADR 0010). Conflicts with `--aggressive` |
+| `--aggressive` | — | — | Also apply `Unsafe`-confidence rules. Conflicts with `--strict` |
+| `--report` | — | — | Print a per-category rule-hit count as JSON after the run |
+| `--dictionary` | — | — | Extra ASR-mistake dictionary file(s) (`terms.yml`-shaped). **Repeatable**, highest-priority layer |
+| `--project` | — | — | Project dir providing `.voxdecoder/asr-dictionary.yml` (mid-priority layer, below `--dictionary`, above builtin) |
 
 Prefer prepared assets from [`vd-assets`](../../process/vd-assets/). Default: nearest **`.voxdecoder/`** (walk up from the input). Override with `--context`, `$VD_PROJECT_DIR`, or `VD_PROJECT_DIR=` in `.voxdecoder/env` / `.env`. The assets directory is the unit: Markdown → recognition context; `terms.yml` → vocabulary hints. Not canonical term locking (`vd-fix-terms`).
+
+#### Confidence & dictionaries (ADR 0010)
+
+Every rule carries a confidence: `certain | likely | unsafe`. Default policy applies `certain` + `likely`, never `unsafe`. `--strict` narrows to `certain` only; `--aggressive` also applies `unsafe`.
+
+ASR-mistake dictionary, layered `builtin → pack → project → user` (last wins):
+
+```text
+builtin        — shipped ru/en phonetic-confusion table
+pack           — reserved for future language-pack assets (none shipped yet)
+project        — {--project}/.voxdecoder/asr-dictionary.yml, if present
+user           — --dictionary PATH (repeatable)
+```
+
+Dictionary file shape (same `terms.yml` format as [`vd-assets`](../../process/vd-assets/) / `vd-fix-terms`):
+
+```yaml
+version: 1
+entries:
+  - canonical: JSFiddle
+    variants: ["JS Fidls"]
+forms: []
+```
+
+`--report` output shape:
+
+```json
+{
+  "alphabet": 0,
+  "dictionary": 1,
+  "duplicate": 0,
+  "merge": 0,
+  "punctuation": 0,
+  "spacing": 0,
+  "split": 0,
+  "unsafe": 0
+}
+```
+
+Per-category counts are hits actually applied under the active policy; `unsafe` counts hits found but withheld (not just `Confidence::Unsafe` ones — anything the policy declined, e.g. `likely` under `--strict`).
 
 #### Examples
 
@@ -136,6 +182,10 @@ vd-fix-asr run -i meeting.txt --language ru --progress=json
 vd-fix-asr run -i meeting.txt --dry-run
 vd-fix-asr run -i meeting.txt --dry-run --json
 vd-fix-asr run -i meeting.txt -q
+vd-fix-asr run -i meeting.txt --strict
+vd-fix-asr run -i meeting.txt --aggressive --report
+vd-fix-asr run -i meeting.txt --dictionary ./terms.yml
+vd-fix-asr run -i meeting.txt --project .
 ```
 
 ##### `--dry-run`
@@ -180,7 +230,7 @@ Machine-readable (`--dry-run --json`):
 | 3 | Input file missing / unreadable / unsupported artifact type |
 | 4 | Inference backend failed to initialize |
 
-Exit 2 includes: unknown option, incompatible flags (`-o` with `-d` / `--in-place`), output exists without `--overwrite`, unknown `--language`.
+Exit 2 includes: unknown option, incompatible flags (`-o` with `-d` / `--in-place`, `--strict` with `--aggressive`), output exists without `--overwrite`, unknown `--language`.
 
 ---
 

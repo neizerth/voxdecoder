@@ -1,7 +1,7 @@
 //! MeetingPlanner — validate · normalize · plan Job · submit.
 
-mod artifacts;
 mod artifact_name;
+mod artifacts;
 mod graph;
 mod materialize;
 mod normalize;
@@ -45,10 +45,7 @@ pub struct PlannedJob {
 pub struct MeetingPlanner;
 
 impl MeetingPlanner {
-    pub fn plan(
-        request: &MeetingRequest,
-        options: &BuildOptions,
-    ) -> Result<PlannedJob, PlanError> {
+    pub fn plan(request: &MeetingRequest, options: &BuildOptions) -> Result<PlannedJob, PlanError> {
         let data_dir = request
             .working_dir
             .clone()
@@ -62,9 +59,6 @@ impl MeetingPlanner {
 }
 
 /// Plan MeetingRequest + BuildOptions → Job.
-pub fn plan_job(
-    request: &MeetingRequest,
-    options: &BuildOptions,
-) -> Result<Job, PlanError> {
+pub fn plan_job(request: &MeetingRequest, options: &BuildOptions) -> Result<Job, PlanError> {
     Ok(MeetingPlanner::plan(request, options)?.job)
 }

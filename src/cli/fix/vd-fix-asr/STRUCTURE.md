@@ -76,9 +76,20 @@ src/cli/fix/vd-fix-asr/
 │   ├── paths.rs                # VD_FIX_ASR_* via `vd_artifact::paths`
 │   └── asr/                    # this binary only — not a shared fix engine
 │       ├── mod.rs
-│       ├── fixer.rs            # AsrFixer::load / .fix → FixResult
+│       ├── fixer.rs            # AsrFixer::load / .fix → FixOutcome (derefs to FixResult)
 │       ├── config.rs           # AsrLoadOptions
-│       └── backend/            # private implementation detail
+│       ├── rule.rs             # Rule trait, Confidence, RuleCategory, RuleHit
+│       ├── report.rs           # --report aggregation
+│       ├── context_fuzzy.rs    # Stage 6 fuzzy half — needs SpanContext, outside Pipeline
+│       ├── stages/              # ADR 0010 stages 1–6 (static half), fixed pipeline order
+│       │   ├── mod.rs          # Stage/Pipeline/ConfidencePolicy/RuleStage
+│       │   ├── token.rs        # shared word tokenizer
+│       │   ├── spacing.rs · punctuation.rs · duplicate.rs · merge_split.rs
+│       │   ├── alphabet.rs     # Latin/Cyrillic homoglyph normalization
+│       │   └── dictionary.rs   # Stage 6 static lookup
+│       └── lang/                # builtin → pack → project → user dictionary layering
+│           ├── mod.rs
+│           └── ru.rs · en.rs   # builtin ASR-mistake tables
 │
 ├── tests/                      # TBD
 │   ├── unit/
@@ -207,7 +218,7 @@ Output path is resolved **after** load so extension / type-aware naming stays ho
 | Keep in shared crates | Keep in this binary |
 |------------------------|---------------------|
 | Artifact (`vd-artifact`) / progress (`vd-progress`) / `.fixed.` (`vd-output`) / `paths` | `context/` (`visit_text_spans`, materials) |
-| `ArtifactType`, `TextSpan { id, index, text }`, … | `asr/` backend; future asset-pack install UX |
+| `ArtifactType`, `TextSpan { id, index, text }`, … | `asr/` stages + dictionary layering; future asset-pack install UX |
 
 | Rejected |
 |----------|

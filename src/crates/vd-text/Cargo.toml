@@ -1,0 +1,29 @@
+[package]
+name = "vd-text"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Shared local linguistic primitives (ADR 0013) — Rust-native only: terminology matching, text similarity"
+publish = false
+
+[lib]
+name = "vd_text"
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+aho-corasick = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+strsim = "0.11"
+thiserror = "2"
+
+[dev-dependencies]
+
+[[test]]
+name = "unit"
+path = "tests/unit/mod.rs"

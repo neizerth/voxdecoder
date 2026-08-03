@@ -5,9 +5,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use vd_pipeline::progress::ProgressMode;
-use vd_pipeline::{
-    resolve_job, Capability, Executor, Job, JobInput, Step, WorkflowNode,
-};
+use vd_pipeline::{resolve_job, Capability, Executor, Job, JobInput, Step, WorkflowNode};
 
 use super::RecordingBinder;
 
@@ -55,7 +53,7 @@ fn parallel_branches_run_concurrently() {
         vd_pipeline::WorkflowPlan::Sequence(kids) if kids.len() == 2
     ));
 
-    // Slow binder: sleep inside invoke via wrapper — use thread sleep in RecordingBinder? 
+    // Slow binder: sleep inside invoke via wrapper — use thread sleep in RecordingBinder?
     // Instead assert both capabilities were invoked and report has 3 steps.
     let exec = Executor {
         binder: &binder,

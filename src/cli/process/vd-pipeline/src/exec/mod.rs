@@ -146,7 +146,10 @@ impl<B: Binder + Sync> Executor<B> {
             }
         };
         status::emit_done(&progress, Some(&out), started.elapsed().as_secs_f64());
-        Ok(ExecOutcome { output: out, report })
+        Ok(ExecOutcome {
+            output: out,
+            report,
+        })
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -162,9 +165,15 @@ impl<B: Binder + Sync> Executor<B> {
         state: &mut RunState,
     ) -> Result<(), ExecError> {
         match plan {
-            WorkflowPlan::Leaf(idx) => {
-                self.run_leaf(*idx, resolved, progress, total, continue_on_error, pool, state)
-            }
+            WorkflowPlan::Leaf(idx) => self.run_leaf(
+                *idx,
+                resolved,
+                progress,
+                total,
+                continue_on_error,
+                pool,
+                state,
+            ),
             WorkflowPlan::Sequence(kids) => {
                 for kid in kids {
                     self.run_plan(
@@ -375,9 +384,12 @@ impl<B: Binder + Sync> Executor<B> {
             }
         }
         if step.capability == Capability::MeetingMerge {
-            if let Err(e) =
-                resolve_meeting_merge_inputs(&mut options, job_step, &artifacts_map, &resolved.working_dir)
-            {
+            if let Err(e) = resolve_meeting_merge_inputs(
+                &mut options,
+                job_step,
+                &artifacts_map,
+                &resolved.working_dir,
+            ) {
                 let err = ExecError::Step(e);
                 status::emit_error(progress, "step_failed", &err.to_string());
                 let now = SystemTime::now();
@@ -578,7 +590,12 @@ fn push_plan_text(
     match plan {
         WorkflowPlan::Leaf(i) => {
             let s = &resolved.steps[*i];
-            let mut parts = vec![format!("{}. {} [{}]", s.index, s.capability.as_str(), s.path)];
+            let mut parts = vec![format!(
+                "{}. {} [{}]",
+                s.index,
+                s.capability.as_str(),
+                s.path
+            )];
             if s.skip {
                 parts.push("skip".into());
             }
@@ -640,10 +657,9 @@ fn resolve_postprocess_inputs(
                     .map(|(_, p)| p.clone())
                     .ok_or_else(|| format!("postprocess input '{name}': no match for {id}"))?
             }
-            ArtifactRef::Id(id) => artifacts
-                .get(&id)
-                .cloned()
-                .ok_or_else(|| format!("postprocess input '{name}': artifact not produced: {id}"))?,
+            ArtifactRef::Id(id) => artifacts.get(&id).cloned().ok_or_else(|| {
+                format!("postprocess input '{name}': artifact not produced: {id}")
+            })?,
             ArtifactRef::Path(p) => {
                 if p.is_absolute() {
                     p
@@ -679,7 +695,10 @@ fn resolve_meeting_merge_inputs(
                 }
             }
         };
-        resolved.insert(raw.to_string(), ArgValue::String(path.display().to_string()));
+        resolved.insert(
+            raw.to_string(),
+            ArgValue::String(path.display().to_string()),
+        );
     }
     // Also resolve named option refs (texts / mix / timeline) when they are artifact ids.
     for key in ["mix", "timeline"] {

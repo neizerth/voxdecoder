@@ -3496,10 +3496,28 @@ dependencies = [
  "vd-assets",
  "vd-output",
  "vd-progress",
+ "vd-text",
 ]
 
 [[package]]
 name = "vd-fix-casing"
+version = "0.1.0"
+dependencies = [
+ "assert_cmd",
+ "clap",
+ "predicates",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.19",
+ "toml",
+ "vd-artifact",
+ "vd-output",
+ "vd-progress",
+]
+
+[[package]]
+name = "vd-fix-disfluency"
 version = "0.1.0"
 dependencies = [
  "assert_cmd",
@@ -3530,6 +3548,23 @@ dependencies = [
  "vd-artifact",
  "vd-output",
  "vd-progress",
+]
+
+[[package]]
+name = "vd-fix-overlap"
+version = "0.1.0"
+dependencies = [
+ "assert_cmd",
+ "clap",
+ "predicates",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.19",
+ "toml",
+ "vd-artifact",
+ "vd-output",
+ "vd-text",
 ]
 
 [[package]]
@@ -3710,6 +3745,18 @@ dependencies = [
  "vd-meeting",
  "vd-pipeline",
  "vd-progress",
+]
+
+[[package]]
+name = "vd-text"
+version = "0.1.0"
+dependencies = [
+ "aho-corasick",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "strsim",
+ "thiserror 2.0.19",
 ]
 
 [[package]]

@@ -41,12 +41,12 @@ pub fn append_merge(
     }
 
     let mut opts = overwrite_opt(options);
-    opts.insert(
-        "artifact_stem".into(),
-        ArgValue::String(stem),
-    );
+    opts.insert("artifact_stem".into(), ArgValue::String(stem));
     opts.insert("alignment".into(), alignment_to_arg(&resolved.meeting));
-    opts.insert("participants".into(), participants_to_arg(&resolved.meeting));
+    opts.insert(
+        "participants".into(),
+        participants_to_arg(&resolved.meeting),
+    );
     opts.insert(
         "texts".into(),
         ArgValue::Strings(text_ids.iter().cloned().collect()),
@@ -84,12 +84,7 @@ fn alignment_to_arg(m: &MeetingModel) -> ArgValue {
 fn participants_to_arg(m: &MeetingModel) -> ArgValue {
     let mut map = BTreeMap::new();
     if !m.participants.known.is_empty() {
-        let known: Vec<ArgValue> = m
-            .participants
-            .known
-            .iter()
-            .map(known_to_arg)
-            .collect();
+        let known: Vec<ArgValue> = m.participants.known.iter().map(known_to_arg).collect();
         let mut known_map = BTreeMap::new();
         for k in &m.participants.known {
             let id = k.id.clone().unwrap_or_else(|| "unknown".into());

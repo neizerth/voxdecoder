@@ -49,7 +49,11 @@ impl ArtifactRegistry {
             .collect()
     }
 
-    pub fn extend_from_map(&mut self, map: &std::collections::HashMap<String, PathBuf>, kind: &str) {
+    pub fn extend_from_map(
+        &mut self,
+        map: &std::collections::HashMap<String, PathBuf>,
+        kind: &str,
+    ) {
         for (k, p) in map {
             self.insert(k.clone(), kind, p.clone());
         }

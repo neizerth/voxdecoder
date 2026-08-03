@@ -164,7 +164,10 @@ mod tests {
         let input = dir.path().join("meeting.txt");
         fs::write(&input, "x").unwrap();
 
-        assert_eq!(project_dir_if_present(&input).as_deref(), Some(assets.as_path()));
+        assert_eq!(
+            project_dir_if_present(&input).as_deref(),
+            Some(assets.as_path())
+        );
     }
 
     #[test]
@@ -180,7 +183,10 @@ mod tests {
         let input = dir.path().join("a.txt");
         fs::write(&input, "x").unwrap();
 
-        assert_eq!(project_dir_if_present(&input).as_deref(), Some(custom.as_path()));
+        assert_eq!(
+            project_dir_if_present(&input).as_deref(),
+            Some(custom.as_path())
+        );
     }
 
     #[test]

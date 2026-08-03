@@ -197,9 +197,7 @@ fn validate_run(cli: RunCli, force_dry: bool) -> Result<RunArgs, CliError> {
     }
     let meeting_file = cli.meeting_flag.or(cli.meeting_file);
     if meeting_file.is_none() && cli.inputs.is_empty() {
-        return Err(CliError::usage(
-            "need a meeting document and/or --input …",
-        ));
+        return Err(CliError::usage("need a meeting document and/or --input …"));
     }
     Ok(RunArgs {
         meeting_file,

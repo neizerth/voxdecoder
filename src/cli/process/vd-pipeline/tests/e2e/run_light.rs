@@ -107,9 +107,7 @@ fn run_diarize_stub() {
     }
     cmd.arg(&job).arg("-q").assert().success();
 
-    let out = dir
-        .path()
-        .join(".voxdecoder/work/meeting.diarization.json");
+    let out = dir.path().join(".voxdecoder/work/meeting.diarization.json");
     assert!(out.exists(), "expected {}", out.display());
 }
 

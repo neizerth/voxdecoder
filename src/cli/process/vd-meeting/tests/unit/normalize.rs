@@ -69,7 +69,10 @@ fn room_alone_auto_transcript_and_diarize() {
         &BuildOptions::default(),
     )
     .unwrap();
-    assert!(job.leaf_steps().iter().any(|s| s.r#use == Capability::Diarize));
+    assert!(job
+        .leaf_steps()
+        .iter()
+        .any(|s| s.r#use == Capability::Diarize));
     assert!(job
         .leaf_steps()
         .iter()
@@ -128,7 +131,10 @@ fn diarization_false_skips() {
         &BuildOptions::default(),
     )
     .unwrap();
-    assert!(!job.leaf_steps().iter().any(|s| s.r#use == Capability::Diarize));
+    assert!(!job
+        .leaf_steps()
+        .iter()
+        .any(|s| s.r#use == Capability::Diarize));
 }
 
 #[test]

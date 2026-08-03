@@ -154,13 +154,11 @@ fn parse_input_spec(spec: &str) -> Result<InputSource, CliError> {
                     if p.is_empty() {
                         continue;
                     }
-                    purposes.push(
-                        crate::model::InputPurpose::parse(p).ok_or_else(|| {
-                            CliError::usage(format!(
-                                "unknown purpose: {p} (expected transcript|timeline)"
-                            ))
-                        })?,
-                    );
+                    purposes.push(crate::model::InputPurpose::parse(p).ok_or_else(|| {
+                        CliError::usage(format!(
+                            "unknown purpose: {p} (expected transcript|timeline)"
+                        ))
+                    })?);
                 }
             }
             other => {
@@ -203,11 +201,7 @@ fn apply_config_defaults(request: &mut MeetingRequest, cfg: &config::FileConfig)
     }
 }
 
-fn merge_build_options(
-    options: &mut BuildOptions,
-    args: &RunArgs,
-    cfg: &config::FileConfig,
-) {
+fn merge_build_options(options: &mut BuildOptions, args: &RunArgs, cfg: &config::FileConfig) {
     if let Some(asr) = args.asr.clone().or_else(|| cfg.asr.clone()) {
         options.transcribe.engine = Some(asr);
     }

@@ -5,7 +5,9 @@ use std::time::Instant;
 
 use super::{CliError, ProgressMode};
 use crate::artifact::{self, count_text_spans};
-use crate::asr::{AsrFixer, AsrLoadOptions};
+use crate::asr::rule::RuleHit;
+use crate::asr::stages::ConfidencePolicy;
+use crate::asr::{report, AsrFixer, AsrLoadOptions};
 use crate::config::{self, resolve_run, RunOverrides};
 use crate::context::visit_text_spans;
 use crate::progress::{Progress, ProgressEvent};
@@ -25,6 +27,11 @@ pub struct RunArgs {
     pub json: bool,
     pub progress: Option<ProgressMode>,
     pub quiet: bool,
+    pub strict: bool,
+    pub aggressive: bool,
+    pub report: bool,
+    pub dictionary: Vec<PathBuf>,
+    pub project: Option<PathBuf>,
 }
 
 impl RunArgs {
@@ -113,10 +120,17 @@ pub fn execute(args: RunArgs) -> Result<(), CliError> {
         CliError::with_code(e.exit_code(), e.to_string())
     })?;
 
+    let policy = ConfidencePolicy {
+        certain_only: args.strict,
+        allow_unsafe: args.aggressive,
+    };
     let fixer = AsrFixer::load(AsrLoadOptions {
         language: resolved.language,
         context_paths: resolved.context.clone(),
         neighbor_window: resolved.context_neighbors,
+        confidence_policy: policy,
+        dictionary_paths: args.dictionary.clone(),
+        project_dir: args.project.clone(),
     })
     .map_err(|e| {
         progress.emit(&ProgressEvent::Error {
@@ -129,6 +143,7 @@ pub fn execute(args: RunArgs) -> Result<(), CliError> {
     let span_total = count_text_spans(&artifact).max(1);
     let mut span_idx = 0u32;
     let mut char_count = 0usize;
+    let mut all_hits: Vec<RuleHit> = Vec::new();
     let materials = fixer.materials().clone();
     let neighbor_window = fixer.neighbor_window();
     visit_text_spans(
@@ -144,12 +159,15 @@ pub fn execute(args: RunArgs) -> Result<(), CliError> {
                 span_idx,
                 span_total as u32,
             ));
-            let result = fixer
+            let outcome = fixer
                 .fix(&span, ctx, FixOptions::default())
                 .map_err(|e| CliError::with_code(e.exit_code(), e.to_string()))?;
-            char_count += result.text.chars().count();
-            if result.changed {
-                *span.text = result.text;
+            char_count += outcome.result.text.chars().count();
+            if args.report {
+                all_hits.extend(outcome.hits);
+            }
+            if outcome.result.changed {
+                *span.text = outcome.result.text;
             }
             Ok(())
         },
@@ -173,6 +191,15 @@ pub fn execute(args: RunArgs) -> Result<(), CliError> {
         duration_sec: Some(duration_sec),
         char_count: Some(char_count),
     });
+
+    if args.report {
+        let counts = report::aggregate(&all_hits, policy);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&counts)
+                .map_err(|e| CliError::with_code(1, e.to_string()))?
+        );
+    }
 
     Ok(())
 }

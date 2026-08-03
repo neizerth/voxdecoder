@@ -5,6 +5,7 @@ members = [
     "src/crates/vd-output",
     "src/crates/vd-progress",
     "src/crates/vd-input",
+    "src/crates/vd-text",
     "src/cli/process/vd-assets",
     "src/cli/process/vd-pipeline",
     "src/cli/process/vd-diarize",
@@ -20,12 +21,15 @@ members = [
     "src/cli/fix/vd-fix-asr",
     "src/cli/fix/vd-fix-terms",
     "src/cli/fix/vd-fix-layout",
+    "src/cli/fix/vd-fix-disfluency",
+    "src/cli/fix/vd-fix-overlap",
 ]
 default-members = [
     "src/crates/vd-artifact",
     "src/crates/vd-output",
     "src/crates/vd-progress",
     "src/crates/vd-input",
+    "src/crates/vd-text",
     "src/cli/process/vd-assets",
     "src/cli/process/vd-pipeline",
     "src/cli/process/vd-diarize",
@@ -41,6 +45,8 @@ default-members = [
     "src/cli/fix/vd-fix-asr",
     "src/cli/fix/vd-fix-terms",
     "src/cli/fix/vd-fix-layout",
+    "src/cli/fix/vd-fix-disfluency",
+    "src/cli/fix/vd-fix-overlap",
 ]
 
 

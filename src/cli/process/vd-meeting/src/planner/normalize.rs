@@ -222,9 +222,7 @@ fn validate_source(src: &InputSource) -> Result<(), PlanError> {
     match (has_path, has_url) {
         (true, false) | (false, true) => {}
         (false, false) => {
-            return Err(PlanError::Usage(
-                "input needs path=… or url=…".into(),
-            ));
+            return Err(PlanError::Usage("input needs path=… or url=…".into()));
         }
         (true, true) => {
             return Err(PlanError::Usage(
@@ -233,9 +231,7 @@ fn validate_source(src: &InputSource) -> Result<(), PlanError> {
         }
     }
     if has_url && src.role == InputRole::Context {
-        return Err(PlanError::Usage(
-            "context inputs cannot use url".into(),
-        ));
+        return Err(PlanError::Usage("context inputs cannot use url".into()));
     }
     if src.role == InputRole::Context && !src.purposes.is_empty() {
         return Err(PlanError::Usage(

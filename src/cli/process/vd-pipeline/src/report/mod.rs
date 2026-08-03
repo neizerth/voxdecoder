@@ -146,7 +146,9 @@ pub fn step_id(step: &ResolvedStep) -> String {
         .unwrap_or_else(|| format!("{}-{}", step.capability.as_str(), step.index))
 }
 
-pub fn backend_from_options(options: &std::collections::BTreeMap<String, ArgValue>) -> Option<String> {
+pub fn backend_from_options(
+    options: &std::collections::BTreeMap<String, ArgValue>,
+) -> Option<String> {
     if let Some(v) = options.get("engine").and_then(ArgValue::as_string) {
         return Some(v);
     }
@@ -160,7 +162,9 @@ pub fn backend_from_options(options: &std::collections::BTreeMap<String, ArgValu
     }
 }
 
-pub fn model_from_options(options: &std::collections::BTreeMap<String, ArgValue>) -> Option<String> {
+pub fn model_from_options(
+    options: &std::collections::BTreeMap<String, ArgValue>,
+) -> Option<String> {
     if let Some(v) = options.get("model").and_then(ArgValue::as_string) {
         return Some(v);
     }

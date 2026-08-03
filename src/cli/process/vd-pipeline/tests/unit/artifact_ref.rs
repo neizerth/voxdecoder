@@ -26,7 +26,13 @@ fn meeting_stage_ids_are_artifact_ids() {
 
 #[test]
 fn known_media_extensions_are_paths() {
-    for raw in ["meeting.wav", "alice.mp3", "room.m4a", "clip.ogg", "notes.txt"] {
+    for raw in [
+        "meeting.wav",
+        "alice.mp3",
+        "room.m4a",
+        "clip.ogg",
+        "notes.txt",
+    ] {
         assert_eq!(
             ArtifactRef::parse(raw),
             ArtifactRef::Path(PathBuf::from(raw)),

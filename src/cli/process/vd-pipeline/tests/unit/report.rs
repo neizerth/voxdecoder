@@ -5,7 +5,8 @@ use std::time::{Duration, UNIX_EPOCH};
 
 use vd_pipeline::{
     backend_from_options, format_rfc3339, model_from_options, ArgValue, ArtifactStat,
-    ExecutionReport, JobReportStatus, StepReport, StepReportStatus};
+    ExecutionReport, JobReportStatus, StepReport, StepReportStatus,
+};
 
 // Re-export helpers used via crate internals — tests use public report types.
 // backend_from_options / format_rfc3339 need to be pub use from lib.
@@ -80,7 +81,10 @@ fn report_json_shape() {
     assert_eq!(v["status"], "ok");
     assert_eq!(v["steps"][0]["duration_ms"], 48_000);
     assert_eq!(v["steps"][0]["backend"], "gigaam");
-    assert!(v["steps"][0].get("phases").is_none() || v["steps"][0]["phases"].as_array().unwrap().is_empty());
+    assert!(
+        v["steps"][0].get("phases").is_none()
+            || v["steps"][0]["phases"].as_array().unwrap().is_empty()
+    );
 }
 
 #[test]

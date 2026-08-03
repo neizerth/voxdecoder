@@ -6,9 +6,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::process::Command;
 
-use vd_pipeline::{
-    default_preprocess_filters, is_video_path, ArgValue, Capability, Step,
-};
+use vd_pipeline::{default_preprocess_filters, is_video_path, ArgValue, Capability, Step};
 
 use crate::model::{AlignmentMode, BuildOptions, InputRole};
 use crate::planner::normalize::{ResolvedInput, ResolvedMeeting};
@@ -107,10 +105,7 @@ pub fn compute_align_pads(resolved: &ResolvedMeeting) -> AlignPads {
     if durs.len() < 2 {
         return pads;
     }
-    let max_dur = durs
-        .iter()
-        .map(|(_, d)| *d)
-        .fold(0.0_f64, f64::max);
+    let max_dur = durs.iter().map(|(_, d)| *d).fold(0.0_f64, f64::max);
     for (bid, d) in durs {
         let pad = max_dur - d;
         if pad > PAD_EPSILON_SEC {
@@ -120,11 +115,7 @@ pub fn compute_align_pads(resolved: &ResolvedMeeting) -> AlignPads {
     pads
 }
 
-pub fn will_preprocess(
-    src: &ResolvedInput,
-    options: &BuildOptions,
-    pads: &AlignPads,
-) -> bool {
+pub fn will_preprocess(src: &ResolvedInput, options: &BuildOptions, pads: &AlignPads) -> bool {
     is_video_path(&src.path)
         || options.transcribe.speed.is_some()
         || pads.pad_for(&src.branch_id).is_some()

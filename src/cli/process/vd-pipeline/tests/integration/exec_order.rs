@@ -50,7 +50,13 @@ fn steps_run_in_order() {
         progress_snapshot: None,
     };
     exec.run(&resolved).unwrap();
-    let caps: Vec<_> = binder.calls.lock().unwrap().iter().map(|c| c.capability).collect();
+    let caps: Vec<_> = binder
+        .calls
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|c| c.capability)
+        .collect();
     assert_eq!(
         caps,
         vec![
@@ -88,6 +94,12 @@ fn skip_does_not_invoke() {
         progress_snapshot: None,
     };
     exec.run(&resolved).unwrap();
-    let caps: Vec<_> = binder.calls.lock().unwrap().iter().map(|c| c.capability).collect();
+    let caps: Vec<_> = binder
+        .calls
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|c| c.capability)
+        .collect();
     assert_eq!(caps, vec![Capability::Transcribe, Capability::FixAsr]);
 }

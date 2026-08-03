@@ -81,6 +81,68 @@ fn room_plus_tracks_resolves_without_room_transcript() {
 }
 
 #[test]
+fn diarized_meeting_appends_fix_overlap_after_merge() {
+    let req = MeetingRequest {
+        working_dir: Some(PathBuf::from("/work")),
+        inputs: vec![
+            src(InputRole::Room, "meeting.wav", None),
+            src(InputRole::Participant, "alice.wav", Some("alice")),
+            src(InputRole::Participant, "bob.wav", Some("bob")),
+        ],
+        meeting: MeetingModel {
+            diarization: DiarizationPolicy {
+                enabled: DiarizationEnabled::Auto,
+            },
+            ..Default::default()
+        },
+        output: Default::default(),
+    };
+
+    let job = plan_job(&req, &BuildOptions::default()).unwrap();
+    let leaves = job.leaf_steps();
+    let overlap = leaves
+        .iter()
+        .find(|s| s.r#use == Capability::FixOverlap)
+        .expect("diarized meeting should get a fix-overlap step");
+    assert!(overlap.inputs.iter().any(|i| i == "meeting"));
+
+    let merge = leaves
+        .iter()
+        .find(|s| s.r#use == Capability::MeetingMerge)
+        .unwrap();
+    assert_eq!(
+        overlap.output, merge.output,
+        "fix-overlap must rewrite the same well-known meeting artifact path, not a new file"
+    );
+
+    resolve_job(job).expect("planned Job must resolve");
+}
+
+#[test]
+fn single_speaker_meeting_has_no_fix_overlap_step() {
+    let req = MeetingRequest {
+        working_dir: Some(PathBuf::from("/work")),
+        inputs: vec![src(InputRole::Room, "meeting.wav", None)],
+        meeting: MeetingModel {
+            diarization: DiarizationPolicy {
+                enabled: DiarizationEnabled::False,
+            },
+            ..Default::default()
+        },
+        output: Default::default(),
+    };
+
+    let job = plan_job(&req, &BuildOptions::default()).unwrap();
+    let leaves = job.leaf_steps();
+    assert!(
+        !leaves.iter().any(|s| s.r#use == Capability::FixOverlap),
+        "single-speaker meetings have nothing to dedup"
+    );
+
+    resolve_job(job).expect("planned Job must resolve");
+}
+
+#[test]
 fn diarize_false_with_tracks_attaches_mix_not_timeline() {
     use vd_meeting::{AlignmentOptions, AlignmentReference};
 
@@ -358,10 +420,7 @@ fn longest_alignment_pads_shorter_track() {
         }
     });
     let pad = pad.expect("pad-start filter");
-    assert!(
-        (pad - 3.0).abs() < 0.15,
-        "expected ~3s pad, got {pad}"
-    );
+    assert!((pad - 3.0).abs() < 0.15, "expected ~3s pad, got {pad}");
 
     // Longest track needs no pad (no preprocess unless other reasons).
     assert!(

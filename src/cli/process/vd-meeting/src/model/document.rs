@@ -5,9 +5,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use super::{
-    BuildOptions, InputSource, MeetingModel, MeetingOutput, MeetingRequest,
-};
+use super::{BuildOptions, InputSource, MeetingModel, MeetingOutput, MeetingRequest};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MeetingDocument {
@@ -47,7 +45,10 @@ pub fn load_meeting_file(path: &Path) -> Result<(MeetingRequest, Option<BuildOpt
         serde_yaml::from_str::<MeetingDocument>(&text).map_err(|e| e.to_string())?
     };
     if doc.version != 1 {
-        return Err(format!("unsupported meeting document version: {}", doc.version));
+        return Err(format!(
+            "unsupported meeting document version: {}",
+            doc.version
+        ));
     }
     if doc.inputs.is_empty() {
         return Err("meeting document has no inputs".into());

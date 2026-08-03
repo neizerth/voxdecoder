@@ -75,12 +75,7 @@ fn participant_labels(resolved: &ResolvedMeeting) -> Vec<String> {
     let mut seen = std::collections::BTreeSet::new();
 
     for k in &resolved.meeting.participants.known {
-        let raw = k
-            .name
-            .as_deref()
-            .or(k.id.as_deref())
-            .unwrap_or("")
-            .trim();
+        let raw = k.name.as_deref().or(k.id.as_deref()).unwrap_or("").trim();
         push_label(&mut labels, &mut seen, raw);
     }
 
@@ -154,10 +149,7 @@ mod tests {
     #[test]
     fn sanitize_keeps_cyrillic_and_strips_bad() {
         assert_eq!(sanitize_filename_part("Игорь"), "Игорь");
-        assert_eq!(
-            sanitize_filename_part("Владимир Языков"),
-            "Владимир-Языков"
-        );
+        assert_eq!(sanitize_filename_part("Владимир Языков"), "Владимир-Языков");
         assert_eq!(sanitize_filename_part("a/b:c"), "a-b-c");
     }
 

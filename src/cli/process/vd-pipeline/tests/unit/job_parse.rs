@@ -9,7 +9,7 @@ fn yaml_and_json_round_trip_default() {
     let from_json = load_job_file(&fixture("jobs/default.json")).unwrap();
     assert_eq!(from_yaml, from_json);
     assert_eq!(from_yaml.version, 1);
-    assert_eq!(from_yaml.leaf_count(), 7);
+    assert_eq!(from_yaml.leaf_count(), 8);
     assert_eq!(from_yaml.leaf_steps()[0].r#use, Capability::Preprocess);
     assert_eq!(from_yaml.leaf_steps()[0].id.as_deref(), Some("prepared"));
     assert!(from_yaml.leaf_steps()[0].options.contains_key("filters"));
@@ -54,11 +54,17 @@ fn diarize_nested_backend_options() {
         .and_then(ArgValue::as_map)
         .expect("nested backend map");
     assert_eq!(
-        backend.get("provider").and_then(ArgValue::as_string).as_deref(),
+        backend
+            .get("provider")
+            .and_then(ArgValue::as_string)
+            .as_deref(),
         Some("stub")
     );
     assert_eq!(
-        backend.get("model").and_then(ArgValue::as_string).as_deref(),
+        backend
+            .get("model")
+            .and_then(ArgValue::as_string)
+            .as_deref(),
         Some("deterministic-v1")
     );
 }

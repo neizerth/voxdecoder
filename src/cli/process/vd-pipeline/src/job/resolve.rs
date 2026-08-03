@@ -26,7 +26,14 @@ pub fn resolve_job(job: Job) -> Result<ResolvedJob, JobError> {
 
     let mut leaves = Vec::new();
     let mut leaf_index = 0usize;
-    let plan = compile_plan(&job.steps, "", &mut leaves, &mut leaf_index, &job, &working_dir)?;
+    let plan = compile_plan(
+        &job.steps,
+        "",
+        &mut leaves,
+        &mut leaf_index,
+        &job,
+        &working_dir,
+    )?;
 
     let order = schedule_leaf_order(&job, leaves.len())?;
 
@@ -55,7 +62,14 @@ fn compile_plan(
         } else {
             format!("{prefix}.{i}")
         };
-        kids.push(compile_node(node, &path, leaves, leaf_index, job, working_dir)?);
+        kids.push(compile_node(
+            node,
+            &path,
+            leaves,
+            leaf_index,
+            job,
+            working_dir,
+        )?);
     }
     Ok(WorkflowPlan::Sequence(kids))
 }
@@ -123,11 +137,7 @@ fn compile_node(
     }
 }
 
-fn preview_input(
-    step: &Step,
-    job: &Job,
-    working_dir: &Path,
-) -> Result<Option<PathBuf>, JobError> {
+fn preview_input(step: &Step, job: &Job, working_dir: &Path) -> Result<Option<PathBuf>, JobError> {
     let refs = step.input_refs();
     if let Some(raw) = refs.first() {
         return match ArtifactRef::parse(raw) {
@@ -153,8 +163,10 @@ fn preview_input(
         }
         Capability::FixCasing
         | Capability::FixAsr
+        | Capability::FixDisfluency
         | Capability::FixTerms
         | Capability::FixLayout
+        | Capability::FixOverlap
         | Capability::MeetingMerge
         | Capability::Postprocess
         | Capability::ImportUrl => Ok(None),
@@ -214,7 +226,9 @@ fn validate_artifact_refs(job: &Job) -> Result<(), JobError> {
                 for v in map.values() {
                     if let Some(raw) = v.as_string() {
                         if let ArtifactRef::Id(id) = ArtifactRef::parse(&raw) {
-                            if !id.contains('*') && !produced.contains(&id) && !step_ids.contains(&id)
+                            if !id.contains('*')
+                                && !produced.contains(&id)
+                                && !step_ids.contains(&id)
                             {
                                 return Err(JobError::Usage(format!(
                                     "unknown artifact id in postprocess inputs: {id}"
@@ -431,9 +445,10 @@ pub fn exec_input(
                     .map(|(_, p)| p.clone())
                     .ok_or_else(|| JobError::Usage(format!("no artifact matches wildcard: {id}")))
             }
-            ArtifactRef::Id(id) => artifacts.get(&id).cloned().ok_or_else(|| {
-                JobError::Usage(format!("artifact not produced yet: {id}"))
-            }),
+            ArtifactRef::Id(id) => artifacts
+                .get(&id)
+                .cloned()
+                .ok_or_else(|| JobError::Usage(format!("artifact not produced yet: {id}"))),
             ArtifactRef::Path(p) => Ok(resolve_against(working_dir, &p)),
         };
     }
@@ -465,8 +480,10 @@ pub fn exec_input(
         }
         Capability::FixCasing
         | Capability::FixAsr
+        | Capability::FixDisfluency
         | Capability::FixTerms
         | Capability::FixLayout
+        | Capability::FixOverlap
         | Capability::MeetingMerge
         | Capability::Postprocess => prev.cloned().ok_or_else(|| {
             JobError::Usage(format!(

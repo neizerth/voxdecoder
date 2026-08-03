@@ -37,7 +37,10 @@ fn omitted_input_uses_previous_output() {
                 output: Some(PathBuf::from("/work/a.txt")),
                 ..Step::new(Capability::FixAsr)
             },
-        ].into_iter().map(Into::into).collect(),
+        ]
+        .into_iter()
+        .map(Into::into)
+        .collect(),
     };
     let resolved = resolve_job(job).unwrap();
     let exec = Executor {

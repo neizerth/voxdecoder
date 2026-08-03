@@ -19,8 +19,10 @@ impl Binder for SubprocessBinder {
             Capability::PrepareContext => run_prepare_context(req),
             Capability::FixCasing => run_fix(req, "vd-fix-casing"),
             Capability::FixAsr => run_fix(req, "vd-fix-asr"),
+            Capability::FixDisfluency => run_fix(req, "vd-fix-disfluency"),
             Capability::FixTerms => run_fix(req, "vd-fix-terms"),
             Capability::FixLayout => run_fix(req, "vd-fix-layout"),
+            Capability::FixOverlap => run_fix_overlap(req),
             Capability::Diarize => run_diarize(req),
             Capability::MeetingMerge => run_meeting_merge(req),
             Capability::Preprocess => run_preprocess(req),
@@ -51,7 +53,11 @@ fn run_import_url(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
     let out_dir = req
         .output_dir
         .clone()
-        .or_else(|| req.output.as_ref().and_then(|p| p.parent().map(Path::to_path_buf)))
+        .or_else(|| {
+            req.output
+                .as_ref()
+                .and_then(|p| p.parent().map(Path::to_path_buf))
+        })
         .unwrap_or_else(|| req.working_dir.join("import"));
 
     let mut args = vec![
@@ -80,10 +86,16 @@ fn run_import_url(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
 
     run_cmd(&bin, &args, req, None)?;
 
-    let audio = ["audio.m4a", "audio.wav", "audio.mp3", "audio.ogg", "audio.opus"]
-        .iter()
-        .map(|n| out_dir.join(n))
-        .find(|p| p.is_file());
+    let audio = [
+        "audio.m4a",
+        "audio.wav",
+        "audio.mp3",
+        "audio.ogg",
+        "audio.opus",
+    ]
+    .iter()
+    .map(|n| out_dir.join(n))
+    .find(|p| p.is_file());
     let metadata = out_dir.join("metadata.yaml");
     let subtitle = out_dir.join("subtitles.vtt");
 
@@ -171,7 +183,10 @@ fn run_preprocess(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
 }
 
 fn timemap_beside(primary: &Path) -> Option<PathBuf> {
-    let stem = primary.file_stem().and_then(|s| s.to_str()).unwrap_or("prepared");
+    let stem = primary
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("prepared");
     let parent = primary.parent().unwrap_or_else(|| Path::new("."));
     let timemap = parent.join(format!("{stem}.timemap.json"));
     timemap.is_file().then_some(timemap)
@@ -240,8 +255,7 @@ fn same_output_as_input(out: &Path, input: &Path) -> bool {
 /// - `overwrite: true` (caller wants a fresh write), or
 /// - output path equals input (fix chain shares `{stem}.fixed.{ext}` — must rewrite in place).
 fn reuse_existing(req: &InvokeRequest, primary: &Path) -> Option<InvokeResult> {
-    if !primary.is_file() || explicit_overwrite(req) || same_output_as_input(primary, &req.input)
-    {
+    if !primary.is_file() || explicit_overwrite(req) || same_output_as_input(primary, &req.input) {
         return None;
     }
     Some(InvokeResult {
@@ -264,10 +278,7 @@ fn push_overwrite(args: &mut Vec<String>, req: &InvokeRequest, out: &Path) {
 fn progress_env(req: &InvokeRequest) -> Vec<(String, String)> {
     let mut env = Vec::new();
     if let Some(path) = &req.progress_snapshot {
-        env.push((
-            "VD_PROGRESS_SNAPSHOT".into(),
-            path.display().to_string(),
-        ));
+        env.push(("VD_PROGRESS_SNAPSHOT".into(), path.display().to_string()));
     }
     if let Some(base) = req.progress_step_base {
         env.push(("VD_PROGRESS_STEP_BASE".into(), base.to_string()));
@@ -295,10 +306,7 @@ fn filters_list_to_yaml(list: &[ArgValue]) -> Result<String, ExecError> {
         };
         let mut m = serde_yaml::Mapping::new();
         for (k, v) in map {
-            m.insert(
-                serde_yaml::Value::String(k.clone()),
-                arg_value_to_yaml(v)?,
-            );
+            m.insert(serde_yaml::Value::String(k.clone()), arg_value_to_yaml(v)?);
         }
         filters.push(serde_yaml::Value::Mapping(m));
     }
@@ -331,10 +339,7 @@ fn arg_value_to_yaml(v: &ArgValue) -> Result<serde_yaml::Value, ExecError> {
         ArgValue::Map(map) => {
             let mut m = serde_yaml::Mapping::new();
             for (k, v) in map {
-                m.insert(
-                    serde_yaml::Value::String(k.clone()),
-                    arg_value_to_yaml(v)?,
-                );
+                m.insert(serde_yaml::Value::String(k.clone()), arg_value_to_yaml(v)?);
             }
             serde_yaml::Value::Mapping(m)
         }
@@ -445,7 +450,12 @@ fn run_postprocess(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
     }
     push_overwrite(&mut args, req, &primary);
 
-    run_cmd(&bin, &args, req, primary.is_file().then_some(primary.as_path()))?;
+    run_cmd(
+        &bin,
+        &args,
+        req,
+        primary.is_file().then_some(primary.as_path()),
+    )?;
     Ok(InvokeResult {
         primary_output: primary,
         outputs: BTreeMap::new(),
@@ -461,10 +471,9 @@ fn run_meeting_merge(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
         .unwrap_or_else(|| "meeting".into());
     let json_name = format!("{stem}.json");
     let out = req.output.clone().unwrap_or_else(|| {
-        req.output_dir.as_ref().map_or_else(
-            || req.working_dir.join(&json_name),
-            |d| d.join(&json_name),
-        )
+        req.output_dir
+            .as_ref()
+            .map_or_else(|| req.working_dir.join(&json_name), |d| d.join(&json_name))
     });
     // If planner passed a bare filename as output, resolve under working/output dir.
     let out = if out.is_relative() && out.components().count() == 1 {
@@ -562,7 +571,9 @@ fn run_meeting_merge(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
             }
         } else {
             // No timed segments: one turn per track using media duration when known.
-            let dur = probe_duration_beside_transcript(path).unwrap_or(1.0).max(0.1);
+            let dur = probe_duration_beside_transcript(path)
+                .unwrap_or(1.0)
+                .max(0.1);
             let mut end = cursor + dur;
             if let Some(max) = mix_duration {
                 end = end.min(max).max(cursor);
@@ -595,15 +606,14 @@ fn run_meeting_merge(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
         ordered
     };
 
-    let effective_reference = if timeline.is_some()
-        && (reference == "timeline" || reference == "auto")
-    {
-        "timeline"
-    } else if mix_path.is_some() && (reference == "mix" || reference == "auto") {
-        "mix"
-    } else {
-        "none"
-    };
+    let effective_reference =
+        if timeline.is_some() && (reference == "timeline" || reference == "auto") {
+            "timeline"
+        } else if mix_path.is_some() && (reference == "mix" || reference == "auto") {
+            "mix"
+        } else {
+            "none"
+        };
 
     let artifact = crate::meeting_artifact::MeetingArtifact {
         version: 1,
@@ -630,8 +640,7 @@ fn run_meeting_merge(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
     });
     let text = serde_json::to_string_pretty(&body)
         .map_err(|e| ExecError::Step(format!("meeting-merge json: {e}")))?;
-    std::fs::write(&out, text)
-        .map_err(|e| ExecError::Step(format!("meeting-merge write: {e}")))?;
+    std::fs::write(&out, text).map_err(|e| ExecError::Step(format!("meeting-merge write: {e}")))?;
 
     let md_path = meeting_md_path(&out);
     let md_body = format_meeting_markdown(&artifact.turns);
@@ -721,10 +730,7 @@ fn load_transcript_segments(transcript: &Path) -> Option<Vec<SegTurn>> {
                 .map(|s| format!("{s}.segments.json"))
                 .unwrap_or_default(),
         ),
-        parent.join(format!(
-            "{}.segments.json",
-            stem.trim_end_matches(".fixed")
-        )),
+        parent.join(format!("{}.segments.json", stem.trim_end_matches(".fixed"))),
     ];
     let timemap = load_timemap_beside_transcript(transcript);
     for c in candidates {
@@ -736,12 +742,14 @@ fn load_transcript_segments(transcript: &Path) -> Option<Vec<SegTurn>> {
         let segs = v.get("segments")?.as_array()?;
         let mut out = Vec::new();
         for s in segs {
-            let start = s.get("start").and_then(|x| x.as_f64()).or_else(|| {
-                s.get("start_sec").and_then(|x| x.as_f64())
-            })?;
-            let end = s.get("end").and_then(|x| x.as_f64()).or_else(|| {
-                s.get("end_sec").and_then(|x| x.as_f64())
-            })?;
+            let start = s
+                .get("start")
+                .and_then(|x| x.as_f64())
+                .or_else(|| s.get("start_sec").and_then(|x| x.as_f64()))?;
+            let end = s
+                .get("end")
+                .and_then(|x| x.as_f64())
+                .or_else(|| s.get("end_sec").and_then(|x| x.as_f64()))?;
             let text = s
                 .get("text")
                 .or_else(|| s.get("Caption"))
@@ -958,7 +966,12 @@ fn run_transcribe(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
     if req.options.get("segments").and_then(ArgValue::as_bool) == Some(true) {
         args.push("--segments".into());
     }
-    if req.options.get("word_timestamps").and_then(ArgValue::as_bool) == Some(true) {
+    if req
+        .options
+        .get("word_timestamps")
+        .and_then(ArgValue::as_bool)
+        == Some(true)
+    {
         args.push("--word-timestamps".into());
     }
     if let Some(fmt) = req.options.get("format").and_then(ArgValue::as_string) {
@@ -979,10 +992,7 @@ fn run_transcribe(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
 }
 
 fn segments_sidecar_for(main: &Path) -> PathBuf {
-    let stem = main
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("out");
+    let stem = main.file_stem().and_then(|s| s.to_str()).unwrap_or("out");
     let parent = main.parent().unwrap_or_else(|| Path::new("."));
     parent.join(format!("{stem}.segments.json"))
 }
@@ -1058,8 +1068,18 @@ fn docs_have_sources(root: &Path) -> bool {
                 .map(|e| e.to_ascii_lowercase())
                 .as_deref(),
             Some(
-                "md" | "markdown" | "txt" | "rst" | "pdf" | "docx" | "doc" | "xlsx" | "xls"
-                    | "pptx" | "ppt" | "odt" | "ods",
+                "md" | "markdown"
+                    | "txt"
+                    | "rst"
+                    | "pdf"
+                    | "docx"
+                    | "doc"
+                    | "xlsx"
+                    | "xls"
+                    | "pptx"
+                    | "ppt"
+                    | "odt"
+                    | "ods",
             )
         )
     }
@@ -1130,6 +1150,33 @@ fn run_fix(req: &InvokeRequest, bin_name: &str) -> Result<InvokeResult, ExecErro
             args.push(tm);
         }
     }
+    run_cmd(&bin, &args, req, Some(&primary))?;
+    Ok(InvokeResult {
+        primary_output: primary,
+        outputs: BTreeMap::new(),
+    })
+}
+
+/// `vd-fix-overlap` has a different CLI shape from the other `vd-fix-*`
+/// tools — `-i`/`-o` alone only *report* candidate duplicates, it needs
+/// `--apply` to actually remove/trim and write. No `-l/--language` (the
+/// detector is language-agnostic).
+fn run_fix_overlap(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
+    let bin = find_bin("vd-fix-overlap")?;
+    let primary = infer_fix_output(req);
+    if let Some(reused) = reuse_existing(req, &primary) {
+        return Ok(reused);
+    }
+    let mut args = vec![
+        "run".into(),
+        "-i".into(),
+        req.input.display().to_string(),
+        "-q".into(),
+        "-o".into(),
+        primary.display().to_string(),
+        "--apply".into(),
+    ];
+    push_overwrite(&mut args, req, &primary);
     run_cmd(&bin, &args, req, Some(&primary))?;
     Ok(InvokeResult {
         primary_output: primary,
@@ -1337,10 +1384,7 @@ mod tests {
             },
         ];
         let md = format_meeting_markdown(&turns);
-        assert_eq!(
-            md,
-            "**Игорь**\nПривет\n\n**Владимир**\nЗдравствуй\n\n"
-        );
+        assert_eq!(md, "**Игорь**\nПривет\n\n**Владимир**\nЗдравствуй\n\n");
     }
 
     #[test]

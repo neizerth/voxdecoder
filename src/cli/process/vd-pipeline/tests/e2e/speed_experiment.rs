@@ -13,7 +13,6 @@
 //! High factors (>2×) use a progressive coverage-drop budget (atempo chain + ASR stress);
 //! around 4× some clips show a real accuracy cliff — still floored, not held to the 1–2× bar.
 
-
 use std::fs;
 use std::time::Instant;
 
@@ -36,7 +35,13 @@ const MAX_COVERAGE_DROP: f64 = 0.15;
 const SPEEDUP_SLACK: f64 = 1.25;
 const SPEEDUP_SLACK_HIGH: f64 = 1.60;
 
-fn accuracy_budget(factor: f64) -> (f64 /* min_cov */, f64 /* max_drop */, bool /* hard */) {
+fn accuracy_budget(
+    factor: f64,
+) -> (
+    f64,  /* min_cov */
+    f64,  /* max_drop */
+    bool, /* hard */
+) {
     if factor <= 2.0 + 1e-9 {
         (MIN_COVERAGE, MAX_COVERAGE_DROP, true)
     } else if factor <= 2.5 + 1e-9 {
@@ -56,7 +61,6 @@ fn speedup_slack(factor: f64) -> f64 {
         SPEEDUP_SLACK
     }
 }
-
 
 #[test]
 #[ignore = "experimental: VD_PIPELINE_E2E_SPEED=1, ffmpeg, vd-preprocess, vd-gigaam CTC, fixture audio"]

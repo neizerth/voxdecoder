@@ -32,7 +32,10 @@ fn options_forwarded_untouched() {
             output: Some(PathBuf::from("/work/t.txt")),
             options: options.clone(),
             ..Step::new(Capability::Transcribe)
-        }].into_iter().map(Into::into).collect(),
+        }]
+        .into_iter()
+        .map(Into::into)
+        .collect(),
     };
     let resolved = resolve_job(job).unwrap();
     let exec = Executor {

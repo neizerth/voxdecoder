@@ -105,10 +105,7 @@ fn effective_capacity(capacity: &BTreeMap<String, u32>, class: &str) -> u32 {
 }
 
 fn is_accelerator_class(class: &str) -> bool {
-    class == "gpu"
-        || class == "metal_gpu"
-        || class == "cuda_gpu"
-        || class.ends_with("_gpu")
+    class == "gpu" || class == "metal_gpu" || class == "cuda_gpu" || class.ends_with("_gpu")
 }
 
 /// Job-level caps: explicit `job.resources` overlay platform defaults.

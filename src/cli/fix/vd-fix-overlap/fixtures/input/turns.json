@@ -1,0 +1,7 @@
+{
+  "turns": [
+    {"speaker": "A", "start_sec": 1.0, "end_sec": 3.0, "text": "Let's deploy tomorrow."},
+    {"speaker": "B", "start_sec": 1.2, "end_sec": 3.2, "text": "let's deploy tomorrow"},
+    {"speaker": "A", "start_sec": 3.2, "end_sec": 4.0, "text": "Sounds good to me."}
+  ]
+}

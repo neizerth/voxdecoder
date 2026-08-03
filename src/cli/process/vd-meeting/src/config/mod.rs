@@ -43,10 +43,7 @@ impl FileConfig {
                 .clone()
                 .unwrap_or_else(|| d.alignment_mode.to_string())),
             "asr" => Ok(self.asr.clone().unwrap_or_default()),
-            "max_parallel" => Ok(self
-                .max_parallel
-                .map(|n| n.to_string())
-                .unwrap_or_default()),
+            "max_parallel" => Ok(self.max_parallel.map(|n| n.to_string()).unwrap_or_default()),
             "progress" => Ok(self
                 .progress
                 .clone()

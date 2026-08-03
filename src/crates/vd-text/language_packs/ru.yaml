@@ -1,0 +1,107 @@
+# Russian language pack — Russian-specific filler words, discourse markers, normalization
+
+# Russian filler words (sounds, hesitations, discourse fillers)
+- id: ru-filler-eee
+  confidence: certain
+  when:
+    type: token
+    value: 'эээ'
+  action:
+    type: remove
+
+- id: ru-filler-ee
+  confidence: certain
+  when:
+    type: token
+    value: 'ээ'
+  action:
+    type: remove
+
+- id: ru-filler-mmm
+  confidence: certain
+  when:
+    type: token
+    value: 'ммм'
+  action:
+    type: remove
+
+- id: ru-filler-mm
+  confidence: certain
+  when:
+    type: token
+    value: 'мм'
+  action:
+    type: remove
+
+- id: ru-filler-ugu
+  confidence: certain
+  when:
+    type: token
+    value: 'угу'
+  action:
+    type: remove
+
+- id: ru-filler-aga
+  confidence: certain
+  when:
+    type: token
+    value: 'ага'
+  action:
+    type: remove
+
+- id: ru-filler-aha
+  confidence: certain
+  when:
+    type: token
+    value: 'аха'
+  action:
+    type: remove
+
+# Russian discourse markers (may be optional in disfluency cleanup)
+- id: ru-discourse-tipis
+  confidence: likely
+  when:
+    type: token
+    value: 'типа'
+  action:
+    type: remove
+
+- id: ru-discourse-tak-skazat
+  confidence: likely
+  when:
+    type: token
+    value: 'так сказать'
+  action:
+    type: remove
+
+- id: ru-discourse-kak-by
+  confidence: likely
+  when:
+    type: token
+    value: 'как бы'
+  action:
+    type: remove
+
+- id: ru-discourse-vrode
+  confidence: likely
+  when:
+    type: token
+    value: 'вроде'
+  action:
+    type: remove
+
+# Repeated word rule (for "hello hello" → "hello")
+- id: ru-repeated-word
+  confidence: likely
+  when:
+    type: repeated_word
+  action:
+    type: remove_second
+
+# Merged word (token split): "goodmorning" → "good morning"
+- id: ru-merged-word
+  confidence: likely
+  when:
+    type: merged_word
+  action:
+    type: split

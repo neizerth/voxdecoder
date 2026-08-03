@@ -1,10 +1,10 @@
-# ADR 0010 — vd-fix-asr Local Transcript Cleanup (RFC)
+# ADR 0010 — vd-fix-asr Local Transcript Cleanup
 
-**Status:** RFC (future — not implemented under this design yet)  
+**Status:** Implemented — all 6 stages + confidence policy + layered dictionaries shipped (see Decision)  
 **Type:** ADR / architectural RFC  
 **Date:** 2026-08-03
 
-**Related:** [`vd-fix-asr`](../../src/cli/fix/vd-fix-asr/) · [`vd-fix-casing`](../../src/cli/fix/vd-fix-casing/) · [`vd-fix-terms`](../../src/cli/fix/vd-fix-terms/) · [`vd-fix-layout`](../../src/cli/fix/vd-fix-layout/) · [`vd-pipeline`](../../src/cli/process/vd-pipeline/) · [`vd-artifact`](../../src/crates/vd-artifact/) · [`vd-progress`](../../src/crates/vd-progress/) · [`vd-output`](../../src/crates/vd-output/)
+**Related:** [`vd-fix-asr`](../../src/cli/fix/vd-fix-asr/) · [`vd-fix-casing`](../../src/cli/fix/vd-fix-casing/) · [`vd-fix-terms`](../../src/cli/fix/vd-fix-terms/) · [`vd-fix-layout`](../../src/cli/fix/vd-fix-layout/) · [`vd-pipeline`](../../src/cli/process/vd-pipeline/) · [`vd-artifact`](../../src/crates/vd-artifact/) · [`vd-progress`](../../src/crates/vd-progress/) · [`vd-output`](../../src/crates/vd-output/) · [ADR 0012 — fix-disfluency / fix-overlap RFC](0012-local-cleanup-disfluency-and-overlap.md) · [ADR 0013 — vd-text shared linguistic infrastructure RFC](0013-local-linguistic-infrastructure.md)
 
 Layout / CLI for the existing crate remain: [STRUCTURE.md](../../src/cli/fix/vd-fix-asr/STRUCTURE.md) · [cli.md](../../src/cli/fix/vd-fix-asr/cli.md) · [RUST.md](../../src/cli/fix/vd-fix-asr/RUST.md).
 
@@ -328,4 +328,20 @@ Default behavior of `vd-fix-asr` must remain fully local, reproducible, and free
 
 ## Decision
 
-**Accepted as future direction (RFC).** Implementation is deferred. Current `vd-fix-asr` remains the shipping rules backend until this design is deliberately adopted.
+**Implemented.** Shipped as a staged, incrementally-delivered rollout inside the existing `vd-fix-asr` crate (`asr/rule.rs`, `asr/stages/`, `asr/lang/`, `asr/context_fuzzy.rs`, `asr/report.rs`), landing one stage per PR in order: spacing → punctuation → duplicates → merge/split → alphabet → dictionary, followed by confidence policy / CLI surface (`--strict`, `--aggressive`, `--report`, `--dictionary`, `--project`). The legacy lexicon-based fixer (formerly `asr/backend/mod.rs`) was migrated into the Stage 6 dictionary (static lookup in `asr/stages/dictionary.rs` + context/neighbor fuzzy matching in `asr/context_fuzzy.rs`) rather than discarded. Every stage kept `vd-fix-asr run` producing valid, non-regressive output at each step — `vd-pipeline` only invokes this crate as an external binary step, so no Job contract changes were required.
+
+Final shape:
+- **Rule engine**: `asr/rule.rs` (`Rule` trait, `Confidence`, `RuleCategory`, `RuleHit`) + `asr/stages/mod.rs` (`Stage`, `Pipeline`, `ConfidencePolicy`, `RuleStage` helper for Certain-only stages).
+- **Stages 1–5** (`spacing.rs`, `punctuation.rs`, `duplicate.rs`, `merge_split.rs`, `alphabet.rs`) are pure text-in/text-out, composed via `Pipeline`.
+- **Stage 6** is split in two: a context-free static lookup (`stages/dictionary.rs`, fits `Pipeline`) and a `SpanContext`-dependent fuzzy pass (`context_fuzzy.rs`, runs as a separate step in `fixer.rs` since `Pipeline` is deliberately context-free).
+- **Dictionary layering** (`asr/lang/mod.rs::resolve_dictionary`): `builtin → pack (reserved, unused) → project (.voxdecoder/asr-dictionary.yml) → user (--dictionary)`, built on `vd_assets::load_dictionary`.
+- **`--report`** (`asr/report.rs`): per-category counts of *applied* hits plus an `unsafe` count for hits withheld by the active `ConfidencePolicy`.
+- 51 unit tests + 14 e2e tests, `cargo clippy -- -D warnings` clean.
+
+### PR 1 audit: overlap with `vd-fix-casing`
+
+Confirmed by reading `vd-fix-casing/src/casing/backend/normalize.rs`: it already runs `collapse_ws` (all whitespace runs, including tabs/newlines, → single space), `tidy_punct_spacing` (drops space before `,.;:!?`), and `collapse_duplicate_periods` (3+ `.` → `…`) — functionally the same transforms as `vd-fix-asr`'s new Stage 1/2. Since the pipeline order is `fix-casing → fix-asr → fix-terms`, Stage 1/2 are no-ops on text that already went through `fix-casing` in a full pipeline run. This is accepted as intentional defense-in-depth, not a bug: `vd-fix-asr` is also invoked standalone (outside `vd-pipeline`), where no upstream normalization is guaranteed. Both rule sets are idempotent, so running them twice is safe. No dedup work planned — revisit only if the two implementations drift in behavior for the same input.
+
+### Non-goals tension with current docs
+
+`vd-fix-asr`'s current `README.md`/`STRUCTURE.md` state that punctuation, casing, and whitespace are *not* this tool's job (owned instead by `vd-fix-casing`). This ADR's stages 1–2 (spacing, punctuation) intentionally narrow, not remove, that boundary: `vd-fix-asr` now owns **character-level, in-span** whitespace/punctuation normalization (tabs, run-of-spaces, line-ending style, `...`→`…`, space-before-punctuation, duplicate punctuation) as a precondition for reliable dictionary/ASR-artifact matching. `vd-fix-casing` continues to own **case decisions**, `vd-fix-layout` continues to own **paragraph-level reflow**, `vd-fix-terms` continues to own **terminology**. `README.md`/`STRUCTURE.md`'s non-goals sections are updated to reflect this narrower boundary as the corresponding stages land (spacing/punctuation stage PR), rather than all at once here.

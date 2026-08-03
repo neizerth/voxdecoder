@@ -5,23 +5,24 @@ mod merge;
 mod preprocess;
 mod transcript;
 
-use vd_pipeline::{
-    ArgValue, Capability, Job, JobContext, JobInput, JobOutput, Step, WorkflowNode,
-};
+use std::path::PathBuf;
+
+use vd_pipeline::{ArgValue, Capability, Job, JobContext, JobInput, JobOutput, Step, WorkflowNode};
 
 use super::normalize::ResolvedMeeting;
 use super::PlanError;
-use crate::model::{AlignmentReference, DiarizationEnabled, InputPurpose, InputRole};
 use crate::model::BuildOptions;
+use crate::model::{AlignmentReference, DiarizationEnabled, InputPurpose, InputRole};
 
-pub fn build_job(
-    resolved: &ResolvedMeeting,
-    options: &BuildOptions,
-) -> Result<Job, PlanError> {
+pub fn build_job(resolved: &ResolvedMeeting, options: &BuildOptions) -> Result<Job, PlanError> {
     let mut root: Vec<WorkflowNode> = Vec::new();
 
     if resolved.has_context {
-        if let Some(ctx) = resolved.inputs.iter().find(|i| i.role == InputRole::Context) {
+        if let Some(ctx) = resolved
+            .inputs
+            .iter()
+            .find(|i| i.role == InputRole::Context)
+        {
             let mut step = Step::new(Capability::PrepareContext);
             step.id = Some("assets".into());
             step.input = Some(ctx.path.display().to_string());
@@ -86,6 +87,10 @@ pub fn build_job(
         options,
     )?;
     root.extend(merge_leafs.into_iter().map(Into::into));
+
+    if want_diarize {
+        root.push(append_fix_overlap(resolved, options).into());
+    }
 
     let context = if resolved.has_context {
         let docs = resolved
@@ -183,10 +188,7 @@ fn should_diarize(resolved: &ResolvedMeeting) -> Result<bool, PlanError> {
 }
 
 fn wants_mix_reference(resolved: &ResolvedMeeting, want_diarize: bool) -> bool {
-    let has_room = resolved
-        .inputs
-        .iter()
-        .any(|i| i.role == InputRole::Room);
+    let has_room = resolved.inputs.iter().any(|i| i.role == InputRole::Room);
     match resolved.meeting.alignment.reference {
         AlignmentReference::None | AlignmentReference::Timeline => false,
         AlignmentReference::Mix => has_room,
@@ -212,11 +214,7 @@ fn append_mix_ref(
                 .map(|&i| &resolved.inputs[i])
                 .find(|i| i.purposes.contains(&InputPurpose::Timeline))
         })
-        .ok_or_else(|| {
-            PlanError::Usage(
-                "alignment reference mix requires a room input".into(),
-            )
-        })?;
+        .ok_or_else(|| PlanError::Usage("alignment reference mix requires a room input".into()))?;
 
     // Reuse prepared artifact when room was already preprocessed for transcript.
     let already_prepared = preprocess::will_preprocess(src, options, pads)
@@ -230,8 +228,12 @@ fn append_mix_ref(
 
     // Prefer stable id `room.mix` when media_input_ref returns a path (audio file).
     let media = preprocess::media_input_ref(steps, src, options, pads)?;
-    if media.contains('/') || media.ends_with(".wav") || media.ends_with(".mp3")
-        || media.ends_with(".m4a") || media.ends_with(".ogg") || media.ends_with(".flac")
+    if media.contains('/')
+        || media.ends_with(".wav")
+        || media.ends_with(".mp3")
+        || media.ends_with(".m4a")
+        || media.ends_with(".ogg")
+        || media.ends_with(".flac")
     {
         // Filesystem path — register under a stable step id so merge can depend on it
         // and options.mix is an artifact id, not a raw path (paths still allowed).
@@ -239,6 +241,27 @@ fn append_mix_ref(
     } else {
         Ok(media)
     }
+}
+
+/// fix-overlap needs speaker + timestamp + text together, which only exists
+/// once meeting-merge has combined the per-branch transcripts with the
+/// diarization timeline (ADR 0012 places it "diarize → fix-overlap →
+/// meeting-merge", but diarize alone produces no text — see docs/adr/0012
+/// Decision for this correction). Rewrites the same well-known meeting
+/// artifact path meeting-merge just wrote, rather than a new `.fixed.` file.
+fn append_fix_overlap(resolved: &ResolvedMeeting, options: &BuildOptions) -> Step {
+    let json_name = crate::planner::artifact_name::meeting_artifact_json_name(resolved);
+    let output_path = resolved
+        .output
+        .dir
+        .as_ref()
+        .map_or_else(|| PathBuf::from(&json_name), |dir| dir.join(&json_name));
+    let mut step = Step::new(Capability::FixOverlap);
+    step.id = Some("meeting.deduped".into());
+    step.inputs = vec!["meeting".into()];
+    step.output = Some(output_path);
+    step.options = overwrite_opt(options);
+    step
 }
 
 fn transcribe_options(options: &BuildOptions) -> std::collections::BTreeMap<String, ArgValue> {

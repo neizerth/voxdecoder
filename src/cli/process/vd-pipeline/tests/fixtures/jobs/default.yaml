@@ -23,5 +23,6 @@ steps:
   - use: fix-casing
     input: transcript
   - use: fix-asr
+  - use: fix-disfluency
   - use: fix-terms
   - use: fix-layout

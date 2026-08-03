@@ -7,9 +7,9 @@ Shared crates: [`vd-artifact`](../../../crates/vd-artifact/), [`vd-output`](../.
 Rust gates: [RUST.md](RUST.md).  
 Languages: [TODO-languages.md](TODO-languages.md).
 
-**Status: implemented (rules backend).** Packs / `install` not required.
+**Status: implemented — staged deterministic pipeline.** Packs / `install` not required.
 
-Future architecture (staged deterministic cleanup, confidence, no LLM rewrite): [ADR 0010](../../../docs/adr/0010-vd-fix-asr-local-transcript-cleanup.md) — RFC, not yet adopted.
+Staged deterministic cleanup (confidence, no LLM rewrite): [ADR 0010](../../../docs/adr/0010-vd-fix-asr-local-transcript-cleanup.md) — fully adopted. All 6 stages (spacing, punctuation, duplicates, merge/split, alphabet, dictionary) plus confidence policy (`--strict`/`--aggressive`), `--report`, and layered dictionaries (`--dictionary`/`--project`) are shipped.
 
 ## Core rule
 
@@ -74,7 +74,7 @@ Wording repair is a different job from presentation and terminology:
 
 | Topic | vd-fix-asr | Not here |
 |-------|-------------|----------|
-| Changes | Misrecognized words / local sense | Punctuation / layout (`vd-fix-casing`) |
+| Changes | Misrecognized words / local sense; character-level spacing + punctuation cleanup (ADR 0010) | Case decisions / paragraph layout (`vd-fix-casing`, `vd-fix-layout`) |
 | Scope | What was misheard | Canonical product names (`vd-fix-terms`) |
 | Context | Neighboring segments + `--context` materials | Re-transcription from audio |
 | Output type | Same as input | Never restyles into another format |
@@ -104,11 +104,13 @@ Shared I/O via [`crates/`](../../../crates/) (do not fork artifact/output/progre
 
 **Does not**
 
-- restyle / reformat the text (`vd-fix-casing`)
+- restyle / reformat the text, decide casing, or reflow paragraphs (`vd-fix-casing`, `vd-fix-layout`)
 - force terminology to a project-canonical form (`vd-fix-terms`)
 - translate the transcript
 - rewrite sentences for style or brevity
 - re-run ASR on audio
+
+**Does** (ADR 0010, narrowly): character-level spacing (tabs, run-of-spaces, line endings) and punctuation cleanup (duplicate marks, `...`→`…`, space-before-punctuation) as a precondition for reliable recognition-mistake matching — not a restyle decision.
 
 **Example**
 

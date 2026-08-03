@@ -222,8 +222,10 @@ pub enum Capability {
     PrepareContext,
     FixCasing,
     FixAsr,
+    FixDisfluency,
     FixTerms,
     FixLayout,
+    FixOverlap,
     Diarize,
     MeetingMerge,
     Preprocess,
@@ -238,8 +240,10 @@ impl Capability {
             Self::PrepareContext => "prepare-context",
             Self::FixCasing => "fix-casing",
             Self::FixAsr => "fix-asr",
+            Self::FixDisfluency => "fix-disfluency",
             Self::FixTerms => "fix-terms",
             Self::FixLayout => "fix-layout",
+            Self::FixOverlap => "fix-overlap",
             Self::Diarize => "diarize",
             Self::MeetingMerge => "meeting-merge",
             Self::Preprocess => "preprocess",
@@ -258,8 +262,10 @@ impl Capability {
             Self::Transcribe
             | Self::FixCasing
             | Self::FixAsr
+            | Self::FixDisfluency
             | Self::FixTerms
-            | Self::FixLayout => "transcript",
+            | Self::FixLayout
+            | Self::FixOverlap => "transcript",
             Self::PrepareContext => "assets",
             Self::Diarize => "timeline",
             Self::MeetingMerge => "meeting",

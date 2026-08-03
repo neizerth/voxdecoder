@@ -59,12 +59,7 @@ fn preprocess_speed_2x_timemap_matches_1x_segments() {
     );
 }
 
-fn run_segments(
-    models_root: &Path,
-    audio_src: &Path,
-    stem: &str,
-    speed: Option<f64>,
-) -> f64 {
+fn run_segments(models_root: &Path, audio_src: &Path, stem: &str, speed: Option<f64>) -> f64 {
     let dir = TempDir::new().unwrap();
     let audio_name = format!("{stem}.mp3");
     fs::copy(audio_src, dir.path().join(&audio_name)).unwrap();
@@ -149,9 +144,7 @@ steps:
 
     let v: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&seg_path).unwrap()).unwrap();
-    let end = v["segments"][0]["end"]
-        .as_f64()
-        .expect("segment end");
+    let end = v["segments"][0]["end"].as_f64().expect("segment end");
     eprintln!(
         "  speed={speed:?} segments_end={end:.3} words={}",
         v["words"].as_array().map(|a| a.len()).unwrap_or(0)

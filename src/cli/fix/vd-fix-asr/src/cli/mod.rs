@@ -80,6 +80,23 @@ pub struct RunCli {
     pub progress: Option<CliProgress>,
     #[arg(short = 'q', long = "quiet")]
     pub quiet: bool,
+    /// Apply only `Certain`-confidence rules (ADR 0010).
+    #[arg(long = "strict", conflicts_with = "aggressive")]
+    pub strict: bool,
+    /// Also apply `Unsafe`-confidence rules (ADR 0010).
+    #[arg(long = "aggressive", conflicts_with = "strict")]
+    pub aggressive: bool,
+    /// Print a per-category rule-hit count as JSON after the run.
+    #[arg(long = "report")]
+    pub report: bool,
+    /// Additional ASR-mistake dictionary file(s), layered last (highest
+    /// priority). Repeatable.
+    #[arg(long = "dictionary", value_name = "PATH")]
+    pub dictionary: Vec<PathBuf>,
+    /// Project directory providing `.voxdecoder/asr-dictionary.yml`
+    /// (layered above builtin, below `--dictionary`).
+    #[arg(long = "project", value_name = "DIR")]
+    pub project: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
@@ -220,5 +237,10 @@ fn validate_run(cli: RunCli) -> Result<RunArgs, CliError> {
         json: cli.json,
         progress: cli.progress.map(ProgressMode::from),
         quiet: cli.quiet,
+        strict: cli.strict,
+        aggressive: cli.aggressive,
+        report: cli.report,
+        dictionary: cli.dictionary,
+        project: cli.project,
     })
 }
