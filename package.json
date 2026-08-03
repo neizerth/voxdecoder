@@ -21,6 +21,8 @@
     "build:vd-srv": "cargo build -p vd-srv --release",
     "build:vd-mcp": "cargo build -p vd-mcp --release",
     "build:vdctl": "cargo build -p vdctl --release",
+    "build:skills": "./packaging/skills/package.sh build",
+    "package:skills": "./packaging/skills/package.sh package",
     "install:vd-gigaam": "cargo install --path src/cli/transcribe/vd-gigaam --locked --force --features metal",
     "install:vd-gigaam:cpu": "cargo install --path src/cli/transcribe/vd-gigaam --locked --force",
     "install:vd-fix-casing": "cargo install --path src/cli/fix/vd-fix-casing --locked --force",

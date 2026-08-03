@@ -12,6 +12,10 @@ Numbered steps for the agent (confirm inputs, call tools, then follow the Runtim
 
 When the domain accepts accompanying documents (glossaries, agendas, PDFs), collect paths and pass them to the Runtime (`docs` on audio Jobs, or `role: context` on meeting inputs) so `vd-assets` can build project terms — do not paste file contents into chat instead.
 
+When prior intermediates exist next to the media (`*.prepared.*`, `*.fixed.txt`, `meeting_*.md`, …), ask **overwrite vs continue** (Choices UX) before `execute: true`. Pass `overwrite: true` only for a fresh reprocess.
+
+After a successful transcript / meeting artifact, Skills may offer **optional conservative AI cleanup** (opt-in only; never automatic). Identical contract in `vd-audio` / `vd-meeting` — [ADR 0011](../docs/adr/0011-conservative-ai-transcript-cleanup-in-skills.md).
+
 ## Runtime Contract
 
 This Skill starts long-running Runtime Jobs.
@@ -24,18 +28,32 @@ This Skill starts long-running Runtime Jobs.
 ### Progress
 
 - Use `get_job` with that `id` to monitor execution until `completed`, `failed`, or `cancelled`.
-- When reporting status to the user, include `progress` (0–100) and `phase` from `get_job` when present.
+- When reporting status to the user, include **all** of these from `get_job` when present: `progress`, `phase`, `processed`, `total`, `unit`. Do not omit counters from the status line.
 - Do not use HTTP polling (`curl`, `/health`, `/jobs/…`).
 - Do not inspect Runtime sockets directly.
-- Poll `get_job` every **10s** (see below). Progress advances mainly at pipeline step boundaries; a stable percent mid-step is normal.
 
 **Ballpark duration** (wall clock, local Metal / CPU; wide variance):
 
 - Short audio (≈1–5 min media): often **1–5 minutes** of Job time.
 - Longer media / meetings: often **several minutes to tens of minutes**.
-- Preprocess `speed` (1.5× / 2× / 2.2×) shortens ASR wall time; tell the user the estimate is rough.
+- Preprocess `speed` (1.5× / 2.0× / 2.2×) shortens ASR wall time; tell the user the estimate is rough.
 
-**Polling:** call `get_job` every **10s** until `completed`, `failed`, or `cancelled`. Report `progress` / `phase` when present. Only escalate after several checks with no percent/`phase` change and no Runtime error.
+**Polling interval (adaptive — never spam):**
+
+- **Forbidden:** polling every 10s / 15s / 30s. Floor is **60s**; default is **90s**.
+- Compute next wait from the latest `get_job`:
+  - If `unit` is `chunk` and `total` is set:  
+    `remaining = total - processed` (missing `processed` → 0)  
+    `interval_sec = clamp(90, 300, remaining * 45)`
+  - If counters are absent: **90s**.
+  - Near the end (`progress` ≥ 90): **60–90s**.
+- Prefer MCP `get_job` + wakeup/schedule. No shell poll loops. Never name a shell variable `status` (zsh readonly) — use `job_status` / `st`.
+
+**Liveness (do not treat as stuck):**
+
+- Overall `progress` may stay at **0%** (or flat) for a long time while a single step runs (especially `transcribe`).
+- If `processed`/`total` (or `phase`) **moves** between polls, the Job is alive — keep waiting; do not escalate, cancel, or restart.
+- Only escalate after **several** checks (each ≥ the adaptive interval) where **none** of `progress`, `phase`, `processed`, or `total` changed and there is no Runtime error.
 
 ### Results
 

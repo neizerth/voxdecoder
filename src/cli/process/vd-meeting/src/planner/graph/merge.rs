@@ -1,6 +1,7 @@
 //! `meeting-merge` capability step.
 
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 
 use vd_pipeline::{ArgValue, Capability, Step};
 
@@ -30,11 +31,20 @@ pub fn append_merge(
     let mut step = Step::new(Capability::MeetingMerge);
     step.id = Some("meeting".into());
     step.inputs = inputs;
+    let stem = crate::planner::artifact_name::meeting_artifact_stem(resolved);
+    let json_name = crate::planner::artifact_name::meeting_artifact_json_name(resolved);
     if let Some(dir) = &resolved.output.dir {
-        step.output = Some(dir.join("meeting.json"));
+        step.output = Some(dir.join(&json_name));
+    } else {
+        // Let the Executor place it under working_dir with the same stem.
+        step.output = Some(PathBuf::from(&json_name));
     }
 
     let mut opts = overwrite_opt(options);
+    opts.insert(
+        "artifact_stem".into(),
+        ArgValue::String(stem),
+    );
     opts.insert("alignment".into(), alignment_to_arg(&resolved.meeting));
     opts.insert("participants".into(), participants_to_arg(&resolved.meeting));
     opts.insert(

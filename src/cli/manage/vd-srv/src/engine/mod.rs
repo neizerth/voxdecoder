@@ -151,6 +151,7 @@ impl Engine {
             .map_err(|e| EngineError::Other(e.to_string()))?;
         let mut rec = inner.store.load(id)?;
         merge_progress_snapshot(&inner.store.job_dir(id), &mut rec);
+        sanitize_job_errors(&mut rec);
         Ok(rec)
     }
 
@@ -162,6 +163,7 @@ impl Engine {
         let mut jobs = inner.store.list()?;
         for rec in &mut jobs {
             merge_progress_snapshot(&inner.store.job_dir(&rec.id), rec);
+            sanitize_job_errors(rec);
         }
         Ok(jobs)
     }
@@ -223,7 +225,7 @@ impl Engine {
         if let Some(n) = rec.nodes.iter_mut().find(|n| n.id == node_id) {
             n.status = status;
             n.finished_at = Some(now_rfc3339());
-            n.error = error;
+            n.error = error.map(|e| truncate_job_error(&e));
         }
         inner.store.save(&rec)?;
         Ok(())
@@ -433,6 +435,7 @@ impl Engine {
                 )?;
             }
             Err(err) => {
+                let err = truncate_job_error(&err);
                 rec.status = JobStatus::Failed;
                 rec.exit_code = Some(1);
                 rec.error = Some(err.clone());
@@ -511,6 +514,15 @@ fn merge_progress_snapshot(job_dir: &Path, rec: &mut JobRecord) {
     if let Some(ph) = v.get("phase").and_then(|x| x.as_str()) {
         rec.phase = Some(ph.to_string());
     }
+    if let Some(n) = v.get("processed").and_then(|x| x.as_u64()) {
+        rec.processed = Some(n);
+    }
+    if let Some(n) = v.get("total").and_then(|x| x.as_u64()) {
+        rec.total = Some(n);
+    }
+    if let Some(u) = v.get("unit").and_then(|x| x.as_str()) {
+        rec.unit = Some(u.to_string());
+    }
 }
 
 fn write_metrics(job_dir: &Path, report: &vd_pipeline::ExecutionReport) -> Result<(), String> {
@@ -539,4 +551,51 @@ fn append_stderr(job_dir: &Path, msg: &str) -> Result<(), String> {
         .open(job_dir.join("stderr.log"))
         .map_err(|e| e.to_string())?;
     writeln!(f, "{msg}").map_err(|e| e.to_string())
+}
+
+/// Cap failure text so MCP / job.status JSON stays parseable (huge ffmpeg dumps break clients ~8KiB).
+fn truncate_job_error(raw: &str) -> String {
+    const MAX: usize = 1200;
+    let cleaned = raw.replace('\r', "\n");
+    let lines: Vec<&str> = cleaned
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .collect();
+    let mut useful: Vec<&str> = lines
+        .iter()
+        .copied()
+        .filter(|l| {
+            let lower = l.to_ascii_lowercase();
+            lower.contains("error")
+                || lower.contains("failed")
+                || lower.contains("exited")
+                || lower.contains("no such file")
+                || lower.contains("permission denied")
+                || lower.contains("already exists")
+        })
+        .collect();
+    if useful.is_empty() {
+        useful = lines;
+    }
+    if useful.len() > 12 {
+        useful = useful.split_off(useful.len() - 12);
+    }
+    let joined = useful.join("\n");
+    if joined.len() <= MAX {
+        return joined;
+    }
+    let start = joined.len().saturating_sub(MAX);
+    format!("…{}", joined[start..].trim_start())
+}
+
+fn sanitize_job_errors(rec: &mut JobRecord) {
+    if let Some(e) = rec.error.take() {
+        rec.error = Some(truncate_job_error(&e));
+    }
+    for n in &mut rec.nodes {
+        if let Some(e) = n.error.take() {
+            n.error = Some(truncate_job_error(&e));
+        }
+    }
 }

@@ -229,6 +229,15 @@ pub struct MeetingPlanRequest {
     pub model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub device: Option<String>,
+    /// Preprocess playback speed (e.g. 1.5 / 2.0 / 2.2). Remapped via TimeMap.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speed: Option<f64>,
+    /// Accompanying documents (folder or file) → `role: context` for prepare-context / fix-*.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub docs: Option<PathBuf>,
+    /// Overwrite existing prepared / transcript / meeting artifacts (default false = reuse).
+    #[serde(default)]
+    pub overwrite: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub document: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -241,13 +250,28 @@ pub fn plan_meeting(
     store: Option<&JobStore>,
 ) -> Result<Job, PlanError> {
     let (meeting_req, mut options) = materialize_meeting(request, data_dir, store)?;
-    if request.engine.is_some() || request.model.is_some() || request.device.is_some() {
+    if request.overwrite {
+        options.transcribe.overwrite = true;
+    }
+    if request.engine.is_some()
+        || request.model.is_some()
+        || request.device.is_some()
+        || request.speed.is_some()
+    {
         options.transcribe = TranscribeDefaults {
             engine: request.engine.clone().or(options.transcribe.engine),
             model: request.model.clone().or(options.transcribe.model),
             device: request.device.clone().or(options.transcribe.device),
+            speed: request.speed.or(options.transcribe.speed),
             overwrite: options.transcribe.overwrite,
         };
+    }
+    if let Some(factor) = options.transcribe.speed {
+        if !(0.25..=4.0).contains(&factor) {
+            return Err(PlanError::InvalidInput(format!(
+                "speed must be between 0.25 and 4.0 (got {factor})"
+            )));
+        }
     }
     plan_job(&meeting_req, &options).map_err(|e| PlanError::InvalidInput(e.to_string()))
 }
@@ -302,6 +326,21 @@ fn materialize_meeting(
                     .require_audio()
                     .map_err(|e| PlanError::InvalidInput(e.to_string()))?
                     .clone(),
+                url: None,
+                participant: None,
+                purposes: Vec::new(),
+                subtitles: None,
+                provider: None,
+            });
+        }
+    }
+
+    if let Some(docs) = &request.docs {
+        let has_context = inputs.iter().any(|i| i.role == InputRole::Context);
+        if !has_context {
+            inputs.push(vd_meeting::InputSource {
+                role: InputRole::Context,
+                path: docs.clone(),
                 url: None,
                 participant: None,
                 purposes: Vec::new(),

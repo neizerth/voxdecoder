@@ -110,6 +110,20 @@ impl<'a> ProgressEvent<'a> {
         }
     }
 
+    /// Phase with segment/chunk counters (ASR windows).
+    pub fn phase_segment(phase: &'a str, percent: u8, segment: u32, segment_total: u32) -> Self {
+        Self::Phase {
+            phase,
+            percent: Some(percent),
+            span: None,
+            span_total: None,
+            segment: Some(segment),
+            segment_total: Some(segment_total),
+            bytes_done: None,
+            bytes_total: None,
+        }
+    }
+
     /// Phase with download bytes.
     pub fn phase_download(phase: &'a str, percent: u8, done: u64, total: Option<u64>) -> Self {
         Self::Phase {
@@ -150,6 +164,14 @@ impl Progress {
         }
     }
 
+    /// Prefer `VD_PROGRESS_SNAPSHOT` when set (Runtime child tools); otherwise `mode` only.
+    pub fn from_env(mode: ProgressMode) -> Self {
+        match std::env::var_os("VD_PROGRESS_SNAPSHOT") {
+            Some(p) if !p.is_empty() => Self::with_snapshot(mode, PathBuf::from(p)),
+            _ => Self::new(mode),
+        }
+    }
+
     fn finish_phase_line(&self, err: &mut impl Write) {
         if self.phase_open.get() {
             let _ = writeln!(err);
@@ -157,20 +179,75 @@ impl Progress {
         }
     }
 
+    fn remap_percent(local: Option<u8>) -> Option<u8> {
+        let Some(local) = local else {
+            return None;
+        };
+        let base: u8 = std::env::var("VD_PROGRESS_STEP_BASE")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
+        let span: u8 = std::env::var("VD_PROGRESS_STEP_SPAN")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(100);
+        let mapped = u16::from(base) + (u16::from(local) * u16::from(span)) / 100;
+        Some(mapped.min(100) as u8)
+    }
+
     fn write_snapshot(&self, event: &ProgressEvent<'_>) {
         let Some(path) = &self.snapshot else {
             return;
         };
+        let mut processed: Option<u64> = None;
+        let mut total: Option<u64> = None;
+        let mut unit: Option<&str> = None;
         let (percent, phase): (Option<u8>, Option<&str>) = match event {
             ProgressEvent::Start { .. } => (Some(0), Some("start")),
-            ProgressEvent::Phase { phase, percent, .. } => (*percent, Some(*phase)),
+            ProgressEvent::Phase {
+                phase,
+                percent,
+                span,
+                span_total,
+                segment,
+                segment_total,
+                bytes_done,
+                bytes_total,
+            } => {
+                if let (Some(d), t) = (*bytes_done, *bytes_total) {
+                    processed = Some(d);
+                    total = t;
+                    unit = Some("byte");
+                } else if let (Some(s), Some(t)) = (*segment, *segment_total) {
+                    processed = Some(u64::from(s));
+                    total = Some(u64::from(t));
+                    unit = Some("chunk");
+                } else if let (Some(s), Some(t)) = (*span, *span_total) {
+                    processed = Some(u64::from(s));
+                    total = Some(u64::from(t));
+                    unit = Some("step");
+                }
+                (*percent, Some(*phase))
+            }
             ProgressEvent::Done { .. } => (Some(100), Some("done")),
             ProgressEvent::Error { .. } => (None, Some("error")),
         };
-        let body = serde_json::json!({
+        let percent = Self::remap_percent(percent);
+        let mut body = serde_json::json!({
             "percent": percent,
             "phase": phase,
         });
+        if let Some(obj) = body.as_object_mut() {
+            if let Some(p) = processed {
+                obj.insert("processed".into(), serde_json::json!(p));
+            }
+            if let Some(t) = total {
+                obj.insert("total".into(), serde_json::json!(t));
+            }
+            if let Some(u) = unit {
+                obj.insert("unit".into(), serde_json::json!(u));
+            }
+        }
         let Ok(raw) = serde_json::to_vec_pretty(&body) else {
             return;
         };

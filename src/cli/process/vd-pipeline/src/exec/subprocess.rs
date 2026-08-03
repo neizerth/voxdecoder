@@ -78,7 +78,7 @@ fn run_import_url(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
         args.push("--metadata-only".into());
     }
 
-    run_cmd(&bin, &args, &req.working_dir)?;
+    run_cmd(&bin, &args, req, None)?;
 
     let audio = ["audio.m4a", "audio.wav", "audio.mp3", "audio.ogg", "audio.opus"]
         .iter()
@@ -147,31 +147,34 @@ fn run_preprocess(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
     // Always pass an explicit output path so binder and CLI agree.
     // Default: `{input_parent}/.voxdecoder/work/` (keeps source folder clean).
     let primary = infer_preprocess_output(req);
+    if let Some(mut reused) = reuse_existing(req, &primary) {
+        if let Some(tm) = timemap_beside(&primary) {
+            reused.outputs.insert("timemap".into(), tm);
+        }
+        return Ok(reused);
+    }
     args.push("-o".into());
     args.push(primary.display().to_string());
-    if req.options.get("overwrite").and_then(ArgValue::as_bool) == Some(true) {
-        args.push("--overwrite".into());
-    }
+    push_overwrite(&mut args, req, &primary);
 
-    run_cmd(&bin, &args, &req.working_dir)?;
+    run_cmd(&bin, &args, req, Some(&primary))?;
 
     let mut outputs = BTreeMap::new();
-    let timemap = {
-        let stem = primary
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("prepared");
-        let parent = primary.parent().unwrap_or_else(|| Path::new("."));
-        parent.join(format!("{stem}.timemap.json"))
-    };
-    if timemap.is_file() {
-        outputs.insert("timemap".into(), timemap);
+    if let Some(tm) = timemap_beside(&primary) {
+        outputs.insert("timemap".into(), tm);
     }
 
     Ok(InvokeResult {
         primary_output: primary,
         outputs,
     })
+}
+
+fn timemap_beside(primary: &Path) -> Option<PathBuf> {
+    let stem = primary.file_stem().and_then(|s| s.to_str()).unwrap_or("prepared");
+    let parent = primary.parent().unwrap_or_else(|| Path::new("."));
+    let timemap = parent.join(format!("{stem}.timemap.json"));
+    timemap.is_file().then_some(timemap)
 }
 
 fn infer_preprocess_output(req: &InvokeRequest) -> PathBuf {
@@ -215,6 +218,64 @@ fn filters_include_extract_audio(req: &InvokeRequest) -> bool {
 /// `{input_parent}/.voxdecoder/work` — Job intermediates next to the source tree.
 fn default_work_dir(input: &Path) -> PathBuf {
     vd_artifact::paths::work_dir_for_input(input)
+}
+
+fn explicit_overwrite(req: &InvokeRequest) -> bool {
+    req.options.get("overwrite").and_then(ArgValue::as_bool) == Some(true)
+}
+
+fn same_output_as_input(out: &Path, input: &Path) -> bool {
+    if out == input {
+        return true;
+    }
+    match (out.canonicalize(), input.canonicalize()) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => false,
+    }
+}
+
+/// Idempotent resume: reuse an existing primary artifact instead of regenerating.
+///
+/// Does **not** reuse when:
+/// - `overwrite: true` (caller wants a fresh write), or
+/// - output path equals input (fix chain shares `{stem}.fixed.{ext}` — must rewrite in place).
+fn reuse_existing(req: &InvokeRequest, primary: &Path) -> Option<InvokeResult> {
+    if !primary.is_file() || explicit_overwrite(req) || same_output_as_input(primary, &req.input)
+    {
+        return None;
+    }
+    Some(InvokeResult {
+        primary_output: primary.to_path_buf(),
+        outputs: BTreeMap::new(),
+    })
+}
+
+/// Pass `--overwrite` only when explicit, or when rewriting the same path as input (fix chain).
+fn want_overwrite(req: &InvokeRequest, out: &Path) -> bool {
+    explicit_overwrite(req) || same_output_as_input(out, &req.input)
+}
+
+fn push_overwrite(args: &mut Vec<String>, req: &InvokeRequest, out: &Path) {
+    if want_overwrite(req, out) {
+        args.push("--overwrite".into());
+    }
+}
+
+fn progress_env(req: &InvokeRequest) -> Vec<(String, String)> {
+    let mut env = Vec::new();
+    if let Some(path) = &req.progress_snapshot {
+        env.push((
+            "VD_PROGRESS_SNAPSHOT".into(),
+            path.display().to_string(),
+        ));
+    }
+    if let Some(base) = req.progress_step_base {
+        env.push(("VD_PROGRESS_STEP_BASE".into(), base.to_string()));
+    }
+    if let Some(span) = req.progress_step_span {
+        env.push(("VD_PROGRESS_STEP_SPAN".into(), span.to_string()));
+    }
+    env
 }
 
 fn unique_suffix() -> u128 {
@@ -372,18 +433,19 @@ fn run_postprocess(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
         }
     }
 
-    if req.options.get("overwrite").and_then(ArgValue::as_bool) == Some(true) {
-        args.push("--overwrite".into());
-    }
-
-    run_cmd(&bin, &args, &req.working_dir)?;
-
-    // Primary output: first recipe's first declared file is unknown here; use output_dir or working_dir.
     let primary = req.output.clone().unwrap_or_else(|| {
         req.output_dir
             .clone()
             .unwrap_or_else(|| req.working_dir.clone())
     });
+    if primary.is_file() {
+        if let Some(reused) = reuse_existing(req, &primary) {
+            return Ok(reused);
+        }
+    }
+    push_overwrite(&mut args, req, &primary);
+
+    run_cmd(&bin, &args, req, primary.is_file().then_some(primary.as_path()))?;
     Ok(InvokeResult {
         primary_output: primary,
         outputs: BTreeMap::new(),
@@ -391,12 +453,37 @@ fn run_postprocess(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
 }
 
 fn run_meeting_merge(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
+    let stem = req
+        .options
+        .get("artifact_stem")
+        .and_then(ArgValue::as_string)
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| "meeting".into());
+    let json_name = format!("{stem}.json");
     let out = req.output.clone().unwrap_or_else(|| {
         req.output_dir.as_ref().map_or_else(
-            || req.working_dir.join("meeting.json"),
-            |d| d.join("meeting.json"),
+            || req.working_dir.join(&json_name),
+            |d| d.join(&json_name),
         )
     });
+    // If planner passed a bare filename as output, resolve under working/output dir.
+    let out = if out.is_relative() && out.components().count() == 1 {
+        req.output_dir
+            .as_ref()
+            .unwrap_or(&req.working_dir)
+            .join(out.file_name().unwrap_or_default())
+    } else {
+        out
+    };
+    if let Some(reused) = reuse_existing(req, &out) {
+        let md_path = meeting_md_path(&out);
+        if md_path.is_file() {
+            let mut r = reused;
+            r.outputs.insert("markdown".into(), md_path);
+            return Ok(r);
+        }
+        // JSON present but markdown missing — regenerate both below.
+    }
     if let Some(parent) = out.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|e| ExecError::Step(format!("meeting-merge mkdir: {e}")))?;
@@ -437,6 +524,15 @@ fn run_meeting_merge(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
         text_paths.push(("speaker".into(), req.input.clone()));
     }
 
+    // id → display name from meeting.participants.known (avoid listing both id and name).
+    let id_to_name = known_speaker_names(&req.options);
+    let display = |id: &str| -> String {
+        id_to_name
+            .get(id)
+            .cloned()
+            .unwrap_or_else(|| id.to_string())
+    };
+
     let mix_duration = mix_path.as_ref().and_then(|p| probe_duration_sec(p));
     let timeline = timeline_path
         .as_ref()
@@ -444,7 +540,8 @@ fn run_meeting_merge(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
 
     let mut turns = Vec::new();
     let mut cursor = 0.0_f64;
-    for (speaker, path) in &text_paths {
+    for (speaker_id, path) in &text_paths {
+        let speaker = display(speaker_id);
         let text = std::fs::read_to_string(path).unwrap_or_default();
         let text = text.trim().to_string();
         if text.is_empty() {
@@ -464,8 +561,8 @@ fn run_meeting_merge(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
                 });
             }
         } else {
-            // No timed segments: place each track as one turn on a sequential clock.
-            let dur = 1.0_f64;
+            // No timed segments: one turn per track using media duration when known.
+            let dur = probe_duration_beside_transcript(path).unwrap_or(1.0).max(0.1);
             let mut end = cursor + dur;
             if let Some(max) = mix_duration {
                 end = end.min(max).max(cursor);
@@ -485,28 +582,17 @@ fn run_meeting_merge(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
+    // Roster = display names for text tracks (known names when provided), not id+name duplicates.
     let participants: Vec<String> = {
         let mut seen = BTreeMap::new();
-        for t in &turns {
-            seen.entry(t.speaker.clone()).or_insert(());
-        }
-        if let Some(map) = req
-            .options
-            .get("participants")
-            .and_then(ArgValue::as_map)
-            .and_then(|m| m.get("known"))
-            .and_then(ArgValue::as_map)
-        {
-            for (id, v) in map {
-                let name = v
-                    .as_map()
-                    .and_then(|m| m.get("name"))
-                    .and_then(ArgValue::as_string)
-                    .unwrap_or_else(|| id.clone());
-                seen.entry(name).or_insert(());
+        let mut ordered = Vec::new();
+        for (id, _) in &text_paths {
+            let name = display(id);
+            if seen.insert(name.clone(), ()).is_none() {
+                ordered.push(name);
             }
         }
-        seen.into_keys().collect()
+        ordered
     };
 
     let effective_reference = if timeline.is_some()
@@ -547,10 +633,67 @@ fn run_meeting_merge(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
     std::fs::write(&out, text)
         .map_err(|e| ExecError::Step(format!("meeting-merge write: {e}")))?;
 
+    let md_path = meeting_md_path(&out);
+    let md_body = format_meeting_markdown(&artifact.turns);
+    std::fs::write(&md_path, md_body)
+        .map_err(|e| ExecError::Step(format!("meeting-merge markdown: {e}")))?;
+
+    let mut outputs = BTreeMap::new();
+    outputs.insert("markdown".into(), md_path);
+
     Ok(InvokeResult {
         primary_output: out,
-        outputs: BTreeMap::new(),
+        outputs,
     })
+}
+
+fn meeting_md_path(json_out: &Path) -> PathBuf {
+    let parent = json_out.parent().unwrap_or_else(|| Path::new("."));
+    let stem = json_out
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("meeting");
+    parent.join(format!("{stem}.md"))
+}
+
+fn known_speaker_names(options: &BTreeMap<String, ArgValue>) -> BTreeMap<String, String> {
+    let mut map = BTreeMap::new();
+    let Some(known) = options
+        .get("participants")
+        .and_then(ArgValue::as_map)
+        .and_then(|m| m.get("known"))
+        .and_then(ArgValue::as_map)
+    else {
+        return map;
+    };
+    for (id, v) in known {
+        let name = v
+            .as_map()
+            .and_then(|m| m.get("name"))
+            .and_then(ArgValue::as_string)
+            .unwrap_or_else(|| id.clone());
+        map.insert(id.clone(), name);
+    }
+    map
+}
+
+/// Human-readable meeting transcript.
+/// Speaker on its own line, text on the following line(s), blank line between turns.
+/// Use `**Name**` (not `[Name]`) so Markdown preview does not treat the label as a link.
+fn format_meeting_markdown(turns: &[crate::meeting_artifact::MeetingTurn]) -> String {
+    let mut out = String::new();
+    for turn in turns {
+        let text = turn.text.trim();
+        if text.is_empty() {
+            continue;
+        }
+        out.push_str("**");
+        out.push_str(&turn.speaker);
+        out.push_str("**\n");
+        out.push_str(text);
+        out.push_str("\n\n");
+    }
+    out
 }
 
 fn speaker_from_text_id(id: &str) -> String {
@@ -583,6 +726,7 @@ fn load_transcript_segments(transcript: &Path) -> Option<Vec<SegTurn>> {
             stem.trim_end_matches(".fixed")
         )),
     ];
+    let timemap = load_timemap_beside_transcript(transcript);
     for c in candidates {
         if c.as_os_str().is_empty() || !c.is_file() {
             continue;
@@ -605,16 +749,63 @@ fn load_transcript_segments(transcript: &Path) -> Option<Vec<SegTurn>> {
                 .unwrap_or("")
                 .trim()
                 .to_string();
-            if !text.is_empty() {
-                out.push(SegTurn {
-                    start_sec: start,
-                    end_sec: end,
-                    text,
-                });
+            if text.is_empty() {
+                continue;
             }
+            let (start_sec, end_sec) = if let Some(tm) = &timemap {
+                tm.remap_interval(start, end)
+            } else {
+                (start, end)
+            };
+            out.push(SegTurn {
+                start_sec,
+                end_sec,
+                text,
+            });
         }
         if !out.is_empty() {
             return Some(out);
+        }
+    }
+    None
+}
+
+fn load_timemap_beside_transcript(transcript: &Path) -> Option<vd_artifact::TimeMap> {
+    let stem = transcript.file_stem()?.to_str()?;
+    let parent = transcript.parent()?;
+    let bases = [
+        stem.strip_suffix(".fixed").unwrap_or(stem).to_string(),
+        stem.trim_end_matches(".fixed").to_string(),
+        stem.to_string(),
+    ];
+    for base in bases {
+        if base.is_empty() {
+            continue;
+        }
+        let path = parent.join(format!("{base}.timemap.json"));
+        if !path.is_file() {
+            continue;
+        }
+        let raw = std::fs::read_to_string(&path).ok()?;
+        if let Ok(tm) = serde_json::from_str::<vd_artifact::TimeMap>(&raw) {
+            return Some(tm);
+        }
+    }
+    None
+}
+
+/// Best-effort duration of prepared media next to a transcript path.
+fn probe_duration_beside_transcript(transcript: &Path) -> Option<f64> {
+    let stem = transcript.file_stem()?.to_str()?;
+    let parent = transcript.parent()?;
+    let base = stem.strip_suffix(".fixed").unwrap_or(stem);
+    let base = base.trim_end_matches(".fixed");
+    for ext in ["mp3", "wav", "m4a", "ogg", "flac", "mp4"] {
+        let media = parent.join(format!("{base}.{ext}"));
+        if media.is_file() {
+            if let Some(d) = probe_duration_sec(&media) {
+                return Some(d);
+            }
         }
     }
     None
@@ -651,6 +842,9 @@ fn probe_duration_sec(path: &Path) -> Option<f64> {
 fn run_diarize(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
     let bin = find_bin("vd-diarize")?;
     let primary = infer_diarize_output(req);
+    if let Some(reused) = reuse_existing(req, &primary) {
+        return Ok(reused);
+    }
     let mut args = vec![
         "run".into(),
         "-i".into(),
@@ -673,11 +867,9 @@ fn run_diarize(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
         args.push("--device".into());
         args.push(d);
     }
-    if req.options.get("overwrite").and_then(ArgValue::as_bool) == Some(true) {
-        args.push("--overwrite".into());
-    }
+    push_overwrite(&mut args, req, &primary);
 
-    run_cmd(&bin, &args, &req.working_dir)?;
+    run_cmd(&bin, &args, req, Some(&primary))?;
     Ok(InvokeResult {
         primary_output: primary,
         outputs: BTreeMap::new(),
@@ -734,6 +926,13 @@ fn run_transcribe(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
 
     let bin = find_bin("vd-gigaam")?;
     let out = infer_gigaam_output(req);
+    if let Some(mut reused) = reuse_existing(req, &out) {
+        let seg = segments_sidecar_for(&out);
+        if seg.is_file() {
+            reused.outputs.insert("segments".into(), seg);
+        }
+        return Ok(reused);
+    }
     let mut args = vec![
         "run".into(),
         "-i".into(),
@@ -755,9 +954,7 @@ fn run_transcribe(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
     if req.options.get("flash").and_then(ArgValue::as_bool) == Some(true) {
         args.push("--flash".into());
     }
-    if req.options.get("overwrite").and_then(ArgValue::as_bool) == Some(true) {
-        args.push("--overwrite".into());
-    }
+    push_overwrite(&mut args, req, &out);
     if req.options.get("segments").and_then(ArgValue::as_bool) == Some(true) {
         args.push("--segments".into());
     }
@@ -769,7 +966,7 @@ fn run_transcribe(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
         args.push(fmt);
     }
 
-    run_cmd(&bin, &args, &req.working_dir)?;
+    run_cmd(&bin, &args, req, Some(&out))?;
     let mut outputs = BTreeMap::new();
     let seg = segments_sidecar_for(&out);
     if seg.is_file() {
@@ -833,7 +1030,7 @@ fn run_prepare_context(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
     if req.options.get("force").and_then(ArgValue::as_bool) == Some(true) {
         args.push("--force".into());
     }
-    run_cmd(&bin, &args, &req.working_dir)?;
+    run_cmd(&bin, &args, req, None)?;
     Ok(InvokeResult {
         primary_output: out_dir,
         outputs: BTreeMap::new(),
@@ -893,6 +1090,9 @@ fn docs_have_sources(root: &Path) -> bool {
 fn run_fix(req: &InvokeRequest, bin_name: &str) -> Result<InvokeResult, ExecError> {
     let bin = find_bin(bin_name)?;
     let primary = infer_fix_output(req);
+    if let Some(reused) = reuse_existing(req, &primary) {
+        return Ok(reused);
+    }
     let mut args = vec![
         "run".into(),
         "-i".into(),
@@ -901,9 +1101,7 @@ fn run_fix(req: &InvokeRequest, bin_name: &str) -> Result<InvokeResult, ExecErro
         "-o".into(),
         primary.display().to_string(),
     ];
-    if req.options.get("overwrite").and_then(ArgValue::as_bool) == Some(true) {
-        args.push("--overwrite".into());
-    }
+    push_overwrite(&mut args, req, &primary);
     if let Some(lang) = req.options.get("language").and_then(ArgValue::as_string) {
         args.push("-l".into());
         args.push(lang);
@@ -932,7 +1130,7 @@ fn run_fix(req: &InvokeRequest, bin_name: &str) -> Result<InvokeResult, ExecErro
             args.push(tm);
         }
     }
-    run_cmd(&bin, &args, &req.working_dir)?;
+    run_cmd(&bin, &args, req, Some(&primary))?;
     Ok(InvokeResult {
         primary_output: primary,
         outputs: BTreeMap::new(),
@@ -962,10 +1160,18 @@ fn infer_fix_output(req: &InvokeRequest) -> PathBuf {
     default_work_dir(&req.input).join(name)
 }
 
-fn run_cmd(bin: &Path, args: &[String], cwd: &Path) -> Result<(), ExecError> {
-    let output = Command::new(bin)
-        .args(args)
-        .current_dir(cwd)
+fn run_cmd(
+    bin: &Path,
+    args: &[String],
+    req: &InvokeRequest,
+    expected_out: Option<&Path>,
+) -> Result<(), ExecError> {
+    let mut cmd = Command::new(bin);
+    cmd.args(args).current_dir(&req.working_dir);
+    for (k, v) in progress_env(req) {
+        cmd.env(k, v);
+    }
+    let output = cmd
         .output()
         .map_err(|e| ExecError::Step(format!("{}: {e}", bin.display())))?;
     if output.status.success() {
@@ -984,6 +1190,15 @@ fn run_cmd(bin: &Path, args: &[String], cwd: &Path) -> Result<(), ExecError> {
     } else {
         detail
     };
+    // Soft resume: child still reported AlreadyExists but the artifact is on disk.
+    if detail.contains("output already exists") {
+        if let Some(p) = expected_out {
+            if p.is_file() && !explicit_overwrite(req) && !same_output_as_input(p, &req.input) {
+                return Ok(());
+            }
+        }
+    }
+    let detail = compact_step_error(detail);
     if detail.is_empty() {
         Err(ExecError::Step(format!("{} exited {code}", bin.display())))
     } else {
@@ -992,6 +1207,35 @@ fn run_cmd(bin: &Path, args: &[String], cwd: &Path) -> Result<(), ExecError> {
             bin.display()
         )))
     }
+}
+
+/// Keep child failure text short enough for MCP/job.status JSON.
+fn compact_step_error(raw: &str) -> String {
+    const MAX: usize = 1500;
+    let cleaned = raw.replace('\r', "\n");
+    let mut lines: Vec<&str> = cleaned
+        .lines()
+        .map(str::trim)
+        .filter(|l| {
+            !l.is_empty()
+                && !l.starts_with("ffmpeg version")
+                && !l.starts_with("built with")
+                && !l.starts_with("configuration:")
+                && !l.starts_with("libav")
+                && !l.starts_with("libsw")
+                && !l.starts_with("size=")
+                && !l.starts_with("frame=")
+        })
+        .collect();
+    if lines.len() > 20 {
+        lines = lines.split_off(lines.len() - 20);
+    }
+    let joined = lines.join("\n");
+    if joined.len() <= MAX {
+        return joined;
+    }
+    let start = joined.len().saturating_sub(MAX);
+    format!("…{}", joined[start..].trim_start())
 }
 
 fn find_bin(name: &str) -> Result<PathBuf, ExecError> {
@@ -1011,4 +1255,105 @@ fn find_bin(name: &str) -> Result<PathBuf, ExecError> {
         }
     }
     Ok(PathBuf::from(name))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    fn req(input: &Path, overwrite: bool) -> InvokeRequest {
+        let mut options = BTreeMap::new();
+        if overwrite {
+            options.insert("overwrite".into(), ArgValue::Bool(true));
+        }
+        InvokeRequest {
+            capability: Capability::FixAsr,
+            step_id: None,
+            working_dir: input.parent().unwrap_or(Path::new(".")).to_path_buf(),
+            input: input.to_path_buf(),
+            output: None,
+            output_dir: None,
+            context_assets: None,
+            options,
+            progress_snapshot: None,
+            progress_step_base: None,
+            progress_step_span: None,
+        }
+    }
+
+    #[test]
+    fn reuse_existing_skips_when_artifact_present() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("igor.transcript.txt");
+        let fixed = dir.path().join("igor.transcript.fixed.txt");
+        fs::write(&input, "raw").unwrap();
+        fs::write(&fixed, "old fixed").unwrap();
+
+        let r = req(&input, false);
+        let reused = reuse_existing(&r, &fixed).expect("should reuse");
+        assert_eq!(reused.primary_output, fixed);
+        assert!(!want_overwrite(&r, &fixed));
+    }
+
+    #[test]
+    fn reuse_existing_refuses_in_place_fix_chain() {
+        let dir = tempfile::tempdir().unwrap();
+        let fixed = dir.path().join("igor.transcript.fixed.txt");
+        fs::write(&fixed, "cased").unwrap();
+
+        let r = req(&fixed, false);
+        assert!(reuse_existing(&r, &fixed).is_none());
+        assert!(want_overwrite(&r, &fixed));
+    }
+
+    #[test]
+    fn reuse_existing_honors_explicit_overwrite() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("igor.transcript.txt");
+        let fixed = dir.path().join("igor.transcript.fixed.txt");
+        fs::write(&input, "raw").unwrap();
+        fs::write(&fixed, "old").unwrap();
+
+        let r = req(&input, true);
+        assert!(reuse_existing(&r, &fixed).is_none());
+        assert!(want_overwrite(&r, &fixed));
+    }
+
+    #[test]
+    fn meeting_markdown_speaker_blocks() {
+        let turns = vec![
+            crate::meeting_artifact::MeetingTurn {
+                speaker: "Игорь".into(),
+                start_sec: 0.0,
+                end_sec: 1.0,
+                text: "Привет".into(),
+            },
+            crate::meeting_artifact::MeetingTurn {
+                speaker: "Владимир".into(),
+                start_sec: 1.0,
+                end_sec: 2.0,
+                text: "Здравствуй".into(),
+            },
+        ];
+        let md = format_meeting_markdown(&turns);
+        assert_eq!(
+            md,
+            "**Игорь**\nПривет\n\n**Владимир**\nЗдравствуй\n\n"
+        );
+    }
+
+    #[test]
+    fn known_names_map_id_to_display() {
+        let mut known = BTreeMap::new();
+        let mut igor = BTreeMap::new();
+        igor.insert("name".into(), ArgValue::String("Игорь".into()));
+        known.insert("igor".into(), ArgValue::Map(igor));
+        let mut participants = BTreeMap::new();
+        participants.insert("known".into(), ArgValue::Map(known));
+        let mut options = BTreeMap::new();
+        options.insert("participants".into(), ArgValue::Map(participants));
+        let map = known_speaker_names(&options);
+        assert_eq!(map.get("igor").map(String::as_str), Some("Игорь"));
+    }
 }

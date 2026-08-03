@@ -6,7 +6,7 @@ Stack overview: [../README.md](../README.md) · [vd-pipeline](../vd-pipeline/) �
 Shared crates: [`vd-artifact`](../../../crates/vd-artifact/), [`vd-progress`](../../../crates/vd-progress/), [`vd-pipeline`](../vd-pipeline/).  
 Rust gates: [RUST.md](RUST.md).
 
-**Status: implemented.** Workspace member: `src/cli/process/vd-meeting`. `meeting-merge` currently uses a stub binder in `vd-pipeline` (writes `meeting.json`); real alignment lands later.
+**Status: implemented.** Workspace member: `src/cli/process/vd-meeting`. Track alignment (`alignment.mode: longest`) pads shorter recordings with leading silence in preprocess before ASR/diarize. `meeting-merge` still uses a stub binder in `vd-pipeline` for the final `meeting.json` (acoustic force-align remains future work).
 
 ## Core rule
 
@@ -124,7 +124,7 @@ Omit `purposes` to use defaults:
 | `room` | alone, diarization false | `[transcript]` |
 | `context` | any | (none) |
 
-With participant tracks, the room mix can still feed **`meeting-merge` without diarization**: set `meeting.diarization.enabled: false` and `meeting.alignment.reference: mix` (or `auto`). The planner passes prepared room audio into merge as a timing reference; track transcripts supply text and speaker identity. `alignment.reference: none` ignores the mix (tracks only). Full acoustic force-align remains future work — MVP uses track segment clocks clamped to mix duration when available.
+With participant tracks, the room mix can still feed **`meeting-merge` without diarization**: set `meeting.diarization.enabled: false` and `meeting.alignment.reference: mix` (or `auto`). The planner passes prepared room audio into merge as a timing reference; track transcripts supply text and speaker identity. `alignment.reference: none` ignores the mix (tracks only). By default (`alignment.mode: longest`) shorter tracks get leading silence in preprocess so ASR clocks share the longest timeline; acoustic force-align remains future work.
 
 ### Input roles
 
@@ -302,12 +302,11 @@ meeting:
 
 | `mode` | Behavior |
 |--------|----------|
-| `longest` | Longest recording is the reference |
-| `start` | Shared start; late joiners get leading silence |
-| `end` | Shared end; early leavers get trailing silence |
+| `longest` (default) | Probe all tracks (+ room); pad shorter ones with **leading** silence so every file matches the longest duration (assumes late joiners / shared end). Applied in preprocess via `pad-start` before ASR/diarize. |
+| `start` | Same leading pad as `longest`. |
+| `end` | Pad shorter tracks with **trailing** silence (`pad-end`) to match the longest. |
 
-Copied onto the **`meeting-merge` capability** options by the planner.
-
+The planner injects `pad-start` / `pad-end` into each branch’s preprocess chain (after `trim-silence`, provider `ffmpeg`). Mode is also copied onto **`meeting-merge`** options for the artifact metadata.
 ---
 
 ## Planner algorithm
@@ -355,18 +354,12 @@ If only room exists, transcript (+ optional diarize) still feed merge.
 
 ## Meeting Artifact
 
-Canonical result of **`meeting-merge`**: `ArtifactType::Meeting` (participants, segments, timeline, links).
+Canonical result of **`meeting-merge`**:
 
-Exports of the same object:
+- `meeting.json` — machine artifact (participants roster, turns, timeline, alignment)
+- `meeting.md` — human transcript (`[Speaker]\ntext` blocks); prefer this for reading / sharing
 
-```text
-meeting.json                 # canonical
-meeting.srt | .txt | .md
-participants/alice.txt …
-meeting.diarization.json     # when diarize ran
-meeting.timeline.json
-meeting.metadata.json
-```
+Participants in the JSON are **display names** for each text track (from `participants.known[].name` when set), not duplicated id+name pairs.
 
 ---
 

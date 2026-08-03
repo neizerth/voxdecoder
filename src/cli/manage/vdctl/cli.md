@@ -85,6 +85,8 @@ vdctl mcp start | stop | restart | status
 vdctl mcp build
 vdctl mcp install | update | uninstall | verify | list
 vdctl mcp install --apps cursor
+vdctl mcp install --apps opencode
+vdctl mcp install --apps crush,gemini
 vdctl mcp install --skills vd-audio,vd-meeting
 vdctl mcp install --exclude vd-meeting
 vdctl mcp install --no-skills

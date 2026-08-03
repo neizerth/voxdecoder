@@ -124,15 +124,43 @@ impl Default for DiarizationPolicy {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DiarizationEnabled {
     #[default]
     Auto,
-    #[serde(alias = "true")]
     True,
-    #[serde(alias = "false")]
     False,
+}
+
+impl<'de> Deserialize<'de> for DiarizationEnabled {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Visitor;
+
+        impl<'de> serde::de::Visitor<'de> for Visitor {
+            type Value = DiarizationEnabled;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("a boolean or string (auto|true|false)")
+            }
+
+            fn visit_bool<E: serde::de::Error>(self, v: bool) -> Result<Self::Value, E> {
+                Ok(if v {
+                    DiarizationEnabled::True
+                } else {
+                    DiarizationEnabled::False
+                })
+            }
+
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
+                DiarizationEnabled::parse(v).ok_or_else(|| {
+                    E::unknown_variant(v, &["auto", "true", "false"])
+                })
+            }
+        }
+
+        deserializer.deserialize_any(Visitor)
+    }
 }
 
 impl DiarizationEnabled {

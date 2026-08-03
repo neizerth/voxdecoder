@@ -39,15 +39,7 @@ pub fn install_mcp(adapter: &AgentAdapter, spec: &McpServerSpec, dry_run: bool) 
         .as_object_mut()
         .ok_or_else(|| Error::Message(format!("{}: `{key}` is not an object", path.display())))?;
 
-    let mut entry = Map::new();
-    entry.insert("command".into(), json!(spec.command));
-    if !spec.args.is_empty() {
-        entry.insert("args".into(), json!(spec.args));
-    }
-    if !spec.env.is_empty() {
-        entry.insert("env".into(), Value::Object(spec.env.clone()));
-    }
-    obj.insert("voxdecoder".into(), Value::Object(entry));
+    obj.insert("voxdecoder".into(), server_entry(adapter.mcp_format, spec));
 
     write_json_atomic(&path, &Value::Object(root))?;
     Ok(())
@@ -79,6 +71,51 @@ pub fn uninstall_mcp(adapter: &AgentAdapter, dry_run: bool) -> Result<(), Error>
     }
     write_json_atomic(&path, &Value::Object(root))?;
     Ok(())
+}
+
+fn server_entry(format: McpFormat, spec: &McpServerSpec) -> Value {
+    match format {
+        McpFormat::Mcp => {
+            // OpenCode: { type, command: [bin, ...args], environment, enabled }
+            let mut command = vec![json!(spec.command)];
+            for a in &spec.args {
+                command.push(json!(a));
+            }
+            let mut entry = Map::new();
+            entry.insert("type".into(), json!("local"));
+            entry.insert("command".into(), Value::Array(command));
+            entry.insert("enabled".into(), json!(true));
+            if !spec.env.is_empty() {
+                entry.insert("environment".into(), Value::Object(spec.env.clone()));
+            }
+            Value::Object(entry)
+        }
+        McpFormat::Stdio => {
+            // Crush: { type: stdio, command, args?, env? }
+            let mut entry = Map::new();
+            entry.insert("type".into(), json!("stdio"));
+            entry.insert("command".into(), json!(spec.command));
+            if !spec.args.is_empty() {
+                entry.insert("args".into(), json!(spec.args));
+            }
+            if !spec.env.is_empty() {
+                entry.insert("env".into(), Value::Object(spec.env.clone()));
+            }
+            Value::Object(entry)
+        }
+        _ => {
+            // Cursor / Claude Desktop / VS Code / Gemini: { command, args?, env? }
+            let mut entry = Map::new();
+            entry.insert("command".into(), json!(spec.command));
+            if !spec.args.is_empty() {
+                entry.insert("args".into(), json!(spec.args));
+            }
+            if !spec.env.is_empty() {
+                entry.insert("env".into(), Value::Object(spec.env.clone()));
+            }
+            Value::Object(entry)
+        }
+    }
 }
 
 fn read_json_object(path: &Path) -> Result<Map<String, Value>, Error> {
@@ -113,4 +150,130 @@ fn write_json_atomic(path: &Path, value: &Value) -> Result<(), Error> {
     }
     fs::rename(&tmp, path).map_err(|e| Error::Message(e.to_string()))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agents::AppKind;
+
+    fn adapter(format: McpFormat, config: &str) -> AgentAdapter {
+        AgentAdapter {
+            id: "t".into(),
+            name: "T".into(),
+            kind: AppKind::Cli,
+            mcp_format: format,
+            app_paths: vec![],
+            marker_dirs: vec![],
+            bins: vec!["opencode".into()],
+            config_paths: vec![config.into()],
+            skill_dirs: vec![],
+            mcp_server_name: None,
+            mcp_scope: None,
+            configured_markers: vec![],
+            macos: None,
+            linux: None,
+            windows: None,
+        }
+    }
+
+    #[test]
+    fn writes_opencode_local_mcp_shape() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = dir.path().join("opencode.json");
+        let ad = adapter(McpFormat::Mcp, cfg.to_str().unwrap());
+        let mut env = Map::new();
+        env.insert("VD_TRANSPORT".into(), json!("uds"));
+        let spec = McpServerSpec {
+            command: "/opt/vd-mcp".into(),
+            args: vec!["serve".into()],
+            env,
+        };
+        install_mcp(&ad, &spec, false).unwrap();
+        let raw = fs::read_to_string(&cfg).unwrap();
+        let v: Value = serde_json::from_str(&raw).unwrap();
+        let entry = &v["mcp"]["voxdecoder"];
+        assert_eq!(entry["type"], json!("local"));
+        assert_eq!(entry["enabled"], json!(true));
+        assert_eq!(entry["command"], json!(["/opt/vd-mcp", "serve"]));
+        assert_eq!(entry["environment"]["VD_TRANSPORT"], json!("uds"));
+        assert!(entry.get("args").is_none());
+        assert!(entry.get("env").is_none());
+    }
+
+    #[test]
+    fn writes_cursor_style_mcp_servers() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = dir.path().join("mcp.json");
+        let ad = adapter(McpFormat::McpServers, cfg.to_str().unwrap());
+        let spec = McpServerSpec {
+            command: "/opt/vd-mcp".into(),
+            args: vec![],
+            env: Map::new(),
+        };
+        install_mcp(&ad, &spec, false).unwrap();
+        let v: Value = serde_json::from_str(&fs::read_to_string(&cfg).unwrap()).unwrap();
+        let entry = &v["mcpServers"]["voxdecoder"];
+        assert_eq!(entry["command"], json!("/opt/vd-mcp"));
+        assert!(entry.get("type").is_none());
+    }
+
+    #[test]
+    fn writes_crush_stdio_mcp_shape() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = dir.path().join("crush.json");
+        let ad = adapter(McpFormat::Stdio, cfg.to_str().unwrap());
+        let mut env = Map::new();
+        env.insert("VD_SOCKET".into(), json!("/tmp/vd.sock"));
+        let spec = McpServerSpec {
+            command: "/opt/vd-mcp".into(),
+            args: vec![],
+            env,
+        };
+        install_mcp(&ad, &spec, false).unwrap();
+        let v: Value = serde_json::from_str(&fs::read_to_string(&cfg).unwrap()).unwrap();
+        let entry = &v["mcp"]["voxdecoder"];
+        assert_eq!(entry["type"], json!("stdio"));
+        assert_eq!(entry["command"], json!("/opt/vd-mcp"));
+        assert_eq!(entry["env"]["VD_SOCKET"], json!("/tmp/vd.sock"));
+        assert!(entry.get("args").is_none());
+        assert!(entry.get("environment").is_none());
+        assert!(entry.get("enabled").is_none());
+    }
+
+    #[test]
+    fn writes_gemini_style_mcp_servers() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = dir.path().join("settings.json");
+        let ad = adapter(McpFormat::McpServers, cfg.to_str().unwrap());
+        let mut env = Map::new();
+        env.insert("VD_TRANSPORT".into(), json!("uds"));
+        let spec = McpServerSpec {
+            command: "/opt/vd-mcp".into(),
+            args: vec![],
+            env,
+        };
+        install_mcp(&ad, &spec, false).unwrap();
+        let v: Value = serde_json::from_str(&fs::read_to_string(&cfg).unwrap()).unwrap();
+        let entry = &v["mcpServers"]["voxdecoder"];
+        assert_eq!(entry["command"], json!("/opt/vd-mcp"));
+        assert_eq!(entry["env"]["VD_TRANSPORT"], json!("uds"));
+        assert!(entry.get("type").is_none());
+    }
+
+    #[test]
+    fn uninstall_removes_opencode_entry() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = dir.path().join("opencode.json");
+        let ad = adapter(McpFormat::Mcp, cfg.to_str().unwrap());
+        let spec = McpServerSpec {
+            command: "/opt/vd-mcp".into(),
+            args: vec![],
+            env: Map::new(),
+        };
+        install_mcp(&ad, &spec, false).unwrap();
+        uninstall_mcp(&ad, false).unwrap();
+        let v: Value = serde_json::from_str(&fs::read_to_string(&cfg).unwrap()).unwrap();
+        assert!(v["mcp"].get("voxdecoder").is_none());
+    }
 }

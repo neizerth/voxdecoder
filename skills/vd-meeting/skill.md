@@ -57,9 +57,45 @@ If both a file and a URL appear for the **same** input, ask which one to use (XO
    1. Diarize on mix
    2. Align to mix without diarize (recommended if they decline diarize)
    3. Tracks only (ignore mix)
-5. Confirm the assembled `inputs` + meeting model with the user (include URLs, mix mode, any `subtitles` choices).
-6. Call `process_meeting` with `execute: true` only after confirmation.
-7. Follow the **Runtime Contract** below for status, artifacts, cancellation, failures, and recovery.
+5. Preprocess **speed** (shorter ASR wall time; timestamps remapped via TimeMap):
+   - **Default: 1× (no speedup)** → **omit** `speed` unless the user picks otherwise.
+   - Always show a **numbered choice list** with the default marked (see **Choices UX**):
+     1. **1× / no speedup** (default) → omit `speed`
+     2. **1.5×** → `speed: 1.5`
+     3. **2.0×** → `speed: 2.0`
+     4. **2.2×** → `speed: 2.2`
+   - Prefer 1× for quality (punctuation, rare words, meeting dialogue). Speedup trades quality for wall time.
+6. Confirm the assembled `inputs` + meeting model + speed with the user (include URLs, mix mode, any `subtitles` choices).
+7. **Prior run / leftovers** (see section below) — if intermediates or meeting artifacts already exist next to the media, ask overwrite vs continue **before** execute.
+8. Call `process_meeting` with `execute: true` only after confirmation. When using the default, **omit** `speed` (do not pass `2.0`). Pass `overwrite: true` only when the user chose a fresh reprocess.
+9. Follow the **Runtime Contract** below for status, artifacts, cancellation, failures, and recovery.
+
+## Prior run / leftovers
+
+Skills do **not** silently wipe work dirs. Before `execute: true`, check for existing intermediates next to each media input (same folder and `.voxdecoder/work/`):
+
+- `*.prepared.mp3` / `*.prepared.wav` / `*.prepared.txt` / `*.prepared.fixed.txt`
+- `*.timemap.json` / `*.segments.json`
+- prior `meeting_*.json` / `meeting_*.md` (or legacy `meeting.json` / `meeting.md`)
+
+If any of these exist, present **Choices UX** (do not bury in prose):
+
+1. **Overwrite / reprocess from scratch** (default when the user asked to «перезапусти», «заново», «без старого 2×», after bad quality) → `overwrite: true`
+2. **Continue / reuse existing intermediates** (default when resuming a cancelled/partial run and quality was fine) → omit `overwrite` or `overwrite: false`
+
+Also offer this choice when `get_job` fails with `output already exists` / `AlreadyExists` / «output exists» — then retry with the user’s pick.
+
+Never invent a third option like «delete work dir by hand» unless the user asks.
+
+## Choices UX
+
+Whenever the user must pick among options (mix mode, speed, overwrite vs continue, confirm run, post-result actions):
+
+- Present **numbered options** (1 / 2 / 3 …), one line each — so the client can render selectable choices.
+- Mark the default explicitly, e.g. `1. 1× / no speedup (default)`.
+- Do **not** bury options inside a single prose paragraph (“ok, or 1.5/2.2/none?”).
+- One question block at a time when possible; avoid stacking unrelated free-form prompts.
+- For **cleanup strategies**, use AskUserQuestion **`multiSelect: true`** (see **Conservative transcript cleanup**). Next appears only after **≥1** option is selected — always include a **Skip cleanup** option so the user can proceed without enabling strategies.
 
 ## Filename heuristics
 
@@ -87,13 +123,13 @@ If both a mix and speaker files exist, assign roles accordingly — do not treat
 
 ### Context materials (`role: context`)
 
-Documents and non-media materials for **vd-assets** (glossaries, agendas, attendee lists, PDFs, markdown):
+Documents and non-media materials for **vd-assets** (glossaries, agendas, attendee lists, PDFs, markdown) — these feed **fix-asr / fix-terms**:
 
-- Pass as an `inputs[]` entry with `role: context` and `path` (or `uri`) to the folder or file.
+- Prefer `inputs[].role: context` with `path` (or `uri`), **or** top-level MCP `docs: /path/to/folder-or-file` (same effect).
 - **Never** set `url` on context inputs — Runtime rejects it.
+- If the user pastes accompanying notes in chat (no file path): write them to a local markdown file next to the media (e.g. `./.voxdecoder/context/notes.md`) and pass that path as `docs` / `role: context`. Do **not** leave notes only in chat.
 - Ask the user for materials if they mentioned slides/docs but did not attach paths.
-- Do not put PDF/DOCX contents into chat instead of `role: context`.
-
+- Do not put PDF/DOCX binary contents into chat instead of `role: context`.
 ## Gender
 
 When a participant file (or known name) is present and the user prompt does **not** explicitly give gender:
@@ -134,7 +170,7 @@ Default Runtime diarization policy is `auto` when unset — still ask when a mix
 
 | Role | MCP | Effect |
 |------|-----|--------|
-| `context` | `inputs[].role: context` | `prepare-context` → vd-assets → terms/names for fixers |
+| `context` | `inputs[].role: context` **or** MCP `docs` | `prepare-context` → vd-assets → terms/names for fixers |
 
 ## Runtime Contract
 
@@ -148,25 +184,43 @@ This Skill starts long-running Runtime Jobs.
 ### Progress
 
 - Use `get_job` with that `id` to monitor execution until `completed`, `failed`, or `cancelled`.
-- When reporting status to the user, include `progress` (0–100) and `phase` from `get_job` when present (e.g. `42% · step_start:transcribe`).
+- When reporting status to the user, include **all** of these from `get_job` when present: `progress`, `phase`, `processed`, `total`, `unit` (e.g. `18% · transcribing · 3/12 chunk`). Do not omit `processed`/`total`/`unit` from the user-facing status line.
 - Do not use HTTP polling (`curl`, `/health`, `/jobs/…`).
 - Do not inspect Runtime sockets directly.
-- Poll `get_job` every **10s** (see below). Progress advances mainly at pipeline step boundaries; a stable percent mid-step (especially during `transcribe` / diarize) is normal.
 
 **Ballpark duration** (wall clock, local Metal / CPU; wide variance):
 
 - Short inputs: often **a few minutes** of Job time.
 - Full meetings (long audio + merge / diarize): often **several minutes to tens of minutes**.
 - URL import adds download time up front (often minutes for long YouTube / video sources).
-- Tell the user the estimate is rough.
+- Preprocess `speed` (1.5× / 2.0× / 2.2×) shortens ASR wall time; tell the user the estimate is rough.
 
-**Polling:** call `get_job` every **10s** until `completed`, `failed`, or `cancelled`. Report `progress` / `phase` when present. Only escalate after several checks with no percent/`phase` change and no Runtime error.
+**Polling interval (adaptive — never spam):**
+
+- **Forbidden:** polling every 10s / 15s / 30s. Floor is **60s**; default is **90s**.
+- Compute next wait from the latest `get_job`:
+  - If `unit` is `chunk` and `total` is set:  
+    `remaining = total - processed` (treat missing `processed` as 0)  
+    `interval_sec = clamp(90, 300, remaining * 45)`  
+    (≈45s per remaining ASR chunk; long meetings → 2–5 min between polls.)
+  - If counters are absent (early load / non-ASR step): **90s**.
+  - Near the end (`progress` ≥ 90 or only fix/merge nodes left): **60–90s**.
+- Prefer MCP `get_job` + agent wakeup/schedule for that interval. Do **not** write shell `until`/`while` poll loops. If you must use CLI once, `vdctl api job.status … --json` — and **never** assign a shell variable named `status` (readonly in zsh); use `job_status` / `st`.
+
+**Liveness (do not treat as stuck):**
+
+- Overall `progress` may stay at **0%** (or flat) for a long time while a single step runs (especially `transcribe`).
+- If `processed`/`total` (or `phase`) **moves** between polls, the Job is alive — keep waiting; do not escalate, cancel, or restart.
+- Only escalate after **several** checks (each ≥ the adaptive interval above) where **none** of `progress`, `phase`, `processed`, or `total` changed and there is no Runtime error.
 
 ### Results
 
 - When the Job reaches `completed`, use `list_artifacts` with the Job `id` to discover outputs.
-- Present the main meeting / transcript artifact(s) as **clickable markdown links** (`[basename](file:///abs/path)`), not bare path strings.
-- Offer a **numbered** follow-up: show in chat / open file / both / done.
+- Prefer the human-readable **`meeting_YYYY-MM-DD_<participants>.md`** (speaker blocks: bold name on its own line, text on the next; blank line between turns) as the main deliverable; also keep the matching `.json` for machine use.
+- Present artifact(s) as **clickable markdown links** (`[basename](file:///abs/path)`), not bare path strings — lead with the dated `meeting_….md` when present.
+- After linking the primary artifact, **immediately** offer the cleanup strategy multiSelect (or Skip) — see **Conservative transcript cleanup**. Do **not** insert a separate menu (show in chat / open file / both / cleanup / done) before that offer.
+- Never clean up automatically; skip is always available as a selectable option.
+- If the user later asks to see the transcript in chat, read the file and paste it (truncate with a note only if extremely long).
 
 ### Cancellation
 
@@ -177,7 +231,8 @@ This Skill starts long-running Runtime Jobs.
 
 - If **any** pipeline step / node fails (including one participant track in a parallel meeting), the Job ends as `failed`. Do not treat a surviving sibling branch as success.
 - If the Job fails, report the Runtime error from `get_job` (and the failed node id when present).
-- Do not retry automatically unless the user explicitly asks.
+- If the error looks like an artifact conflict (`output already exists`, `AlreadyExists`, «output exists»), offer **Prior run / leftovers** choices and retry once with the user’s pick — do not loop.
+- Do not retry automatically for other failures unless the user explicitly asks.
 - Do not keep polling after `failed` / `cancelled` hoping the Job will recover.
 - Classify connectivity / MCP / Job failures per **Recovery** below — do not treat every error as “start the Runtime”.
 
@@ -222,10 +277,110 @@ If a Job is already running / the Runtime answers:
 - Never poll Runtime over HTTP.
 - Do not suggest lifecycle commands.
 
+## Conservative transcript cleanup
+
+Until deterministic local `vd-fix-asr` ([ADR 0010](../../docs/adr/0010-vd-fix-asr-local-transcript-cleanup.md)) owns primary cleanup, this Skill may offer an **optional** AI cleanup pass. Full policy: [ADR 0011](../../docs/adr/0011-conservative-ai-transcript-cleanup-in-skills.md).
+
+**Opt-in only.** Never run cleanup unless the user explicitly agrees. Never edit outside selected strategies. Never merge or split speaker turns while cleaning.
+
+### Strategy offer (multiSelect)
+
+Right after the artifact link (Results), present cleanup — **not** as a later menu item. Never merge or split speaker turns while cleaning.
+
+**Claude / AskUserQuestion:**
+
+- Use **`multiSelect: true`**. It works; **Next appears only after ≥1 option is selected**.
+- Boxes start **unchecked** — markdown `[x]` does not pre-select. In the question text, tell the user: for defaults, select every option marked Recommended.
+- **Always** include **Skip cleanup** (or **None of these** on optional-only questions) so the user can unlock Next without enabling strategies.
+- Max **4 options** per question — split if needed.
+
+**Question 1** (`multiSelect: true`):
+
+```text
+The transcript is ready: [basename](file:///…)
+
+Which cleanup strategies? Select at least one (required for Next).
+Defaults = all Recommended. Skip = leave transcript as-is.
+
+• Fix obvious ASR mistakes (Recommended)
+• Normalize technical terminology (Recommended)
+• Remove noise + normalize formatting (Recommended)
+• Skip cleanup
+```
+
+(Label 3 combines noise + formatting so all four safe defaults fit with Skip in one 4-option question.)
+
+**Question 2** (`multiSelect: true`) — only when Q1 is not Skip:
+
+```text
+Optional style strategies? Select at least one (required for Next).
+
+• Make spoken language more natural
+• Remove filler words
+• None of these
+```
+
+- **Skip cleanup** → apply nothing (ignore other Q1 selections if mixed).
+- Otherwise apply exactly what was selected; label 3 enables both noise and formatting.
+- **None of these** → no style strategies.
+- **Normalize technical terminology** — only highly certain names; never guess; use glossary/`docs` when available.
+- **Remove filler words** (`как бы`, `типа`…) ≠ noise (`ээээ`, `мммм`).
+- **Make spoken language more natural** — only when explicitly selected.
+
+### Default strategies (recommended bundle)
+
+| Strategy | Scope |
+|----------|--------|
+| Fix obvious ASR mistakes | duplicates, merged/split words, punctuation, whitespace, obvious spelling |
+| Normalize technical terminology | highly certain tech names only |
+| Remove obvious speech-recognition noise | syllable garbage / recognition junk without meaning |
+| Normalize formatting | whitespace, repeated punct, Cyrillic/Latin mixups — no wording change |
+
+### Optional strategies
+
+| Strategy | Scope |
+|----------|--------|
+| Make spoken language more natural | light conversational simplification |
+| Remove filler words | discourse fillers that may still matter for analysis |
+
+### Preserve
+
+Never change: meaning, facts, chronology, technical content, speaker attribution, timestamps, uncertainty, document structure (including speaker turn boundaries) — except edits explicitly allowed by a selected strategy.
+
+### Forbidden (regardless of strategies)
+
+Never: summarize, paraphrase, rewrite, improve style (unless **Make spoken language more natural** is selected), reorder sentences, merge/split speaker turns, translate, infer missing information, remove meaningful repetitions, invent terminology.
+
+The transcript must remain a transcript.
+
+### Conservative rule
+
+```text
+When in doubt: do not modify the transcript.
+```
+
+False negative ≫ false correction.
+
+### Transparency
+
+Uncertain fixes — mention, do not apply silently:
+
+```text
+Possible correction:
+
+JS Fidls
+↓
+JSFiddle
+
+Not applied automatically because confidence is insufficient.
+```
+
+If the user accepts cleanup, write the cleaned text to a **new** sibling file (e.g. `meeting_….clean.md`) or overwrite only when they explicitly ask to replace the artifact. Prefer a new file by default. Keep `meeting.json` unchanged unless the user asks to update it too. Briefly list which strategies were applied.
+
 ## Examples
 
 ```text
-# Mix + speakers + docs
+# Mix + speakers + docs (default: omit speed = 1×)
 process_meeting inputs=[room:mix.wav, participant:alice.wav, context:./docs] → …
 # Video mix → extract-audio inside preprocess
 process_meeting inputs=[room:meeting.mp4] + diarization → …
@@ -234,6 +389,8 @@ process_meeting inputs=[room url:https://youtu.be/…] → …
 process_meeting (audio.url: https://youtu.be/…, subtitles: prefer) → …
 # Room URL + local participant tracks + docs
 process_meeting inputs=[room url:https://…, participant:alice.wav, context:./docs] → …
+# Optional speedup (quality tradeoff): 1.5 | 2.0 | 2.2
+process_meeting (speed: 1.5|2.0|2.2) → …
 process_meeting → job_id → get_job (until completed) → list_artifacts
 process_meeting → job_id → cancel_job
 ```

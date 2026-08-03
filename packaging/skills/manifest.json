@@ -1,0 +1,12 @@
+{
+  "name": "voxdecoder-skills",
+  "display_name": "VoxDecoder Skills",
+  "version": "0.1.0",
+  "description": "Distributable Skill pack for VoxDecoder AI integrations (not the local MCP gateway Bundle).",
+  "author": {
+    "name": "VoxDecoder"
+  },
+  "kind": "skill-pack",
+  "skills": ["vd-audio", "vd-meeting"],
+  "keywords": ["voxdecoder", "skills", "audio", "meeting"]
+}

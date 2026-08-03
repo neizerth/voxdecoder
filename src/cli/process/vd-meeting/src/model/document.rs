@@ -9,7 +9,7 @@ use super::{
     BuildOptions, InputSource, MeetingModel, MeetingOutput, MeetingRequest,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MeetingDocument {
     pub version: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]

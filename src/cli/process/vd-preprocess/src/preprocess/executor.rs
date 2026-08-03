@@ -87,6 +87,9 @@ pub fn plan(req: &PreprocessRequest) -> Result<ExecutionPlan, PreprocessError> {
         .map(Path::to_path_buf)
         .unwrap_or_else(|| PathBuf::from("."));
 
+    // Unique across parallel preprocess branches that share a work dir
+    // (meeting tracks), otherwise one run deletes the other's temps.
+    let run_tag = temp_run_tag(&req.input);
     let mut steps = Vec::with_capacity(req.filters.len());
     let mut current = req.input.clone();
     for (i, filter) in req.filters.iter().enumerate() {
@@ -98,7 +101,8 @@ pub fn plan(req: &PreprocessRequest) -> Result<ExecutionPlan, PreprocessError> {
             final_out.clone()
         } else {
             work_dir.join(format!(
-                ".vd-preprocess-{}-{}.tmp{}",
+                ".vd-preprocess-{}-{}-{}.tmp{}",
+                run_tag,
                 i,
                 filter.operation,
                 extension_hint(&final_out)
@@ -127,6 +131,13 @@ pub fn plan(req: &PreprocessRequest) -> Result<ExecutionPlan, PreprocessError> {
 }
 
 pub fn execute(req: &PreprocessRequest) -> Result<PreprocessResult, PreprocessError> {
+    execute_with_progress(req, None)
+}
+
+pub fn execute_with_progress(
+    req: &PreprocessRequest,
+    progress: Option<&vd_progress::Progress>,
+) -> Result<PreprocessResult, PreprocessError> {
     let planned = plan(req)?;
     if planned.output.exists() && !req.overwrite {
         return Err(PreprocessError::Usage(format!(
@@ -135,11 +146,38 @@ pub fn execute(req: &PreprocessRequest) -> Result<PreprocessResult, PreprocessEr
         )));
     }
 
+    let filter_total = planned.steps.len() as u32;
     let mut temps = Vec::new();
     for (i, step) in planned.steps.iter().enumerate() {
         let filter = &req.filters[step.index];
-        let backend = provider::resolve_provider(&filter.provider)?;
-        backend.apply(filter, &step.input, &step.output)?;
+        let filter_index = (i as u32) + 1;
+        if let Some(p) = progress {
+            crate::status::emit_filter(p, &step.operation, 0, filter_index, filter_total);
+        }
+        if filter.provider == "ffmpeg" {
+            let dur = probe_duration(&step.input).ok();
+            if let Some(p) = progress {
+                let op = step.operation.as_str();
+                provider::apply_ffmpeg(
+                    filter,
+                    &step.input,
+                    &step.output,
+                    dur,
+                    Some(&|local: u8| {
+                        crate::status::emit_filter(p, op, local, filter_index, filter_total);
+                    }),
+                )?;
+            } else {
+                provider::apply_ffmpeg(filter, &step.input, &step.output, dur, None)?;
+            }
+        } else {
+            let backend = provider::resolve_provider(&filter.provider)?;
+            backend.apply(filter, &step.input, &step.output)?;
+            if let Some(p) = progress {
+                crate::status::emit_filter(p, &step.operation, 100, filter_index, filter_total);
+            }
+        }
+        ensure_step_output(&step.output, &step.operation)?;
         if i + 1 < planned.steps.len() {
             temps.push(step.output.clone());
         }
@@ -170,6 +208,10 @@ pub fn execute(req: &PreprocessRequest) -> Result<PreprocessResult, PreprocessEr
             });
             timemap = Some(path);
         }
+    }
+
+    if let Some(p) = progress {
+        p.emit(&vd_progress::ProgressEvent::phase("preprocess:done", 100));
     }
 
     Ok(PreprocessResult {
@@ -318,4 +360,29 @@ fn extension_hint(final_out: &Path) -> String {
         .and_then(|e| e.to_str())
         .map(|e| format!(".{e}"))
         .unwrap_or_default()
+}
+
+fn temp_run_tag(input: &Path) -> String {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut h = DefaultHasher::new();
+    input.hash(&mut h);
+    std::process::id().hash(&mut h);
+    format!("{:x}", h.finish())
+}
+
+fn ensure_step_output(path: &Path, operation: &str) -> Result<(), PreprocessError> {
+    let meta = std::fs::metadata(path).map_err(|_| {
+        PreprocessError::Other(format!(
+            "filter '{operation}' reported success but output missing: {}",
+            path.display()
+        ))
+    })?;
+    if !meta.is_file() || meta.len() == 0 {
+        return Err(PreprocessError::Other(format!(
+            "filter '{operation}' produced empty output: {}",
+            path.display()
+        )));
+    }
+    Ok(())
 }

@@ -54,6 +54,11 @@ filters:
     let planned = plan(&req).unwrap();
     assert_eq!(planned.steps.len(), 2);
     assert_eq!(planned.steps[0].operation, "normalize");
+    let tmp = planned.steps[0].output.file_name().unwrap().to_string_lossy();
+    assert!(
+        tmp.starts_with(".vd-preprocess-") && tmp.contains("-0-normalize.tmp"),
+        "expected unique tagged temp, got {tmp}"
+    );
 
     let result = execute(&req).unwrap();
     assert_eq!(result.output.path, out);

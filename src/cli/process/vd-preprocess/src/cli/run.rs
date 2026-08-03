@@ -81,7 +81,7 @@ pub fn execute(args: RunArgs) -> Result<(), CliError> {
     .map_err(|e| CliError::with_code(e.exit_code(), e.to_string()))?;
 
     let progress = status::start(args.effective_progress(file_cfg.progress.as_deref()));
-    status::emit_phase(&progress, "planning", 20);
+    status::emit_phase(&progress, "planning", 5);
 
     if args.dry_run {
         let plan = preprocess::plan(&req)
@@ -94,8 +94,8 @@ pub fn execute(args: RunArgs) -> Result<(), CliError> {
         return Ok(());
     }
 
-    status::emit_phase(&progress, "executing", 60);
-    let result = preprocess::execute(&req)
+    status::emit_phase(&progress, "executing", 10);
+    let result = preprocess::execute_with_progress(&req, Some(&progress))
         .map_err(|e| CliError::with_code(e.exit_code(), e.to_string()))?;
     status::emit_phase(&progress, "done", 100);
     if args.json {

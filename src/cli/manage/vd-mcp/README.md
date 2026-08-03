@@ -63,7 +63,7 @@ The Runtime API is the public contract between clients and the Runtime.
 `vd-mcp` is one of its clients.
 
 ```text
-Claude · Cursor · VS Code · Desktop · CLI · REST
+Claude · Cursor · OpenCode · Crush · Gemini · VS Code · Desktop · CLI · REST
                     │
                     ▼
               Runtime API

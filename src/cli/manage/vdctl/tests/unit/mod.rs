@@ -54,8 +54,18 @@ fn discover_agents_returns_known_ids() {
     assert!(ids.contains(&"chatgpt"));
     assert!(ids.contains(&"vscode"));
     assert!(ids.contains(&"codex"));
+    assert!(ids.contains(&"opencode"));
+    assert!(ids.contains(&"crush"));
+    assert!(ids.contains(&"gemini"));
     let code = agents.iter().find(|a| a.id == "claude-code").unwrap();
     assert_eq!(code.kind, vdctl::agents::AppKind::Cli);
+    let oc = agents.iter().find(|a| a.id == "opencode").unwrap();
+    assert_eq!(oc.kind, vdctl::agents::AppKind::Cli);
+    assert_eq!(oc.mcp_format, vdctl::agents::McpFormat::Mcp);
+    let crush = agents.iter().find(|a| a.id == "crush").unwrap();
+    assert_eq!(crush.mcp_format, vdctl::agents::McpFormat::Stdio);
+    let gemini = agents.iter().find(|a| a.id == "gemini").unwrap();
+    assert_eq!(gemini.mcp_format, vdctl::agents::McpFormat::McpServers);
 }
 
 #[test]

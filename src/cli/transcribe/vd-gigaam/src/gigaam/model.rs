@@ -111,6 +111,19 @@ impl GigaModel {
         samples: &[f32],
         opts: TranscribeOptions,
     ) -> Result<Transcript, ModelError> {
+        self.transcribe_with_progress(samples, opts, |_, _| {})
+    }
+
+    /// Like [`Self::transcribe`], calling `on_chunk(1-based index, total)` after each window.
+    pub fn transcribe_with_progress<F>(
+        &self,
+        samples: &[f32],
+        opts: TranscribeOptions,
+        mut on_chunk: F,
+    ) -> Result<Transcript, ModelError>
+    where
+        F: FnMut(u32, u32),
+    {
         let ranges = chunk::chunk_ranges(samples.len(), chunk::MAX_CHUNK_SAMPLES);
         if ranges.is_empty() {
             return Ok(Transcript {
@@ -119,8 +132,11 @@ impl GigaModel {
                 words: None,
             });
         }
+        let n = ranges.len() as u32;
         if ranges.len() == 1 {
-            return self.transcribe_window(samples, 0.0, opts);
+            let out = self.transcribe_window(samples, 0.0, opts)?;
+            on_chunk(1, n);
+            return Ok(out);
         }
 
         let sr = f64::from(self.mel.sample_rate);
@@ -132,7 +148,7 @@ impl GigaModel {
             None
         };
 
-        for (start, end) in ranges {
+        for (i, (start, end)) in ranges.into_iter().enumerate() {
             let offset_sec = start as f64 / sr;
             let part = self.transcribe_window(&samples[start..end], offset_sec, opts.clone())?;
             if !part.text.is_empty() {
@@ -144,6 +160,7 @@ impl GigaModel {
             }
             // Flush Metal command buffers so pooled temps can be reused between chunks.
             let _ = self.device.synchronize();
+            on_chunk((i as u32) + 1, n);
         }
 
         Ok(Transcript {

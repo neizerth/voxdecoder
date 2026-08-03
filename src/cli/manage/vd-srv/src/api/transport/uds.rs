@@ -25,6 +25,12 @@ pub fn serve(socket: &Path, engine: Engine, stop: Arc<AtomicBool>) -> Result<(),
     while !stop.load(Ordering::SeqCst) {
         match listener.accept() {
             Ok((stream, _)) => {
+                // macOS/BSD inherit O_NONBLOCK from the listener; force blocking
+                // or large NDJSON responses truncate at the socket buffer (~8KiB).
+                if let Err(e) = stream.set_nonblocking(false) {
+                    eprintln!("vd-srv: accepted uds set_nonblocking(false): {e}");
+                    continue;
+                }
                 let eng = engine.clone();
                 thread::spawn(move || {
                     if let Ok(writer) = stream.try_clone() {

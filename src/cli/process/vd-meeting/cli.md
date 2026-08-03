@@ -263,7 +263,7 @@ vd-meeting config path
 | Key | Default | Layer |
 |-----|---------|--------|
 | `diarization.enabled` | `auto` | Meeting Model default |
-| `alignment.mode` | `longest` | Meeting Model default |
+| `alignment.mode` | `longest` | Pad shorter tracks with leading silence to match longest (preprocess `pad-start`) |
 | `asr` | (pipeline) | BuildOptions.transcribe |
 | `max_parallel` | (pipeline) | BuildOptions.executor |
 | `progress` | `text` | UX |

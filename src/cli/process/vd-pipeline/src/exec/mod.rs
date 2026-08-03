@@ -413,6 +413,13 @@ impl<B: Binder + Sync> Executor<B> {
             output_dir: resolved.job.output.dir.clone(),
             context_assets: resolved.job.context.assets.clone(),
             options,
+            progress_snapshot: self.progress_snapshot.clone(),
+            progress_step_base: Some(overall),
+            progress_step_span: Some(if total == 0 {
+                100
+            } else {
+                (100 / total).max(1) as u8
+            }),
         };
 
         // Contended classes (metal_gpu, …) serialize even when parallel branches fan out.

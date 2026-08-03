@@ -214,7 +214,8 @@ pub(crate) fn run_session(
 }
 
 pub(crate) fn write_frame(writer: &mut impl Write, msg: &Outbound) -> Result<(), String> {
-    let out = serde_json::to_string(msg).map_err(|e| e.to_string())?;
-    writeln!(writer, "{out}").map_err(|e| e.to_string())?;
+    let mut out = serde_json::to_vec(msg).map_err(|e| e.to_string())?;
+    out.push(b'\n');
+    writer.write_all(&out).map_err(|e| e.to_string())?;
     writer.flush().map_err(|e| e.to_string())
 }

@@ -1,6 +1,7 @@
 //! MeetingPlanner — validate · normalize · plan Job · submit.
 
 mod artifacts;
+mod artifact_name;
 mod graph;
 mod materialize;
 mod normalize;

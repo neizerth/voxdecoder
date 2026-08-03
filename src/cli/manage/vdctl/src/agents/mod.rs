@@ -56,18 +56,26 @@ pub enum McpFormat {
     #[default]
     McpServers,
     Servers,
+    /// OpenCode (`opencode.json` key `mcp`, `type: local`, command array).
+    Mcp,
+    /// Crush (`crush.json` key `mcp`, `type: stdio`, command string + args).
+    Stdio,
     None,
 }
 
 impl McpFormat {
     pub fn supports_json_mcp(self) -> bool {
-        matches!(self, Self::McpServers | Self::Servers)
+        matches!(
+            self,
+            Self::McpServers | Self::Servers | Self::Mcp | Self::Stdio
+        )
     }
 
     pub fn key(self) -> Option<&'static str> {
         match self {
             Self::McpServers => Some("mcpServers"),
             Self::Servers => Some("servers"),
+            Self::Mcp | Self::Stdio => Some("mcp"),
             Self::None => None,
         }
     }
@@ -189,6 +197,11 @@ impl AgentAdapter {
             && !self.resolve_for_host().bins.is_empty()
     }
 
+    /// Write MCP via JSON config (Cursor / VS Code / OpenCode), not via app CLI.
+    pub fn uses_json_mcp_install(&self) -> bool {
+        self.mcp_format.supports_json_mcp() && !self.has_cli_mcp()
+    }
+
     /// Preferred MCP config file (first path; created on install if missing).
     pub fn preferred_config_path(&self) -> Option<PathBuf> {
         let resolved = self.resolve_for_host();
@@ -266,6 +279,10 @@ fn probe_adapter(adapter: &AgentAdapter, global_markers: &[String]) -> Agent {
 
     let configured = if adapter.has_cli_mcp() {
         cli_mcp::is_registered(adapter)
+    } else if adapter.uses_json_mcp_install() {
+        config_path
+            .as_ref()
+            .is_some_and(|p| config_mentions(p, markers))
     } else if adapter.kind.uses_cli_mcp() {
         // CLI app without an MCP installer adapter (e.g. Codex for now).
         false
@@ -537,8 +554,21 @@ mod tests {
         assert!(ids.contains(&"chatgpt"));
         assert!(ids.contains(&"vscode"));
         assert!(ids.contains(&"codex"));
+        assert!(ids.contains(&"opencode"));
+        assert!(ids.contains(&"crush"));
+        assert!(ids.contains(&"gemini"));
         let code = file.agent.iter().find(|a| a.id == "claude-code").unwrap();
         assert_eq!(code.kind, AppKind::Cli);
+        let oc = file.agent.iter().find(|a| a.id == "opencode").unwrap();
+        assert_eq!(oc.kind, AppKind::Cli);
+        assert_eq!(oc.mcp_format, McpFormat::Mcp);
+        assert!(oc.uses_json_mcp_install());
+        let crush = file.agent.iter().find(|a| a.id == "crush").unwrap();
+        assert_eq!(crush.mcp_format, McpFormat::Stdio);
+        assert!(crush.uses_json_mcp_install());
+        let gemini = file.agent.iter().find(|a| a.id == "gemini").unwrap();
+        assert_eq!(gemini.mcp_format, McpFormat::McpServers);
+        assert!(gemini.uses_json_mcp_install());
     }
 
     #[test]

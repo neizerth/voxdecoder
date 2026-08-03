@@ -8,12 +8,12 @@ pub fn list() -> Vec<Value> {
     vec![
         tool(
             "process_audio",
-            "Plan and optionally execute an audio processing Job. On macOS ASR defaults to Metal. Optional speed (e.g. 2.0–2.2) shortens wall time via preprocess; timestamps stay correct. When execute=true, response includes id and observe hints.",
+            "Plan and optionally execute an audio processing Job. On macOS ASR defaults to Metal. Optional speed (1.5 / 2.0 / 2.2) shortens wall time via preprocess but hurts ASR quality — default is no speedup (omit speed). When execute=true, response includes id and observe hints.",
             audio_schema(),
         ),
         tool(
             "process_meeting",
-            "Plan and optionally execute a meeting Job. When execute=true, response includes id and observe hints for status polling.",
+            "Plan and optionally execute a meeting Job. Optional speed (1.5 / 2.0 / 2.2) shortens ASR wall time but hurts quality — default is no speedup (omit speed). When execute=true, response includes id and observe hints for status polling.",
             meeting_schema(),
         ),
         tool(
@@ -23,7 +23,7 @@ pub fn list() -> Vec<Value> {
         ),
         tool(
             "get_job",
-            "Poll Job status by id. Response includes status, progress (0–100), and phase when available.",
+            "Poll Job status by id. Returns status, progress, phase, processed/total/unit (ASR chunks when available), nodes[], error. Adaptive poll: never <60s; default 90s; if unit=chunk and total set use clamp(90,300,(total-processed)*45). Report counters to the user. Moving processed/total means alive even if percent is flat.",
             id_schema(),
         ),
         tool("cancel_job", "Cancel a Job by id.", id_schema()),
@@ -78,7 +78,7 @@ fn with_observe(mut value: Value) -> Result<Value, String> {
                     "cli": format!(
                         "vdctl api job.status --params {{\"id\":\"{id}\"}} --json"
                     ),
-                    "rule": "Poll with MCP get_job until completed|failed|cancelled. Report progress and phase from the response when present. Do not use curl/HTTP when MCP tools are available.",
+                    "rule": "Adaptive get_job poll: never faster than 60s (forbidden: 10s/15s/30s). Default 90s. If response has unit=chunk and total: interval_sec=clamp(90,300,(total-processed)*45). Always report progress, phase, processed, total, unit when present. Moving processed/total/phase = alive even at 0%. Prefer MCP wakeup/schedule; no shell until/while loops. Never use shell var named status (zsh readonly) — use job_status. No curl/HTTP when MCP is available.",
                 }),
             );
         }
@@ -146,7 +146,7 @@ fn audio_schema() -> Value {
                 "type":"number",
                 "minimum": 0.25,
                 "maximum": 4.0,
-                "description":"Preprocess playback speed (e.g. 1.5, 2, 2.2). Speeds up ASR; timestamps remapped via TimeMap."
+                "description":"Preprocess playback speed (1.5 / 2.0 / 2.2). Omit for default 1× (best quality). Timestamps remapped via TimeMap when set."
             },
             "subtitles": {
                 "type":"string",
@@ -159,8 +159,7 @@ fn audio_schema() -> Value {
             },
             "overwrite": {
                 "type":"boolean",
-                "default": true,
-                "description":"Overwrite existing outputs next to the source (default true)."
+                "description":"Overwrite existing prepared/transcript outputs next to the source. false/omit = reuse intermediates. When leftovers exist, ask the user (Choices UX) before setting this."
             },
             "docs": {
                 "type":"string",
@@ -200,7 +199,7 @@ fn meeting_schema() -> Value {
             },
             "meeting": {
                 "type":"object",
-                "description":"Meeting model: participants.known (name, constraints.gender), diarization.enabled (auto|true|false)"
+                "description":"Meeting model: participants.known (name, constraints.gender), diarization.enabled (bool true/false or string auto|true|false)"
             },
             "output": {"type":"object"},
             "working_dir": {"type":"string"},
@@ -214,6 +213,20 @@ fn meeting_schema() -> Value {
             "device": {
                 "type":"string",
                 "description":"ASR device (cpu|metal|auto). On macOS defaults to metal when omitted. Metal OOM auto-retries on CPU inside vd-gigaam."
+            },
+            "speed": {
+                "type":"number",
+                "minimum": 0.25,
+                "maximum": 4.0,
+                "description":"Preprocess playback speed (1.5 / 2.0 / 2.2). Speeds up ASR; timestamps remapped via TimeMap. Omit for default 1× (best quality)."
+            },
+            "overwrite": {
+                "type":"boolean",
+                "description":"Overwrite existing prepared/transcript/meeting artifacts. false/omit = reuse intermediates. When leftovers exist, ask the user (Choices UX) before setting this."
+            },
+            "docs": {
+                "type":"string",
+                "description":"Path to accompanying documents/materials (folder or file). Sugar for inputs[].role=context — prepare-context → vd-assets for fix-asr / fix-terms."
             }
         }
     })

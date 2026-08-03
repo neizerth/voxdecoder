@@ -18,6 +18,11 @@ pub fn serve(addr: SocketAddr, engine: Engine, stop: Arc<AtomicBool>) -> Result<
     while !stop.load(Ordering::SeqCst) {
         match listener.accept() {
             Ok((stream, _)) => {
+                // Same as UDS: clear inherited O_NONBLOCK on macOS/BSD.
+                if let Err(e) = stream.set_nonblocking(false) {
+                    eprintln!("vd-srv: accepted tcp set_nonblocking(false): {e}");
+                    continue;
+                }
                 let eng = engine.clone();
                 thread::spawn(move || {
                     if let Ok(writer) = stream.try_clone() {

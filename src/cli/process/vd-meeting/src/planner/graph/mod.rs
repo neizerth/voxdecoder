@@ -29,12 +29,14 @@ pub fn build_job(
         }
     }
 
+    let pads = preprocess::compute_align_pads(resolved);
+
     let mut branch_nodes: Vec<WorkflowNode> = Vec::new();
     let mut text_ids: Vec<String> = Vec::new();
     for &idx in &resolved.text_sources {
         let src = &resolved.inputs[idx];
         let mut leafs: Vec<Step> = Vec::new();
-        let final_id = transcript::append_branch(&mut leafs, src, options)?;
+        let final_id = transcript::append_branch(&mut leafs, src, options, &pads)?;
         text_ids.push(final_id);
         let seq: Vec<WorkflowNode> = leafs.into_iter().map(Into::into).collect();
         branch_nodes.push(WorkflowNode::sequence(seq));
@@ -52,7 +54,7 @@ pub fn build_job(
     let want_diarize = should_diarize(resolved)?;
     let timeline_id = if want_diarize {
         let mut leafs = Vec::new();
-        let id = diarize::append_diarize(&mut leafs, resolved, options)?;
+        let id = diarize::append_diarize(&mut leafs, resolved, options, &pads)?;
         root.extend(leafs.into_iter().map(Into::into));
         Some(id)
     } else {
@@ -61,7 +63,7 @@ pub fn build_job(
 
     let mix_ref = if wants_mix_reference(resolved, want_diarize) {
         let mut leafs = Vec::new();
-        let id = append_mix_ref(&mut leafs, resolved, options)?;
+        let id = append_mix_ref(&mut leafs, resolved, options, &pads)?;
         root.extend(leafs.into_iter().map(Into::into));
         Some(id)
     } else {
@@ -197,6 +199,7 @@ fn append_mix_ref(
     steps: &mut Vec<Step>,
     resolved: &ResolvedMeeting,
     options: &BuildOptions,
+    pads: &preprocess::AlignPads,
 ) -> Result<String, PlanError> {
     let src = resolved
         .inputs
@@ -216,7 +219,7 @@ fn append_mix_ref(
         })?;
 
     // Reuse prepared artifact when room was already preprocessed for transcript.
-    let already_prepared = vd_pipeline::is_video_path(&src.path)
+    let already_prepared = preprocess::will_preprocess(src, options, pads)
         && resolved
             .text_sources
             .iter()
@@ -226,7 +229,7 @@ fn append_mix_ref(
     }
 
     // Prefer stable id `room.mix` when media_input_ref returns a path (audio file).
-    let media = preprocess::media_input_ref(steps, src, options)?;
+    let media = preprocess::media_input_ref(steps, src, options, pads)?;
     if media.contains('/') || media.ends_with(".wav") || media.ends_with(".mp3")
         || media.ends_with(".m4a") || media.ends_with(".ogg") || media.ends_with(".flac")
     {
@@ -246,6 +249,8 @@ fn transcribe_options(options: &BuildOptions) -> std::collections::BTreeMap<Stri
         .clone()
         .unwrap_or_else(|| "gigaam".into());
     o.insert("engine".into(), ArgValue::String(engine));
+    // Chunk-timed segments so meeting-merge can interleave per-speaker tracks.
+    o.insert("segments".into(), ArgValue::Bool(true));
     if let Some(m) = &options.transcribe.model {
         o.insert("model".into(), ArgValue::String(m.clone()));
     }

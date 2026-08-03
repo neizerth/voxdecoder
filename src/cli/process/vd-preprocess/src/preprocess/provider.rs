@@ -2,8 +2,9 @@
 
 use std::collections::BTreeMap;
 use std::fs;
+use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use serde::{Deserialize, Serialize};
 
@@ -29,9 +30,7 @@ pub trait MediaProvider {
 pub fn resolve_provider(name: &str) -> Result<Box<dyn MediaProvider>, PreprocessError> {
     match name {
         "stub" => Ok(Box::new(StubProvider)),
-        "ffmpeg" => Ok(Box::new(FfmpegProvider {
-            bin: find_ffmpeg()?,
-        })),
+        "ffmpeg" => Ok(Box::new(FfmpegProvider)),
         "sox" | "deepfilternet" | "rnnoise" | "demucs" => Err(PreprocessError::Unavailable(
             format!("provider '{name}' is not wired in this build; use stub or ffmpeg"),
         )),
@@ -125,9 +124,7 @@ impl MediaProvider for StubProvider {
     }
 }
 
-struct FfmpegProvider {
-    bin: PathBuf,
-}
+struct FfmpegProvider;
 
 impl MediaProvider for FfmpegProvider {
     fn name(&self) -> &'static str {
@@ -140,22 +137,138 @@ impl MediaProvider for FfmpegProvider {
         input: &Path,
         output: &Path,
     ) -> Result<(), PreprocessError> {
-        if let Some(parent) = output.parent() {
-            fs::create_dir_all(parent).map_err(|e| PreprocessError::Other(e.to_string()))?;
-        }
-        let args = ffmpeg_args(filter, input, output)?;
-        let status = Command::new(&self.bin)
-            .args(&args)
-            .status()
-            .map_err(|e| PreprocessError::Other(format!("ffmpeg spawn: {e}")))?;
-        if !status.success() {
-            return Err(PreprocessError::Other(format!(
-                "ffmpeg failed ({status}) for operation {}",
-                filter.operation
-            )));
-        }
-        Ok(())
+        apply_ffmpeg(filter, input, output, None, None)
     }
+}
+
+/// Run one ffmpeg filter step, optionally reporting local 0–100 progress via `-progress pipe:1`.
+pub fn apply_ffmpeg(
+    filter: &FilterSpec,
+    input: &Path,
+    output: &Path,
+    duration_sec: Option<f64>,
+    on_progress: Option<&dyn Fn(u8)>,
+) -> Result<(), PreprocessError> {
+    let bin = find_ffmpeg()?;
+    if let Some(parent) = output.parent() {
+        fs::create_dir_all(parent).map_err(|e| PreprocessError::Other(e.to_string()))?;
+    }
+    let mut args = ffmpeg_args(filter, input, output)?;
+    // After `-y`: quiet stats + machine-readable progress on stdout.
+    args.insert(1, "-nostats".into());
+    args.insert(2, "-loglevel".into());
+    args.insert(3, "error".into());
+    args.insert(4, "-progress".into());
+    args.insert(5, "pipe:1".into());
+
+    let mut child = Command::new(&bin)
+        .args(&args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| PreprocessError::Other(format!("ffmpeg spawn: {e}")))?;
+
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| PreprocessError::Other("ffmpeg stdout missing".into()))?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| PreprocessError::Other("ffmpeg stderr missing".into()))?;
+
+    // Drain stderr concurrently so a noisy failure cannot deadlock the pipe.
+    let stderr_handle = std::thread::spawn(move || {
+        let mut buf = String::new();
+        let _ = BufReader::new(stderr).read_to_string(&mut buf);
+        buf
+    });
+
+    let mut last_pct = 0u8;
+    if let Some(cb) = on_progress {
+        cb(0);
+    }
+    let reader = BufReader::new(stdout);
+    for line in reader.lines() {
+        let Ok(line) = line else {
+            break;
+        };
+        if let Some(ms) = line.strip_prefix("out_time_ms=") {
+            if let (Some(dur), Ok(ms)) = (duration_sec, ms.trim().parse::<f64>()) {
+                if dur > 0.0 {
+                    let pct = ((ms / 1000.0 / dur) * 100.0).clamp(0.0, 99.0) as u8;
+                    if pct != last_pct {
+                        last_pct = pct;
+                        if let Some(cb) = on_progress {
+                            cb(pct);
+                        }
+                    }
+                }
+            }
+        } else if line.trim() == "progress=end" {
+            if let Some(cb) = on_progress {
+                cb(100);
+            }
+        }
+    }
+
+    let status = child
+        .wait()
+        .map_err(|e| PreprocessError::Other(format!("ffmpeg wait: {e}")))?;
+    let err_tail = stderr_handle.join().unwrap_or_default();
+    if !status.success() {
+        let detail = compact_tool_output(&err_tail);
+        return Err(PreprocessError::Other(if detail.is_empty() {
+            format!("ffmpeg failed ({status}) for operation {}", filter.operation)
+        } else {
+            format!(
+                "ffmpeg failed ({status}) for operation {}: {detail}",
+                filter.operation
+            )
+        }));
+    }
+    if let Some(cb) = on_progress {
+        cb(100);
+    }
+    Ok(())
+}
+
+/// Keep a short, MCP-safe snippet: drop ffmpeg progress spam, prefer trailing lines.
+pub(crate) fn compact_tool_output(raw: &str) -> String {
+    const MAX: usize = 1200;
+    let cleaned = raw.replace('\r', "\n");
+    let mut lines: Vec<&str> = cleaned
+        .lines()
+        .map(str::trim)
+        .filter(|l| {
+            !l.is_empty()
+                && !l.starts_with("ffmpeg version")
+                && !l.starts_with("built with")
+                && !l.starts_with("configuration:")
+                && !l.starts_with("libav")
+                && !l.starts_with("libsw")
+                && !l.starts_with("size=")
+                && !l.starts_with("frame=")
+                && !l.starts_with("Press [")
+                && !l.starts_with("Stream mapping:")
+                && !l.starts_with("Output #")
+                && !l.starts_with("Input #")
+                && !l.starts_with("  Stream #")
+                && !l.starts_with("  Metadata:")
+                && !l.starts_with("    ")
+        })
+        .collect();
+    // Keep the last few meaningful lines (real errors live at the end).
+    if lines.len() > 12 {
+        lines = lines.split_off(lines.len() - 12);
+    }
+    let joined = lines.join("\n");
+    if joined.len() <= MAX {
+        return joined;
+    }
+    let start = joined.len().saturating_sub(MAX);
+    let clipped = &joined[start..];
+    format!("…{}", clipped.trim_start())
 }
 
 pub fn ffmpeg_argv_for_plan(
@@ -237,6 +350,29 @@ fn ffmpeg_args(
             if let Some(to) = param_str(filter, "to").or_else(|| param_str(filter, "end")) {
                 args.extend(["-to".into(), to]);
             }
+        }
+        "pad-start" => {
+            let sec = param_f64(filter, "duration_sec").ok_or_else(|| {
+                PreprocessError::Usage("pad-start requires duration_sec".into())
+            })?;
+            if !sec.is_finite() || sec < 0.0 {
+                return Err(PreprocessError::Usage(format!(
+                    "pad-start duration_sec must be >= 0 (got {sec})"
+                )));
+            }
+            let ms = (sec * 1000.0).round().max(0.0) as u64;
+            args.extend(["-af".into(), format!("adelay=delays={ms}:all=1")]);
+        }
+        "pad-end" => {
+            let sec = param_f64(filter, "duration_sec").ok_or_else(|| {
+                PreprocessError::Usage("pad-end requires duration_sec".into())
+            })?;
+            if !sec.is_finite() || sec < 0.0 {
+                return Err(PreprocessError::Usage(format!(
+                    "pad-end duration_sec must be >= 0 (got {sec})"
+                )));
+            }
+            args.extend(["-af".into(), format!("apad=pad_dur={sec}")]);
         }
         "chunk" => {
             return Err(PreprocessError::Usage(
@@ -394,5 +530,23 @@ mod tests {
             .map(|w| w[1].as_str())
             .unwrap();
         assert_eq!(af, "atempo=2,atempo=1.75");
+    }
+
+    #[test]
+    fn compact_tool_output_keeps_tail_error() {
+        let raw = "\
+ffmpeg version 8.0 Copyright (c) 2000-2025\n\
+  built with Apple clang\n\
+size=     768KiB time=00:02:13.16 bitrate=  47.2kbits/s speed= 264x\r\
+size=    1536KiB time=00:04:27.87 bitrate=  47.0kbits/s speed= 265x\r\
+[in#0 @ 0x1] Error opening input: No such file or directory\n\
+Error opening input file /tmp/.vd-preprocess-3-trim-silence.tmp.mp3.\n\
+Error opening input files: No such file or directory\n";
+        let out = compact_tool_output(raw);
+        assert!(out.contains("No such file or directory"));
+        assert!(out.contains("trim-silence"));
+        assert!(!out.contains("ffmpeg version"));
+        assert!(!out.contains("size="));
+        assert!(out.len() < 800);
     }
 }

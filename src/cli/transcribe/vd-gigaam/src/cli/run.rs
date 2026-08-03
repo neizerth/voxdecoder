@@ -87,7 +87,7 @@ pub fn execute(args: RunArgs) -> Result<(), CliError> {
         return Ok(());
     }
 
-    let progress = Progress::new(args.effective_progress());
+    let progress = Progress::from_env(args.effective_progress());
     progress.emit(&ProgressEvent::Start {
         input: Some(resolved.input.to_str().unwrap_or("")),
         output: Some(resolved.plan.output.to_str().unwrap_or("")),
@@ -127,8 +127,26 @@ pub fn execute(args: RunArgs) -> Result<(), CliError> {
         Err(err) => return Err(map_model_err(err)),
     };
 
-    progress.emit(&ProgressEvent::phase("transcribing", 55));
-    let transcript = match model.transcribe(&samples, tx_opts.clone()) {
+    let emit_chunk = |done: u32, total: u32| {
+        let pct = if total == 0 {
+            55
+        } else {
+            10 + ((done.saturating_mul(85)) / total).min(85) as u8
+        };
+        progress.emit(&ProgressEvent::phase_segment(
+            "transcribing",
+            pct,
+            done,
+            total,
+        ));
+    };
+
+    progress.emit(&ProgressEvent::phase_segment("transcribing", 10, 0, 1));
+    let transcript = match model.transcribe_with_progress(
+        &samples,
+        tx_opts.clone(),
+        |d, t| emit_chunk(d, t),
+    ) {
         Ok(t) => t,
         Err(err)
             if allow_cpu_fallback
@@ -138,8 +156,10 @@ pub fn execute(args: RunArgs) -> Result<(), CliError> {
             drop(model);
             progress.emit(&ProgressEvent::phase("loading_model", 5));
             model = GigaModel::load(load_opts(resolve::Device::Cpu)).map_err(map_model_err)?;
-            progress.emit(&ProgressEvent::phase("transcribing", 55));
-            model.transcribe(&samples, tx_opts).map_err(map_model_err)?
+            progress.emit(&ProgressEvent::phase_segment("transcribing", 10, 0, 1));
+            model
+                .transcribe_with_progress(&samples, tx_opts, |d, t| emit_chunk(d, t))
+                .map_err(map_model_err)?
         }
         Err(err) => return Err(map_model_err(err)),
     };

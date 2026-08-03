@@ -2,7 +2,7 @@
 
 use vd_pipeline::{Capability, Step};
 
-use super::preprocess::media_input_ref;
+use super::preprocess::{media_input_ref, AlignPads};
 use super::{overwrite_opt, transcribe_options};
 use crate::model::BuildOptions;
 use crate::planner::normalize::ResolvedInput;
@@ -13,9 +13,10 @@ pub fn append_branch(
     steps: &mut Vec<Step>,
     src: &ResolvedInput,
     options: &BuildOptions,
+    pads: &AlignPads,
 ) -> Result<String, PlanError> {
     let bid = &src.branch_id;
-    let media = media_input_ref(steps, src, options)?;
+    let media = media_input_ref(steps, src, options, pads)?;
 
     let tid = format!("{bid}.transcript");
     let mut t = Step::new(Capability::Transcribe);

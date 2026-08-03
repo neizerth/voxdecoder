@@ -206,6 +206,9 @@ fn meeting_plan_from_audio_convenience() {
         engine: None,
         model: None,
         device: None,
+        speed: None,
+        docs: None,
+        overwrite: false,
         document: None,
         meeting_yaml: None,
     };
@@ -237,6 +240,9 @@ fn meeting_plan_from_inputs() {
         engine: None,
         model: None,
         device: None,
+        speed: None,
+        docs: None,
+        overwrite: false,
         document: None,
         meeting_yaml: None,
     };
@@ -270,6 +276,9 @@ fn meeting_plan_url_resolves_without_import_url_step() {
         engine: None,
         model: None,
         device: None,
+        speed: None,
+        docs: None,
+        overwrite: false,
         document: None,
         meeting_yaml: None,
     };
@@ -279,4 +288,52 @@ fn meeting_plan_url_resolves_without_import_url_step() {
         .iter()
         .any(|s| s.r#use == Capability::ImportUrl));
     assert!(job.leaf_steps().iter().any(|s| s.r#use == Capability::Transcribe));
+}
+
+#[test]
+fn meeting_plan_docs_adds_context_prepare() {
+    let dir = TempDir::new().unwrap();
+    let work = dir.path().join("work");
+    let docs = dir.path().join("docs");
+    fs::create_dir_all(&work).unwrap();
+    fs::create_dir_all(&docs).unwrap();
+    fs::write(docs.join("notes.md"), "glossary").unwrap();
+    let wav = work.join("room.wav");
+    fs::write(&wav, b"fake").unwrap();
+
+    let request = MeetingPlanRequest {
+        working_dir: Some(work.clone()),
+        inputs: vec![MeetingInput {
+            role: InputRole::Room,
+            path: Some(wav),
+            uri: None,
+            url: None,
+            artifact: None,
+            blob: None,
+            participant: None,
+            purposes: Vec::new(),
+            subtitles: None,
+            provider: None,
+        }],
+        meeting: Default::default(),
+        output: Default::default(),
+        audio: None,
+        options: Default::default(),
+        engine: None,
+        model: None,
+        device: None,
+        speed: None,
+        docs: Some(docs),
+        overwrite: false,
+        document: None,
+        meeting_yaml: None,
+    };
+    let job = plan_meeting(&request, dir.path(), None).unwrap();
+    assert!(
+        job.leaf_steps()
+            .iter()
+            .any(|s| s.r#use == Capability::PrepareContext),
+        "docs should add prepare-context"
+    );
+    assert!(job.context.docs.is_some());
 }

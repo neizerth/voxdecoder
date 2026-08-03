@@ -216,23 +216,21 @@ pub fn install(platform: &Platform, opts: &InstallOpts) -> Result<(), Error> {
                 Ok(()) => println!("    ✔ MCP registered (CLI)"),
                 Err(e) => println!("    ✘ MCP register ({e})"),
             }
-        } else if app.kind.uses_bundle() {
-            if app.mcp_format.supports_json_mcp() {
-                say_detail("writing MCP / Bundle config…");
-            }
+        } else if app.uses_json_mcp_install() {
+            say_detail("writing MCP config…");
             match agents::install_mcp(app, &spec, opts.dry_run) {
                 Ok(()) => {
-                    if app.mcp_format.supports_json_mcp() {
+                    if app.kind.uses_bundle() {
                         println!("    ✔ Bundle installed");
                     } else {
-                        println!("    · Bundle (MCP format unsupported — skipped)");
+                        println!("    ✔ MCP configured");
                     }
                 }
                 Err(e) => {
-                    if app.mcp_format.supports_json_mcp() {
+                    if app.kind.uses_bundle() {
                         println!("    ✘ Bundle ({e})");
                     } else {
-                        println!("    · Bundle (MCP format unsupported — skipped)");
+                        println!("    ✘ MCP config ({e})");
                     }
                 }
             }
@@ -290,10 +288,22 @@ pub fn uninstall(_platform: &Platform, opts: &InstallOpts) -> Result<(), Error> 
                     Ok(()) => println!("    ✔ MCP unregistered (CLI)"),
                     Err(e) => println!("    ✘ MCP unregister ({e})"),
                 }
-            } else if app.kind.uses_bundle() {
+            } else if app.uses_json_mcp_install() {
                 match agents::uninstall_mcp(app, opts.dry_run) {
-                    Ok(()) => println!("    ✔ Bundle uninstalled"),
-                    Err(e) => println!("    ✘ Bundle ({e})"),
+                    Ok(()) => {
+                        if app.kind.uses_bundle() {
+                            println!("    ✔ Bundle uninstalled");
+                        } else {
+                            println!("    ✔ MCP removed");
+                        }
+                    }
+                    Err(e) => {
+                        if app.kind.uses_bundle() {
+                            println!("    ✘ Bundle ({e})");
+                        } else {
+                            println!("    ✘ MCP remove ({e})");
+                        }
+                    }
                 }
             }
         }
@@ -397,27 +407,29 @@ fn verify_inner(
                 println!();
                 println!("        vdctl mcp install --apps {}", app.id);
             }
-        } else if app.kind.uses_bundle() {
-            say_detail("checking Bundle / MCP config…");
+        } else if app.uses_json_mcp_install() {
+            say_detail("checking MCP config…");
             let installed = opts.dry_run
                 || agents::discover_agents()
                     .iter()
                     .find(|a| a.id == app.id)
                     .map(|a| a.configured)
-                    .unwrap_or(false)
-                || !app.mcp_format.supports_json_mcp();
-            if app.mcp_format.supports_json_mcp() {
-                println!(
-                    "    {} Bundle installed",
-                    if installed { "✔" } else { "✘" }
-                );
-                println!(
-                    "    {} Bundle active",
-                    if installed { "✔" } else { "✘" }
-                );
+                    .unwrap_or(false);
+            let label = if app.kind.uses_bundle() {
+                "Bundle"
             } else {
-                println!("    · Bundle (unsupported)");
-            }
+                "MCP"
+            };
+            println!(
+                "    {} {label} installed",
+                if installed { "✔" } else { "✘" }
+            );
+            println!(
+                "    {} {label} active",
+                if installed { "✔" } else { "✘" }
+            );
+        } else if app.kind.uses_bundle() {
+            println!("    · Bundle (unsupported)");
         }
         if !opts.no_skills {
             for skill in selected_skills {
@@ -510,21 +522,24 @@ fn verify_report(platform: &Platform) -> Result<serde_json::Value, Error> {
                     integration_ok = false;
                     issues.push(format!("{}: MCP not registered", ad.name));
                 }
-            } else if ad.kind.uses_bundle() {
-                if ad.mcp_format.supports_json_mcp() {
-                    checks.push(json!({"label": "Bundle installed", "ok": agent.configured}));
-                    checks.push(json!({"label": "Bundle active", "ok": agent.configured}));
-                    ok = agent.configured;
-                    if !agent.configured {
-                        hint = Some(format!(
-                            "Bundle not active in {}.\n\nRun:\n\n    vdctl mcp install --apps {}",
-                            ad.name, ad.id
-                        ));
-                        // Desktop not configured is a soft fail for overall ok only if we require all apps
-                    }
+            } else if ad.uses_json_mcp_install() {
+                let label = if ad.kind.uses_bundle() {
+                    "Bundle"
                 } else {
-                    checks.push(json!({"label": "Bundle (unsupported)", "ok": true}));
+                    "MCP"
+                };
+                checks.push(json!({"label": format!("{label} installed"), "ok": agent.configured}));
+                checks.push(json!({"label": format!("{label} active"), "ok": agent.configured}));
+                ok = agent.configured;
+                if !agent.configured {
+                    hint = Some(format!(
+                        "{label} not active in {}.\n\nRun:\n\n    vdctl mcp install --apps {}",
+                        ad.name, ad.id
+                    ));
+                    // Soft fail: installed apps without config do not fail overall verify.
                 }
+            } else if ad.kind.uses_bundle() {
+                checks.push(json!({"label": "Bundle (unsupported)", "ok": true}));
             } else {
                 checks.push(json!({"label": "detected", "ok": true}));
             }

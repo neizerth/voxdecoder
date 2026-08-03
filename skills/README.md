@@ -18,4 +18,6 @@ vdctl mcp install          # Skills → $VD_HOME/skills + Bundle → AI apps
 vdctl mcp install --dry-run
 ```
 
-See [`vdctl` README](../src/cli/manage/vdctl/README.md#skills--ai-integration) · [ADR 0005](../docs/adr/0005-mcp-bundle-and-skill-distribution.md).
+Local install / sync: [`vdctl`](../src/cli/manage/vdctl/README.md#skills--ai-integration) · [ADR 0005](../docs/adr/0005-mcp-bundle-and-skill-distribution.md).
+
+Release packages (ZIP / DXT): [`packaging/skills/`](../packaging/skills/) · [ADR 0009](../docs/adr/0009-skills-packaging-and-distribution.md) · `npm run package:skills`.

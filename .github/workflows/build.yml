@@ -1,7 +1,7 @@
 # Native builds (ADR 0002)
-
-Runs `scripts/build.sh` on Ubuntu / macOS / Windows.
-Docker images are a separate Linux product (`Dockerfile` + `build.sh --cpu`).
+#
+# Runs `scripts/build.sh` on Ubuntu / macOS / Windows.
+# Docker images are a separate Linux product (`Dockerfile` + `build.sh --cpu`).
 
 name: build
 

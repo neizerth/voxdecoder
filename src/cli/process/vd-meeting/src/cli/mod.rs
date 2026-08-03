@@ -65,6 +65,9 @@ pub struct RunCli {
     /// Inference device for ASR (cpu|metal|auto)
     #[arg(long = "device")]
     pub device: Option<String>,
+    /// Preprocess playback speed (e.g. 1.5 / 2.0 / 2.2)
+    #[arg(long = "speed")]
+    pub speed: Option<f64>,
     #[arg(long = "overwrite")]
     pub overwrite: bool,
     #[arg(long = "max-parallel")]
@@ -207,6 +210,7 @@ fn validate_run(cli: RunCli, force_dry: bool) -> Result<RunArgs, CliError> {
         asr: cli.asr,
         model: cli.model,
         device: cli.device,
+        speed: cli.speed,
         overwrite: cli.overwrite,
         max_parallel: cli.max_parallel,
         continue_on_error: cli.continue_on_error,

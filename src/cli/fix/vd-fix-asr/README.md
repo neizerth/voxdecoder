@@ -9,6 +9,8 @@ Languages: [TODO-languages.md](TODO-languages.md).
 
 **Status: implemented (rules backend).** Packs / `install` not required.
 
+Future architecture (staged deterministic cleanup, confidence, no LLM rewrite): [ADR 0010](../../../docs/adr/0010-vd-fix-asr-local-transcript-cleanup.md) — RFC, not yet adopted.
+
 ## Core rule
 
 ```text

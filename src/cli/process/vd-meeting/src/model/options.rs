@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct BuildOptions {
     #[serde(default)]
     pub executor: ExecutorOptions,
@@ -22,7 +22,7 @@ pub struct ExecutorOptions {
     pub resources: BTreeMap<String, u32>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct TranscribeDefaults {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub engine: Option<String>,
@@ -30,6 +30,9 @@ pub struct TranscribeDefaults {
     pub model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub device: Option<String>,
+    /// Preprocess playback speed (e.g. 1.5 / 2.0 / 2.2). Remapped via TimeMap.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speed: Option<f64>,
     #[serde(default, skip_serializing_if = "is_false")]
     pub overwrite: bool,
 }

@@ -81,7 +81,9 @@ pub fn group_for(operation: &str) -> Option<FilterGroup> {
         "normalize" | "denoise" | "enhance" | "highpass" | "lowpass" | "compressor" => {
             Some(FilterGroup::Audio)
         }
-        "speed" | "trim-silence" | "trim" | "chunk" => Some(FilterGroup::Timing),
+        "speed" | "trim-silence" | "trim" | "chunk" | "pad-start" | "pad-end" => {
+            Some(FilterGroup::Timing)
+        }
         "split-channels" | "merge-channels" => Some(FilterGroup::Channels),
         _ => None,
     }
@@ -147,7 +149,10 @@ pub fn catalog_lines() -> Vec<String> {
             "Audio",
             &["normalize", "denoise", "enhance", "highpass", "lowpass", "compressor"][..],
         ),
-        ("Timing", &["speed", "trim-silence", "trim", "chunk"][..]),
+        (
+            "Timing",
+            &["speed", "trim-silence", "trim", "chunk", "pad-start", "pad-end"][..],
+        ),
         ("Channels", &["split-channels", "merge-channels"][..]),
     ];
     let mut lines = Vec::new();

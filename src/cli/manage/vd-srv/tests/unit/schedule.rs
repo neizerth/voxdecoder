@@ -20,6 +20,9 @@ fn rec(id: &str, status: JobStatus, priority: Priority) -> JobRecord {
         error: None,
         progress: None,
         phase: None,
+        processed: None,
+        total: None,
+        unit: None,
         job: Job {
             version: 1,
             name: None,

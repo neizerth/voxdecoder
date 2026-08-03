@@ -160,9 +160,18 @@ pub struct JobRecord {
     /// 0–100 from Executor snapshot while running; 100 when completed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub progress: Option<u8>,
-    /// Current phase label (e.g. `step_start:transcribe`).
+    /// Current phase label (e.g. `step_start:transcribe` / `transcribing`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub phase: Option<String>,
+    /// Units completed within the current phase (chunks, bytes, steps, …).
+    #[serde(default)]
+    pub processed: Option<u64>,
+    /// Total units for the current phase when known.
+    #[serde(default)]
+    pub total: Option<u64>,
+    /// Unit label for `processed`/`total` (`chunk` | `byte` | `step`).
+    #[serde(default)]
+    pub unit: Option<String>,
     pub job: Job,
     pub nodes: Vec<NodeRecord>,
     #[serde(default)]

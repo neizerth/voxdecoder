@@ -18,6 +18,12 @@ pub struct InvokeRequest {
     pub output_dir: Option<PathBuf>,
     pub context_assets: Option<PathBuf>,
     pub options: BTreeMap<String, ArgValue>,
+    /// When set, child CLIs write live progress into this snapshot (Runtime `get_job`).
+    pub progress_snapshot: Option<PathBuf>,
+    /// Job-level percent at step start (for remapping child 0–100 into the step window).
+    pub progress_step_base: Option<u8>,
+    /// Percent span allocated to this step (typically `100 / n_steps`).
+    pub progress_step_span: Option<u8>,
 }
 
 #[derive(Debug, Clone)]

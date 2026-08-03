@@ -5,7 +5,12 @@
 #   desktop → install MCP Bundle / JSON config
 #   cli     → register via app MCP CLI (e.g. `claude mcp add`)
 #
-# mcp_format (desktop): mcp_servers | servers | none
+# mcp_format: mcp_servers | servers | mcp | stdio | none
+#   mcp_servers → Cursor / Claude Desktop / Gemini (`mcpServers`)
+#   servers     → VS Code (`servers`)
+#   mcp         → OpenCode (`mcp` + local entry shape)
+#   stdio       → Crush (`mcp` + stdio entry shape)
+#   none        → skills only (e.g. ChatGPT)
 # skill_dirs: where `skills/<id>/skill.md` is linked for that client
 # Path tokens: `~`, `$HOME`, `$XDG_CONFIG_HOME`, `%APPDATA%`, `%LOCALAPPDATA%`, `%USERPROFILE%`.
 
@@ -177,3 +182,87 @@ skill_dirs = ["~/.codex/skills"]
 marker_dirs = ["%USERPROFILE%/.codex"]
 config_paths = ["%USERPROFILE%/.codex/config.toml"]
 skill_dirs = ["%USERPROFILE%/.codex/skills"]
+
+[[agent]]
+id = "opencode"
+name = "OpenCode"
+kind = "cli"
+mcp_format = "mcp"
+bins = ["opencode"]
+marker_dirs = ["~/.config/opencode", "$XDG_CONFIG_HOME/opencode"]
+config_paths = [
+  "~/.config/opencode/opencode.json",
+  "~/.config/opencode/opencode.jsonc",
+  "$XDG_CONFIG_HOME/opencode/opencode.json",
+  "$XDG_CONFIG_HOME/opencode/opencode.jsonc",
+]
+skill_dirs = [
+  "~/.config/opencode/skills",
+  "$XDG_CONFIG_HOME/opencode/skills",
+]
+
+[agent.windows]
+bins = ["opencode.exe"]
+marker_dirs = [
+  "%USERPROFILE%/.config/opencode",
+  "%LOCALAPPDATA%/opencode",
+]
+config_paths = [
+  "%USERPROFILE%/.config/opencode/opencode.json",
+  "%USERPROFILE%/.config/opencode/opencode.jsonc",
+  "%LOCALAPPDATA%/opencode/opencode.json",
+]
+skill_dirs = [
+  "%USERPROFILE%/.config/opencode/skills",
+  "%LOCALAPPDATA%/opencode/skills",
+]
+
+[[agent]]
+id = "crush"
+name = "Crush"
+kind = "cli"
+mcp_format = "stdio"
+bins = ["crush"]
+marker_dirs = ["~/.config/crush", "$XDG_CONFIG_HOME/crush"]
+config_paths = [
+  "~/.config/crush/crush.json",
+  "$XDG_CONFIG_HOME/crush/crush.json",
+]
+skill_dirs = [
+  "~/.config/crush/skills",
+  "$XDG_CONFIG_HOME/crush/skills",
+]
+
+[agent.windows]
+bins = ["crush.exe"]
+marker_dirs = [
+  "%LOCALAPPDATA%/crush",
+  "%USERPROFILE%/.config/crush",
+]
+config_paths = [
+  "%LOCALAPPDATA%/crush/crush.json",
+  "%USERPROFILE%/.config/crush/crush.json",
+]
+skill_dirs = [
+  "%LOCALAPPDATA%/crush/skills",
+  "%USERPROFILE%/.config/crush/skills",
+]
+
+[[agent]]
+id = "gemini"
+name = "Gemini CLI"
+kind = "cli"
+mcp_format = "mcp_servers"
+bins = ["gemini"]
+marker_dirs = ["~/.gemini"]
+config_paths = ["~/.gemini/settings.json"]
+skill_dirs = ["~/.gemini/skills", "~/.agents/skills"]
+
+[agent.windows]
+bins = ["gemini.exe", "gemini.cmd"]
+marker_dirs = ["%USERPROFILE%/.gemini"]
+config_paths = ["%USERPROFILE%/.gemini/settings.json"]
+skill_dirs = [
+  "%USERPROFILE%/.gemini/skills",
+  "%USERPROFILE%/.agents/skills",
+]

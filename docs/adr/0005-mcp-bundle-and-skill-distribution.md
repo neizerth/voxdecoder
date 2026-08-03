@@ -4,7 +4,7 @@
 **Type:** ADR  
 **Date:** 2026-08-02
 
-**Related:** [ADR 0002](0002-build-and-container-strategy.md) · [ADR 0003](0003-distribution-and-update-strategy.md) · [`vdctl`](../../src/cli/manage/vdctl/) · [`vd-mcp`](../../src/cli/manage/vd-mcp/) · [`vd-srv`](../../src/cli/manage/vd-srv/)
+**Related:** [ADR 0002](0002-build-and-container-strategy.md) · [ADR 0003](0003-distribution-and-update-strategy.md) · [ADR 0009 — Skills Packaging](0009-skills-packaging-and-distribution.md) · [`vdctl`](../../src/cli/manage/vdctl/) · [`vd-mcp`](../../src/cli/manage/vd-mcp/) · [`vd-srv`](../../src/cli/manage/vd-srv/)
 
 ---
 
@@ -48,6 +48,9 @@ vd-srv is the Runtime.
         │               │                ▼
         │               │        Claude Desktop
         │               │        Cursor
+        │               │        OpenCode
+        │               │        Crush
+        │               │        Gemini CLI
         │               │        ChatGPT Desktop
         ▼               ▼
      vd-srv        $VD_HOME/skills
@@ -149,7 +152,7 @@ submit tool → job_id → get_job → list_artifacts
 Rules encoded in the contract:
 
 - **Execution** — which MCP tool starts the Job;
-- **Progress** — `get_job` only; no HTTP/`curl`/socket probing; no spam-poll; wait via wakeup/schedule (30–120s+) then recheck; bare long `sleep` without a status check is forbidden;
+- **Progress** — `get_job` only; no HTTP/`curl`/socket probing; no spam-poll; wait via wakeup/schedule (**≥90s**) then recheck; bare long `sleep` without a status check is forbidden; treat moving `processed`/`total`/`phase` as liveness even when overall percent stays at 0;
 - **Results** — `list_artifacts` after `completed`;
 - **Cancellation** — `cancel_job`; never start a second Job instead;
 - **Failures** — report Runtime error; no automatic retry.
@@ -223,7 +226,7 @@ vdctl discover [--json]
 
 ## Bundle Builder & adapters
 
-`vdctl` owns the Bundle Builder and one **installer adapter** per AI application (Claude, Cursor, ChatGPT, VS Code, …). Adapters know install location, Bundle/MCP registration, and verification — nothing else. New apps need only a new adapter entry.
+`vdctl` owns the Bundle Builder and one **installer adapter** per AI application (Claude, Cursor, ChatGPT, VS Code, OpenCode, Crush, Gemini CLI, …). Adapters know install location, Bundle/MCP registration, and verification — nothing else. New apps need only a new adapter entry.
 
 ---
 
@@ -268,3 +271,4 @@ vdctl skills status --json
 * `vdctl mcp register` / `unregister` are retired in favor of `install` / `uninstall`.
 * Skills catalog is `$VD_HOME/skills` (repo `skills/` is the source in Workspace).
 * Desktop and CI consume the same `--json` surfaces.
+* Skill **release** packaging (ZIP / DXT / GitHub Release upload) is out of scope here — see [ADR 0009](0009-skills-packaging-and-distribution.md).

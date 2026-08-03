@@ -7,9 +7,12 @@ mod provider;
 mod result;
 
 pub use chain::{expand_and_validate, load_chain_file, ChainFile};
-pub use executor::{execute, plan, request_from_raw, ExecutionPlan, PlannedFilter, PreprocessRequest};
+pub use executor::{
+    execute, execute_with_progress, plan, request_from_raw, ExecutionPlan, PlannedFilter,
+    PreprocessRequest,
+};
 pub use filter::{catalog_lines, parse_filter_flag, FilterGroup, FilterSpec, RawFilter};
-pub use provider::MediaProviderSpec;
+pub use provider::{ffmpeg_argv_for_plan, MediaProviderSpec};
 pub use result::{PreparedMedia, PreprocessResult};
 
 #[derive(Debug, thiserror::Error)]
