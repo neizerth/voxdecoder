@@ -163,10 +163,16 @@ The local pipeline should resolve the vast majority of mechanical transcript art
 preprocess → transcribe → prepare-context → fix-casing → fix-asr → fix-disfluency → fix-terms → fix-layout
 ```
 
+`fix-disfluency` and `fix-layout` are also on every **meeting transcript branch** (same order as the default audio job), in `vd-meeting/src/planner/graph/transcript.rs::append_branch`:
+
+```text
+transcribe → fix-casing → fix-asr → fix-disfluency → fix-terms → fix-layout
+```
+
 `fix-overlap` is meeting-pipeline-only. **Correction to this ADR's original placement**: the text above originally said "diarize → fix-overlap → meeting-merge", but `diarize` alone produces a timing-only `SpeakerTimeline` with **no text** (confirmed in `vd-diarize`'s output shape and `vd-meeting`'s graph builder) — the combined speaker+timestamp+text shape `fix-overlap` needs only exists *after* `meeting-merge` runs. Actual wiring, in `vd-meeting/src/planner/graph/mod.rs::build_job`:
 
 ```text
-diarize → (per-branch transcripts) → meeting-merge → fix-overlap → (Job output)
+(per-branch: … → fix-layout) → diarize → meeting-merge → fix-overlap → (Job output)
 ```
 
 `fix-overlap` is only appended when `want_diarize` is true (single-speaker meetings have nothing to dedup), rewrites the exact same well-known meeting-artifact path `meeting-merge` just wrote (not a new `.fixed.` file, so downstream consumers looking for `meeting_<date>_<participants>.json` still find the deduplicated version), and runs with `--apply` (`vd-pipeline`'s dispatcher needs a dedicated `run_fix_overlap` — the generic `run_fix` helper used by every other `vd-fix-*` capability doesn't pass `--apply`, and without it `vd-fix-overlap` only reports, it doesn't write).

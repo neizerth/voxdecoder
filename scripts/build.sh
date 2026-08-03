@@ -33,8 +33,10 @@ packages=(
   -p vd-gigaam
   -p vd-fix-casing
   -p vd-fix-asr
+  -p vd-fix-disfluency
   -p vd-fix-terms
   -p vd-fix-layout
+  -p vd-fix-overlap
 )
 
 extra=()

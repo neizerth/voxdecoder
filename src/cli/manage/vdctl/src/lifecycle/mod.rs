@@ -60,6 +60,19 @@ fn start_runtime(platform: &Platform, config: &PlatformConfig) -> Result<(), Err
         .stdin(Stdio::null())
         .stdout(Stdio::from(log))
         .stderr(Stdio::from(log_err));
+    // Capability CLIs (`vd-fix-*`, `vd-pipeline`, …) are resolved by name on PATH.
+    // Workspace/install bin dir must come first or Job steps fail with ENOENT.
+    {
+        let mut dirs = vec![platform.bin_dir.as_os_str().to_os_string()];
+        if let Some(rest) = std::env::var_os("PATH") {
+            for p in std::env::split_paths(&rest) {
+                dirs.push(p.into_os_string());
+            }
+        }
+        if let Ok(joined) = std::env::join_paths(dirs) {
+            cmd.env("PATH", joined);
+        }
+    }
     if let Some(tcp) = &platform.tcp {
         cmd.arg("--tcp").arg(tcp);
     }

@@ -165,3 +165,61 @@
   action:
     type: replace
     with: "won't"
+
+# Orphan letters (ADR 014) — single letters used as hesitation
+- id: en-orphan-letter-a
+  confidence: likely
+  when:
+    type: orphan_letter
+    value: 'a'
+  action:
+    type: remove
+
+- id: en-orphan-letter-e
+  confidence: likely
+  when:
+    type: orphan_letter
+    value: 'e'
+  action:
+    type: remove
+
+- id: en-orphan-letter-i
+  confidence: likely
+  when:
+    type: orphan_letter
+    value: 'i'
+  action:
+    type: remove
+
+# Stuttering (ADR 014) — repeated syllables (t-t, s-s)
+- id: en-stutter-t-t
+  confidence: certain
+  when:
+    type: stutter
+    pattern: 't-t'
+  action:
+    type: remove
+
+- id: en-stutter-s-s
+  confidence: certain
+  when:
+    type: stutter
+    pattern: 's-s'
+  action:
+    type: remove
+
+- id: en-stutter-d-d
+  confidence: certain
+  when:
+    type: stutter
+    pattern: 'd-d'
+  action:
+    type: remove
+
+- id: en-stutter-w-w
+  confidence: certain
+  when:
+    type: stutter
+    pattern: 'w-w'
+  action:
+    type: remove

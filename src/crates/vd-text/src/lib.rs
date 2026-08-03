@@ -9,6 +9,7 @@
 //! No CLI, no business logic, no transcript-cleanup policy — this crate
 //! only owns reusable primitives that `vd-fix-*` binaries call into.
 
+pub mod disfluency;
 pub mod language_packs;
 pub mod linguistics;
 pub mod rule_engine;

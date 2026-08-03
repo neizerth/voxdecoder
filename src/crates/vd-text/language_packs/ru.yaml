@@ -105,3 +105,69 @@
     type: merged_word
   action:
     type: split
+
+# Orphan letters (ADR 014) — single letters used as hesitation
+- id: ru-orphan-letter-ya
+  confidence: likely
+  when:
+    type: orphan_letter
+    value: 'я'
+  action:
+    type: remove
+
+- id: ru-orphan-letter-e
+  confidence: likely
+  when:
+    type: orphan_letter
+    value: 'э'
+  action:
+    type: remove
+
+- id: ru-orphan-letter-m
+  confidence: likely
+  when:
+    type: orphan_letter
+    value: 'м'
+  action:
+    type: remove
+
+- id: ru-orphan-letter-n
+  confidence: likely
+  when:
+    type: orphan_letter
+    value: 'н'
+  action:
+    type: remove
+
+# Stuttering (ADR 014) — repeated syllables (я-я, по-по)
+- id: ru-stutter-ya-ya
+  confidence: certain
+  when:
+    type: stutter
+    pattern: 'я-я'
+  action:
+    type: remove
+
+- id: ru-stutter-po-po
+  confidence: certain
+  when:
+    type: stutter
+    pattern: 'по-по'
+  action:
+    type: remove
+
+- id: ru-stutter-n-n
+  confidence: certain
+  when:
+    type: stutter
+    pattern: 'н-н'
+  action:
+    type: remove
+
+- id: ru-stutter-i-i
+  confidence: certain
+  when:
+    type: stutter
+    pattern: 'и-и'
+  action:
+    type: remove

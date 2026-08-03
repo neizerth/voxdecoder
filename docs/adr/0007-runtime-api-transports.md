@@ -169,7 +169,6 @@ GET /jobs/{id}
 
 POST /jobs/{id}/cancel
 ```
-
 ### Operator API
 
 ```text

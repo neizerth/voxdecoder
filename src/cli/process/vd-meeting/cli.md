@@ -196,8 +196,14 @@ steps:
   - use: fix-asr
     inputs: [alice.cased]
     id: alice.asr
-  - use: fix-terms
+  - use: fix-disfluency
     inputs: [alice.asr]
+    id: alice.disfluency
+  - use: fix-terms
+    inputs: [alice.disfluency]
+    id: alice.terms
+  - use: fix-layout
+    inputs: [alice.terms]
     id: alice.text
 
   - use: diarize
@@ -210,6 +216,11 @@ steps:
     options:
       alignment: { mode: longest }
       participants: { … }
+
+  - use: fix-overlap
+    id: meeting.deduped
+    inputs: [meeting]
+    # rewrites same meeting_….json when diarized
 ```
 
 Each participant (or room-with-transcript) path is a **transcript branch**. A room mix with only `purpose: timeline` does **not** get ASR.

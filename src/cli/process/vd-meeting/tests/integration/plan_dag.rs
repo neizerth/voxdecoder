@@ -81,6 +81,57 @@ fn room_plus_tracks_resolves_without_room_transcript() {
 }
 
 #[test]
+fn transcript_branch_includes_disfluency_and_layout() {
+    let req = MeetingRequest {
+        working_dir: Some(PathBuf::from("/work")),
+        inputs: vec![src(InputRole::Room, "meeting.wav", None)],
+        meeting: MeetingModel {
+            diarization: DiarizationPolicy {
+                enabled: DiarizationEnabled::False,
+            },
+            ..Default::default()
+        },
+        output: Default::default(),
+    };
+
+    let job = plan_job(&req, &BuildOptions::default()).unwrap();
+    let leaves = job.leaf_steps();
+    let caps: Vec<_> = leaves.iter().map(|s| s.r#use).collect();
+    assert!(
+        caps.contains(&Capability::FixDisfluency),
+        "meeting transcript branch must include fix-disfluency"
+    );
+    assert!(
+        caps.contains(&Capability::FixLayout),
+        "meeting transcript branch must include fix-layout"
+    );
+
+    let disfluency = leaves
+        .iter()
+        .find(|s| s.r#use == Capability::FixDisfluency)
+        .unwrap();
+    let terms = leaves
+        .iter()
+        .find(|s| s.r#use == Capability::FixTerms)
+        .unwrap();
+    let layout = leaves
+        .iter()
+        .find(|s| s.r#use == Capability::FixLayout)
+        .unwrap();
+    assert!(
+        terms.inputs.iter().any(|i| i == disfluency.id.as_deref().unwrap()),
+        "fix-terms must follow fix-disfluency"
+    );
+    assert!(
+        layout.inputs.iter().any(|i| i == terms.id.as_deref().unwrap()),
+        "fix-layout must follow fix-terms (final .text)"
+    );
+    assert_eq!(layout.id.as_deref(), Some("room.text"));
+
+    resolve_job(job).expect("planned Job must resolve");
+}
+
+#[test]
 fn diarized_meeting_appends_fix_overlap_after_merge() {
     let req = MeetingRequest {
         working_dir: Some(PathBuf::from("/work")),

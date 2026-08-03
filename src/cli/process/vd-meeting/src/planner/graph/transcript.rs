@@ -1,4 +1,5 @@
-//! One transcript branch: (preprocess?) → transcribe → fix-casing → fix-asr → fix-terms.
+//! One transcript branch: (preprocess?) → transcribe → fix-casing → fix-asr →
+//! fix-disfluency → fix-terms → fix-layout (same order as `vd-pipeline` default).
 
 use vd_pipeline::{Capability, Step};
 
@@ -39,12 +40,26 @@ pub fn append_branch(
     a.options = overwrite_opt(options);
     steps.push(a);
 
-    let text = format!("{bid}.text");
+    let disfluency = format!("{bid}.disfluency");
+    let mut d = Step::new(Capability::FixDisfluency);
+    d.id = Some(disfluency.clone());
+    d.inputs = vec![asr];
+    d.options = overwrite_opt(options);
+    steps.push(d);
+
+    let terms = format!("{bid}.terms");
     let mut f = Step::new(Capability::FixTerms);
-    f.id = Some(text.clone());
-    f.inputs = vec![asr];
+    f.id = Some(terms.clone());
+    f.inputs = vec![disfluency];
     f.options = overwrite_opt(options);
     steps.push(f);
+
+    let text = format!("{bid}.text");
+    let mut layout = Step::new(Capability::FixLayout);
+    layout.id = Some(text.clone());
+    layout.inputs = vec![terms];
+    layout.options = overwrite_opt(options);
+    steps.push(layout);
 
     Ok(text)
 }

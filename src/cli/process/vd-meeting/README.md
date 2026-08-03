@@ -90,8 +90,9 @@ There is **one** executor. CLI, server, MCP, and `vd-meeting` only differ in **h
 Each audio source that needs text becomes a **transcript branch** (not a “cleanup” branch — the chain will grow):
 
 ```text
-transcribe → fix-casing → fix-asr → fix-terms
+transcribe → fix-casing → fix-asr → fix-disfluency → fix-terms → fix-layout
 # later: translate · summarize · llm-review · …
+# after meeting-merge (when diarized): fix-overlap
 ```
 
 Branches are sibling subgraphs. The Executor runs them in parallel when independent.
