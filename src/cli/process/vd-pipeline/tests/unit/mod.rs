@@ -1,6 +1,7 @@
 #![allow(clippy::default_trait_access)]
 //! Unit tests for `vd-pipeline` (no process spawn).
 
+mod artifact_ref;
 mod artifacts;
 mod cli;
 mod default_job;

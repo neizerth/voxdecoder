@@ -153,6 +153,9 @@ JSON is the same tree.
 | `id` | — | Registers **primary** output as a named artifact |
 | `name` | — | Human label only. **Omit when unset** — never for wiring |
 | `inputs` | — | List of artifact ids or filesystem paths |
+
+Artifact refs: path separators or known media/doc extensions (`wav`, `mp3`, `txt`, …) → filesystem path; otherwise → artifact id (so `alice.transcript` / `room.prepared` stay ids).
+
 | `input` | — | Sugar for a single-entry `inputs` |
 | `outputs` | — | Map of extra artifact name → path (implementation may fill paths) |
 | `output` | — | Sugar / explicit path for the primary output |

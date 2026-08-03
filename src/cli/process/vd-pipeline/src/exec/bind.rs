@@ -10,6 +10,8 @@ use super::ExecError;
 #[derive(Debug, Clone)]
 pub struct InvokeRequest {
     pub capability: Capability,
+    /// Step / artifact id when set (e.g. `igor.cased`) — used by Runtime observe binding.
+    pub step_id: Option<String>,
     pub working_dir: PathBuf,
     pub input: PathBuf,
     pub output: Option<PathBuf>,

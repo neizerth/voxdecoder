@@ -9,7 +9,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use vd_pipeline::{resolve_job, Capability, Job, ResolvedJob};
+use vd_pipeline::{resolve_job, ArtifactRef, Capability, Job, ResolvedJob};
 
 use crate::paths;
 
@@ -243,32 +243,89 @@ impl JobStore {
 use serde::Serialize;
 
 fn nodes_from_resolved(resolved: &ResolvedJob) -> Vec<NodeRecord> {
-    let n = resolved.steps.len();
-    // Sequential dependency hint from legacy order: each leaf waits on previous in topo order.
-    let order = &resolved.order;
-    let mut pred: Vec<Option<usize>> = vec![None; n];
-    for w in order.windows(2) {
-        pred[w[1]] = Some(w[0]);
+    let leaves = resolved.job.leaf_steps();
+    debug_assert_eq!(leaves.len(), resolved.steps.len());
+
+    // Producer index for artifact / step ids (same rules as schedule_leaf_order).
+    let mut id_to_idx: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+    let mut artifact_to_idx: std::collections::HashMap<&str, usize> =
+        std::collections::HashMap::new();
+    for (i, step) in leaves.iter().enumerate() {
+        if let Some(id) = &step.id {
+            id_to_idx.insert(id.as_str(), i);
+            artifact_to_idx.insert(id.as_str(), i);
+        }
+        for name in step.outputs.keys() {
+            artifact_to_idx.insert(name.as_str(), i);
+        }
+        for name in &step.produces {
+            if !name.contains('*') {
+                artifact_to_idx.insert(name.as_str(), i);
+            }
+        }
     }
+
+    let node_id = |i: usize| -> String {
+        resolved.steps[i]
+            .id
+            .clone()
+            .unwrap_or_else(|| format!("leaf-{}", resolved.steps[i].index))
+    };
 
     resolved
         .steps
         .iter()
         .enumerate()
         .map(|(i, step)| {
-            let id = step
-                .id
-                .clone()
-                .unwrap_or_else(|| format!("leaf-{}", step.index));
-            let depends_on: Vec<String> = pred[i]
-                .map(|p| {
-                    resolved.steps[p]
-                        .id
-                        .clone()
-                        .unwrap_or_else(|| format!("leaf-{}", resolved.steps[p].index))
-                })
-                .into_iter()
-                .collect();
+            let mut depends_on: Vec<String> = Vec::new();
+            let leaf = leaves[i];
+
+            for raw in leaf.input_refs() {
+                if let ArtifactRef::Id(id) = ArtifactRef::parse(raw) {
+                    if id.contains('*') {
+                        continue;
+                    }
+                    if let Some(&from) = artifact_to_idx.get(id.as_str()) {
+                        if from != i {
+                            let dep = node_id(from);
+                            if !depends_on.contains(&dep) {
+                                depends_on.push(dep);
+                            }
+                        }
+                    }
+                }
+            }
+            for dep in &leaf.depends {
+                if let Some(&from) = id_to_idx.get(dep.as_str()) {
+                    if from != i {
+                        let d = node_id(from);
+                        if !depends_on.contains(&d) {
+                            depends_on.push(d);
+                        }
+                    }
+                }
+            }
+            // Linear sugar: fix-* with no inputs waits on previous declaration leaf.
+            if leaf.input_refs().is_empty()
+                && matches!(
+                    leaf.r#use,
+                    Capability::FixCasing
+                        | Capability::FixAsr
+                        | Capability::FixTerms
+                        | Capability::FixLayout
+                        | Capability::MeetingMerge
+                )
+                && !leaf.skip
+            {
+                if let Some(prev) = (0..i).rev().find(|&j| !leaves[j].skip) {
+                    let d = node_id(prev);
+                    if !depends_on.contains(&d) {
+                        depends_on.push(d);
+                    }
+                }
+            }
+
+            let id = node_id(i);
             let status = if step.skip {
                 NodeStatus::Skipped
             } else if depends_on.is_empty() {

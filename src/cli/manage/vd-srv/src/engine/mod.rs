@@ -182,12 +182,24 @@ impl Engine {
         Ok(inner.store.append_event(id, event)?)
     }
 
-    /// Pick a Ready node with matching capability, mark Running, return node id.
-    pub fn mark_node_started(&self, job_id: &str, capability: &str) -> Option<String> {
+    /// Pick a Ready node matching step id (preferred) or capability; mark Running.
+    pub fn mark_node_started(
+        &self,
+        job_id: &str,
+        capability: &str,
+        step_id: Option<&str>,
+    ) -> Option<String> {
         let inner = self.inner.lock().ok()?;
         let mut rec = inner.store.load(job_id).ok()?;
         let node = rec.nodes.iter_mut().find(|n| {
-            n.capability == capability && matches!(n.status, NodeStatus::Ready | NodeStatus::Pending)
+            if !matches!(n.status, NodeStatus::Ready | NodeStatus::Pending) {
+                return false;
+            }
+            if let Some(id) = step_id {
+                n.id == id
+            } else {
+                n.capability == capability
+            }
         })?;
         node.status = NodeStatus::Running;
         node.started_at = Some(now_rfc3339());

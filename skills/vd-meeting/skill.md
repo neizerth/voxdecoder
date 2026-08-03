@@ -175,8 +175,10 @@ This Skill starts long-running Runtime Jobs.
 
 ### Failures
 
-- If the Job fails, report the Runtime error from `get_job`.
+- If **any** pipeline step / node fails (including one participant track in a parallel meeting), the Job ends as `failed`. Do not treat a surviving sibling branch as success.
+- If the Job fails, report the Runtime error from `get_job` (and the failed node id when present).
 - Do not retry automatically unless the user explicitly asks.
+- Do not keep polling after `failed` / `cancelled` hoping the Job will recover.
 - Classify connectivity / MCP / Job failures per **Recovery** below — do not treat every error as “start the Runtime”.
 
 ### Recovery

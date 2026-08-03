@@ -33,14 +33,21 @@ impl Binder for ObservingBinder {
         let cap = req.capability.as_str();
         let node_id = self
             .engine
-            .mark_node_started(&self.job_id, cap)
-            .unwrap_or_else(|| format!("{cap}-{}", _n));
+            .mark_node_started(&self.job_id, cap, req.step_id.as_deref())
+            .unwrap_or_else(|| {
+                req.step_id
+                    .clone()
+                    .unwrap_or_else(|| format!("{cap}-{}", _n))
+            });
 
         let mut fields = BTreeMap::new();
         fields.insert(
             "capability".into(),
             serde_json::Value::String(cap.to_string()),
         );
+        if let Some(id) = &req.step_id {
+            fields.insert("id".into(), serde_json::Value::String(id.clone()));
+        }
         fields.insert(
             "input".into(),
             serde_json::Value::String(req.input.display().to_string()),

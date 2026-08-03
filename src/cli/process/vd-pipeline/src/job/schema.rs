@@ -1,7 +1,7 @@
 //! Job document types — workflow tree (`sequence` / `parallel`) + capability leaves.
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -344,13 +344,22 @@ pub enum ArtifactRef {
 }
 
 impl ArtifactRef {
+    /// Parse a step input/output reference.
+    ///
+    /// Rules:
+    /// - wildcards (`prefix/*`) → [`Id`]
+    /// - path separators (`/` `\`) → [`Path`]
+    /// - bare names with a **known filesystem extension** (`meeting.wav`, `notes.txt`) → [`Path`]
+    /// - dotted **artifact ids** (`alice.transcript`, `room.prepared`) → [`Id`]
+    ///
+    /// Meeting planners use `{participant}.{stage}` ids; those must not be treated as paths
+    /// just because `Path::extension` is `Some`.
     pub fn parse(raw: &str) -> Self {
         if raw.ends_with("/*") || raw.contains('*') {
             return Self::Id(raw.to_string());
         }
-        let p = PathBuf::from(raw);
-        if raw.contains('/') || raw.contains('\\') || p.extension().is_some() {
-            Self::Path(p)
+        if is_filesystem_ref(raw) {
+            Self::Path(PathBuf::from(raw))
         } else {
             Self::Id(raw.to_string())
         }
@@ -362,6 +371,65 @@ impl ArtifactRef {
             Self::Path(_) => false,
         }
     }
+}
+
+/// True when `raw` should be resolved as a filesystem path (not an artifact id).
+fn is_filesystem_ref(raw: &str) -> bool {
+    if raw.contains('/') || raw.contains('\\') {
+        return true;
+    }
+    let Some(ext) = Path::new(raw)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+    else {
+        return false;
+    };
+    // Whitelist real media/doc extensions. Do **not** treat meeting stages
+    // (`.transcript`, `.cased`, `.asr`, `.text`, `.prepared`) as paths.
+    matches!(
+        ext.as_str(),
+        "wav"
+            | "mp3"
+            | "m4a"
+            | "ogg"
+            | "flac"
+            | "opus"
+            | "aac"
+            | "wma"
+            | "mp4"
+            | "mkv"
+            | "mov"
+            | "webm"
+            | "avi"
+            | "m4v"
+            | "mpeg"
+            | "mpg"
+            | "flv"
+            | "wmv"
+            | "txt"
+            | "md"
+            | "markdown"
+            | "pdf"
+            | "docx"
+            | "doc"
+            | "rtf"
+            | "csv"
+            | "html"
+            | "htm"
+            | "srt"
+            | "vtt"
+            | "json"
+            | "yaml"
+            | "yml"
+            | "toml"
+            | "png"
+            | "jpg"
+            | "jpeg"
+            | "gif"
+            | "webp"
+            | "svg"
+    )
 }
 
 #[derive(Debug, Clone)]
