@@ -7,6 +7,9 @@
 .DS_Store
 /knowledge
 /node_modules/
+src/desktop/node_modules/
+src/desktop/dist/
+src/desktop/src-tauri/target/
 src/cli/transcribe/vd-gigaam/models/
 src/cli/transcribe/vd-gigaam/scripts/.venv/
 **/fixtures/golden/

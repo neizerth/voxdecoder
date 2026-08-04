@@ -48,6 +48,9 @@ default-members = [
     "src/cli/fix/vd-fix-disfluency",
     "src/cli/fix/vd-fix-overlap",
 ]
+exclude = [
+    "src/desktop/src-tauri",
+]
 
 
 [workspace.package]
