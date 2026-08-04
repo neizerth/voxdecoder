@@ -112,7 +112,10 @@ After `fix-overlap` rewrites `meeting.json`, the pipeline **must** regenerate th
 - Room + N participants: room has both transcript and timeline by default.
 - Mix residual has no near-copy of participant wording in overlapping windows.
 - Mix residual speaker labels are **participant names** (via diarize correlation or fallback) — never the branch id `room`.
+- When one participant ASR is near-empty while another has real content, residual attribution prefers that failed track over diarize correlation (stub/sparse timelines otherwise steal mix speech onto the strong track).
+- Meeting-merge must **not** re-apply TimeMap to transcript sidecars already remapped by the Job Executor (ADR 0001 §6); double remap stretches clocks by `(original/processed)²` and breaks subtract.
 - Meeting preprocess **omits `trim-silence`**: current TimeMap is uniform-only; silenceremove would linearly stretch compacted speech and break subtract / speaker clocks. Piecewise silence maps are future work.
+- Meeting markdown prints a `**Name**` header only when the speaker changes; consecutive same-speaker turns are blank-line paragraphs under one header.
 - Same-window bleed across two participant tracks collapses to one speaker (prefer timeline when present).
 - `fix-overlap` present in the Job whenever ≥ 2 text branches exist.
 - After `fix-overlap`, sibling `meeting.md` matches deduped JSON turns (no stale pre-dedupe markdown).

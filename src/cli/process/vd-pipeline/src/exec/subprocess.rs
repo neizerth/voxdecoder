@@ -636,12 +636,14 @@ fn run_meeting_merge(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
         &participant_turns,
         &participant_ids,
     );
+    scrub_mix_branch_labels(&mut mix_residual, &participant_turns, &participant_ids);
     let mut turns = participant_turns;
     turns.extend(mix_residual);
     turns.sort_by(|a, b| {
         a.start_sec
             .partial_cmp(&b.start_sec)
             .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.speaker.cmp(&b.speaker))
     });
 
     // Roster = participant display names only (never the mix/room branch id).
@@ -824,7 +826,7 @@ fn load_transcript_segments(transcript: &Path) -> Option<Vec<SegTurn>> {
         let raw = std::fs::read_to_string(&c).ok()?;
         let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
         let segs = v.get("segments")?.as_array()?;
-        let mut out = Vec::new();
+        let mut raw_segs: Vec<(f64, f64, String)> = Vec::new();
         for s in segs {
             let start = s
                 .get("start")
@@ -844,20 +846,37 @@ fn load_transcript_segments(transcript: &Path) -> Option<Vec<SegTurn>> {
             if text.is_empty() {
                 continue;
             }
-            let (start_sec, end_sec) = if let Some(tm) = &timemap {
-                tm.remap_interval(start, end)
-            } else {
-                (start, end)
-            };
-            out.push(SegTurn {
-                start_sec,
-                end_sec,
-                text,
-            });
+            raw_segs.push((start, end, text));
         }
-        if !out.is_empty() {
-            return Some(out);
+        if raw_segs.is_empty() {
+            continue;
         }
+        // Executor already remaps ASR sidecars processed→original (ADR 0001 §6).
+        // Remap here only when timestamps still sit on the processed clock —
+        // otherwise double-apply stretches times by (original/processed)^2
+        // (e.g. 5380s → ~37120s) and breaks mix subtract / attribution.
+        let needs_remap = timemap.as_ref().is_some_and(|tm| {
+            tm.timestamps_on_processed_clock(raw_segs.iter().map(|(_, end, _)| *end))
+        });
+        let out: Vec<SegTurn> = raw_segs
+            .into_iter()
+            .map(|(start, end, text)| {
+                let (start_sec, end_sec) = if needs_remap {
+                    timemap
+                        .as_ref()
+                        .map(|tm| tm.remap_interval(start, end))
+                        .unwrap_or((start, end))
+                } else {
+                    (start, end)
+                };
+                SegTurn {
+                    start_sec,
+                    end_sec,
+                    text,
+                }
+            })
+            .collect();
+        return Some(out);
     }
     None
 }
@@ -997,8 +1016,8 @@ fn is_mix_branch_label(label: &str) -> bool {
 }
 
 /// Relabel mix residual: never keep `room` / mix branch id in the artifact.
-/// Prefer diarize-timeline → participant correlation; else sole unmatched
-/// participant; else `Unknown`.
+/// Prefer failed-track fallback when one participant ASR is near-empty; else
+/// diarize-timeline → participant correlation; else weakest / sole / `Unknown`.
 fn attribute_mix_residual(
     residual: &mut [crate::meeting_artifact::MeetingTurn],
     timeline: Option<&crate::meeting_artifact::SpeakerTimeline>,
@@ -1008,18 +1027,23 @@ fn attribute_mix_residual(
     if residual.is_empty() {
         return;
     }
+
+    let fallback = residual_fallback_name(participant_turns, participant_names);
+
+    // Failed / near-empty track: their speech lives only on the mix. Stub or
+    // sparse diarize would otherwise map every residual window onto the strong
+    // track (the only one with overlap evidence) and steal the failed speaker's
+    // words. Skip diarize correlation in that case.
+    if failed_participant_track(participant_turns, participant_names).is_some() {
+        for turn in residual.iter_mut() {
+            turn.speaker = fallback.clone();
+        }
+        return;
+    }
+
     let diarize_map = timeline
         .map(|tl| correlate_diarize_to_participants(tl, participant_turns, participant_names))
         .unwrap_or_default();
-
-    let fallback = if participant_names.len() == 1 {
-        participant_names[0].clone()
-    } else {
-        // Prefer the participant with weakest ASR coverage (chars) — often the
-        // track that failed/truncated, whose speech survived only on the mix.
-        weakest_participant(participant_turns, participant_names)
-            .unwrap_or_else(|| "Unknown".into())
-    };
 
     for turn in residual.iter_mut() {
         if let Some(tl) = timeline {
@@ -1031,6 +1055,60 @@ fn attribute_mix_residual(
             }
         }
         turn.speaker = fallback.clone();
+    }
+}
+
+/// Last-line scrub: any leftover `room`/`merged` label → fallback name.
+fn scrub_mix_branch_labels(
+    turns: &mut [crate::meeting_artifact::MeetingTurn],
+    participant_turns: &[crate::meeting_artifact::MeetingTurn],
+    participant_names: &[String],
+) {
+    let fallback = residual_fallback_name(participant_turns, participant_names);
+    for turn in turns.iter_mut() {
+        if is_mix_branch_label(&turn.speaker) {
+            turn.speaker = fallback.clone();
+        }
+    }
+}
+
+fn residual_fallback_name(
+    participant_turns: &[crate::meeting_artifact::MeetingTurn],
+    participant_names: &[String],
+) -> String {
+    if participant_names.len() == 1 {
+        return participant_names[0].clone();
+    }
+    failed_participant_track(participant_turns, participant_names)
+        .or_else(|| weakest_participant(participant_turns, participant_names))
+        .unwrap_or_else(|| "Unknown".into())
+}
+
+/// Participant whose ASR coverage is near-empty while another has real content.
+/// Typical when preprocess/ASR killed one track and speech survives only on mix.
+fn failed_participant_track(
+    turns: &[crate::meeting_artifact::MeetingTurn],
+    names: &[String],
+) -> Option<String> {
+    if names.len() < 2 {
+        return None;
+    }
+    let mut counts: Vec<(usize, &str)> = Vec::with_capacity(names.len());
+    for name in names {
+        let chars: usize = turns
+            .iter()
+            .filter(|t| &t.speaker == name)
+            .map(|t| t.text.chars().count())
+            .sum();
+        counts.push((chars, name.as_str()));
+    }
+    let max = counts.iter().map(|(c, _)| *c).max()?;
+    let (min_c, min_n) = counts.iter().copied().min_by_key(|(c, _)| *c)?;
+    // Near-empty vs real content (e.g. "Д." vs multi-kchar track).
+    if min_c <= 32 && max >= 200 && min_c.saturating_mul(20) < max {
+        Some(min_n.to_string())
+    } else {
+        None
     }
 }
 
@@ -1882,6 +1960,81 @@ mod tests {
         assert_ne!(residual[0].speaker, "room");
         // Weakest track (Игорь) gets residual when timeline absent.
         assert_eq!(residual[0].speaker, "Игорь");
+    }
+
+    #[test]
+    fn failed_track_residual_ignores_diarize_steal() {
+        // Strong track has all diarize overlap evidence; failed track has "Д.".
+        // Stub/sparse diarize would map residual → Владимир; must keep Николай.
+        let participant_turns = vec![
+            crate::meeting_artifact::MeetingTurn {
+                speaker: "Владимир".into(),
+                start_sec: 0.0,
+                end_sec: 60.0,
+                text: "а".repeat(400),
+            },
+            crate::meeting_artifact::MeetingTurn {
+                speaker: "Николай".into(),
+                start_sec: 5380.0,
+                end_sec: 5406.0,
+                text: "Д.".into(),
+            },
+        ];
+        let timeline = crate::meeting_artifact::SpeakerTimeline {
+            version: 1,
+            speakers: vec![
+                crate::meeting_artifact::SpeakerSegment {
+                    speaker: "S0".into(),
+                    start_sec: 0.0,
+                    end_sec: 61.0,
+                    confidence: Some(1.0),
+                },
+                crate::meeting_artifact::SpeakerSegment {
+                    speaker: "S1".into(),
+                    start_sec: 59.0,
+                    end_sec: 120.0,
+                    confidence: Some(1.0),
+                },
+            ],
+            overlaps: vec![],
+        };
+        let mut residual = vec![crate::meeting_artifact::MeetingTurn {
+            speaker: "room".into(),
+            start_sec: 20.0,
+            end_sec: 40.0,
+            text: "речь коуча только на миксе".into(),
+        }];
+        attribute_mix_residual(
+            &mut residual,
+            Some(&timeline),
+            &participant_turns,
+            &["Владимир".into(), "Николай".into()],
+        );
+        assert_eq!(residual[0].speaker, "Николай");
+        scrub_mix_branch_labels(
+            &mut residual,
+            &participant_turns,
+            &["Владимир".into(), "Николай".into()],
+        );
+        assert!(!is_mix_branch_label(&residual[0].speaker));
+    }
+
+    #[test]
+    fn scrub_rewrites_stray_room_label() {
+        let mut turns = vec![crate::meeting_artifact::MeetingTurn {
+            speaker: "room".into(),
+            start_sec: 0.0,
+            end_sec: 1.0,
+            text: "ещё остаток".into(),
+        }];
+        let participants = vec![crate::meeting_artifact::MeetingTurn {
+            speaker: "Владимир".into(),
+            start_sec: 0.0,
+            end_sec: 1.0,
+            text: "x".repeat(250),
+        }];
+        scrub_mix_branch_labels(&mut turns, &participants, &["Владимир".into(), "Николай".into()]);
+        assert_eq!(turns[0].speaker, "Николай");
     }
 
     #[test]

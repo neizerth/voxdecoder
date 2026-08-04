@@ -86,6 +86,29 @@ impl TimeMap {
     pub fn remap_interval(&self, start: f64, end: f64) -> (f64, f64) {
         (self.to_original(start), self.to_original(end))
     }
+
+    /// End of the processed-clock domain covered by this map.
+    pub fn processed_end(&self) -> f64 {
+        self.segments
+            .iter()
+            .map(|s| s.processed.end)
+            .fold(0.0_f64, f64::max)
+    }
+
+    /// True when `timestamps` still sit on the processed clock and need remap.
+    ///
+    /// Executor remaps transcript sidecars after ASR (ADR 0001 §6). Meeting-merge
+    /// must not remap again — detect already-original clocks by any end past the
+    /// processed domain (+slack).
+    pub fn timestamps_on_processed_clock(&self, ends: impl IntoIterator<Item = f64>) -> bool {
+        let pe = self.processed_end();
+        if pe <= 0.0 {
+            return false;
+        }
+        let slack = (pe * 0.05).max(1.0);
+        let max_end = ends.into_iter().fold(0.0_f64, f64::max);
+        max_end <= pe + slack
+    }
 }
 
 #[cfg(test)]
@@ -98,6 +121,14 @@ mod tests {
         assert!((map.to_original(0.0) - 0.0).abs() < 1e-9);
         assert!((map.to_original(5.0) - 10.0).abs() < 1e-9);
         assert!((map.to_original(10.0) - 20.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn detects_already_original_clock() {
+        let map = TimeMap::uniform(783.0, 5406.0);
+        assert!(map.timestamps_on_processed_clock([100.0, 700.0]));
+        // Post-executor remap: ends sit on original clock — must not remap again.
+        assert!(!map.timestamps_on_processed_clock([5380.0, 5406.0]));
     }
 
     #[test]
