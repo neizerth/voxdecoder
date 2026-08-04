@@ -4,14 +4,14 @@ Linguistic infrastructure sidecar providing tokenization, sentence segmentation,
 
 ## Overview
 
-`vd-text-py` is a long-lived subprocess spawned by `vd-text` (Rust). It communicates via **file-based IPC** (input/output files, arguments) — matching [vd-pipeline's subprocess model](../../src/cli/process/vd-pipeline/src/exec/subprocess.rs).
+`vd-text-py` is a long-lived subprocess spawned by `vd-text` (Rust). It communicates via **file-based IPC** (input/output files, arguments) — matching [vd-pipeline's subprocess model](../../cli/process/vd-pipeline/src/exec/subprocess.rs).
 
 **Not a hard dependency.** Features gracefully degrade if the sidecar is unavailable (missing Python, missing packages, spawn failure). Preserved for vd-fix-asr's ADR 0010 guarantee of fully-local operation without Python.
 
 ## Installation
 
 ```bash
-cd python/vd-text-py
+cd src/python/vd-text-py
 pip install -e .
 ```
 
