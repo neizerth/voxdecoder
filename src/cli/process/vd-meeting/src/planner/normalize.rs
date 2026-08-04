@@ -35,6 +35,9 @@ pub struct ResolvedInput {
     pub purposes: Vec<InputPurpose>,
     /// Stable branch id (alice, bob, room, track-0, …).
     pub branch_id: String,
+    /// Human label for transcripts (original script/casing from file or `participant`).
+    /// Prefer this over raw `branch_id` when `participants.known` has no `name`.
+    pub display_name: Option<String>,
 }
 
 pub fn normalize(request: &MeetingRequest) -> Result<ResolvedMeeting, PlanError> {
@@ -110,6 +113,25 @@ pub fn normalize(request: &MeetingRequest) -> Result<ResolvedMeeting, PlanError>
             }
         };
 
+        let display_name = match src.role {
+            InputRole::Participant => {
+                let from_participant = src
+                    .participant
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty());
+                let from_stem = path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty());
+                // Prefer the label that keeps the original script (Игорь.wav +
+                // participant=igor → display Игорь). Latin ids stay fine for wiring.
+                prefer_original_script(from_participant, from_stem)
+            }
+            _ => None,
+        };
+
         if purposes.contains(&InputPurpose::Transcript) {
             text_sources.push(i);
         }
@@ -125,6 +147,7 @@ pub fn normalize(request: &MeetingRequest) -> Result<ResolvedMeeting, PlanError>
             participant: src.participant.clone(),
             purposes,
             branch_id,
+            display_name,
         });
     }
 
@@ -153,7 +176,7 @@ pub fn normalize(request: &MeetingRequest) -> Result<ResolvedMeeting, PlanError>
 /// | Role | Context | Default |
 /// |------|---------|---------|
 /// | participant | any | `[transcript]` |
-/// | room | with participant tracks | `[timeline]` (mix for diarize only) |
+/// | room | with participant tracks | `[transcript, timeline]` (ADR 0016: mix ASR + diarize) |
 /// | room | alone, diarization on/auto | `[transcript, timeline]` |
 /// | room | alone, diarization off | `[transcript]` |
 /// | context | any | `[]` |
@@ -183,7 +206,8 @@ fn resolve_purposes(
         InputRole::Context => Vec::new(),
         InputRole::Room => {
             if has_participant {
-                vec![InputPurpose::Timeline]
+                // ADR 0016: room mix ASR (for subtract) + timeline (diarize).
+                vec![InputPurpose::Transcript, InputPurpose::Timeline]
             } else if matches!(
                 diarization,
                 DiarizationEnabled::True | DiarizationEnabled::Auto
@@ -294,11 +318,35 @@ fn resolve_path(base: &Path, p: &Path) -> PathBuf {
     }
 }
 
+fn has_non_ascii_letter(s: &str) -> bool {
+    s.chars().any(|c| c.is_alphabetic() && !c.is_ascii())
+}
+
+/// Prefer a non-ASCII (e.g. Cyrillic) human label over an ASCII slug when both exist.
+fn prefer_original_script(primary: Option<&str>, fallback: Option<&str>) -> Option<String> {
+    match (primary, fallback) {
+        (Some(a), Some(b)) => {
+            let a_native = has_non_ascii_letter(a);
+            let b_native = has_non_ascii_letter(b);
+            if !a_native && b_native {
+                Some(b.to_string())
+            } else {
+                Some(a.to_string())
+            }
+        }
+        (Some(a), None) => Some(a.to_string()),
+        (None, Some(b)) => Some(b.to_string()),
+        (None, None) => None,
+    }
+}
+
 fn slugify(s: &str) -> String {
+    // Keep letters/digits from any script (Игорь → игорь). ASCII-only was wrong:
+    // Cyrillic names collapsed to empty → "track" / forced Latin branch ids in transcripts.
     let mut out = String::new();
     for c in s.chars() {
-        if c.is_ascii_alphanumeric() {
-            out.push(c.to_ascii_lowercase());
+        if c.is_alphanumeric() {
+            out.extend(c.to_lowercase());
         } else if !out.is_empty() && !out.ends_with('-') {
             out.push('-');
         }
@@ -317,14 +365,24 @@ fn sanitize_id(base: &str, used: &mut HashSet<String>) -> String {
 }
 
 fn unique_id(base: &str, used: &mut HashSet<String>) -> String {
-    if used.insert(base.to_string()) {
+    if !used
+        .iter()
+        .any(|u| u.to_lowercase() == base.to_lowercase())
+    {
+        used.insert(base.to_string());
         return base.to_string();
     }
     for n in 2..10_000 {
         let cand = format!("{base}-{n}");
-        if used.insert(cand.clone()) {
+        if !used
+            .iter()
+            .any(|u| u.to_lowercase() == cand.to_lowercase())
+        {
+            used.insert(cand.clone());
             return cand;
         }
     }
-    format!("{base}-x")
+    let fallback = format!("{base}-x");
+    used.insert(fallback.clone());
+    fallback
 }

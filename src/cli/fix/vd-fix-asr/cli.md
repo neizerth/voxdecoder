@@ -120,7 +120,7 @@ It **may** change words, but **only inside transcript text spans**.
 | `--aggressive` | — | — | Also apply `Unsafe`-confidence rules. Conflicts with `--strict` |
 | `--report` | — | — | Print a per-category rule-hit count as JSON after the run |
 | `--dictionary` | — | — | Extra ASR-mistake dictionary file(s) (`terms.yml`-shaped). **Repeatable**, highest-priority layer |
-| `--project` | — | — | Project dir providing `.voxdecoder/asr-dictionary.yml` (mid-priority layer, below `--dictionary`, above builtin) |
+| `--project` | — | — | Project dir providing `.voxdecoder/asr-dictionary.yml` (below `--dictionary`) |
 
 Prefer prepared assets from [`vd-assets`](../../process/vd-assets/). Default: nearest **`.voxdecoder/`** (walk up from the input). Override with `--context`, `$VD_PROJECT_DIR`, or `VD_PROJECT_DIR=` in `.voxdecoder/env` / `.env`. The assets directory is the unit: Markdown → recognition context; `terms.yml` → vocabulary hints. Not canonical term locking (`vd-fix-terms`).
 
@@ -128,14 +128,14 @@ Prefer prepared assets from [`vd-assets`](../../process/vd-assets/). Default: ne
 
 Every rule carries a confidence: `certain | likely | unsafe`. Default policy applies `certain` + `likely`, never `unsafe`. `--strict` narrows to `certain` only; `--aggressive` also applies `unsafe`.
 
-ASR-mistake dictionary, layered `builtin → pack → project → user` (last wins):
+ASR-mistake dictionary, layered `project → user` (last wins). **No in-code builtin table.**
 
 ```text
-builtin        — shipped ru/en phonetic-confusion table
-pack           — reserved for future language-pack assets (none shipped yet)
 project        — {--project}/.voxdecoder/asr-dictionary.yml, if present
 user           — --dictionary PATH (repeatable)
 ```
+
+Meeting docs / `--context` feed fuzzy Stage 6 via materials (not a static word list). Residual mishears: project glossary or later AI cleanup.
 
 Dictionary file shape (same `terms.yml` format as [`vd-assets`](../../process/vd-assets/) / `vd-fix-terms`):
 

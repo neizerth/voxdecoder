@@ -169,10 +169,13 @@ Pure, allocation-light text transform, no I/O:
 tokenize                      → Vec<Chunk> (Word | Sep), lossless — chunks re-concat to the original text
 apply_empty_hesitation        → word … filler … word  ⇒  word, word     (light+)
 collapse_fillers               → isolated fillers removed; runs collapsed (light) or removed (normal+)
+strip_trailing_backchannels    → … substance. Угу. Угу. ⇒ … substance. ; sole Угу. kept (light+)
+collapse_echo_repeats          → Ну давай. Давай, давай. ⇒ Ну давай.   (allowlisted; light+)
 merge_seps + normalize_all_seps → clean up doubled punctuation left behind
 [normal+] collapse_false_starts → word … word continuation  ⇒  word continuation, guarded by protected phrases
 [normal+] merge_seps + normalize_all_seps  → clean up again
 render                         → String
+apply_glued_onset_pass         → Ччисто ⇒ Чисто                          (via vd-text, post-render)
 ```
 
 `Mode::Off` short-circuits before tokenizing — a true no-op, `changed = false`.

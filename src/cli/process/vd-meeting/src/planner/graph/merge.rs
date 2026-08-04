@@ -47,10 +47,35 @@ pub fn append_merge(
         "participants".into(),
         participants_to_arg(&resolved.meeting),
     );
+    // Original-script labels for text tracks (Cyrillic filenames stay Cyrillic in .md).
+    let mut speaker_labels = BTreeMap::new();
+    for &idx in &resolved.text_sources {
+        let src = &resolved.inputs[idx];
+        if let Some(label) = src.display_name.as_ref().filter(|s| !s.is_empty()) {
+            speaker_labels.insert(
+                src.branch_id.clone(),
+                ArgValue::String(label.clone()),
+            );
+        }
+    }
+    if !speaker_labels.is_empty() {
+        opts.insert("speaker_labels".into(), ArgValue::Map(speaker_labels));
+    }
     opts.insert(
         "texts".into(),
         ArgValue::Strings(text_ids.iter().cloned().collect()),
     );
+    // ADR 0016: room/mix transcript ids — subtracted against participant turns at merge.
+    let mix_text_ids: Vec<String> = resolved
+        .text_sources
+        .iter()
+        .filter(|&&i| resolved.inputs[i].role == crate::model::InputRole::Room)
+        .map(|&i| format!("{}.text", resolved.inputs[i].branch_id))
+        .filter(|id| text_ids.iter().any(|t| t == id))
+        .collect();
+    if !mix_text_ids.is_empty() {
+        opts.insert("mix_text_ids".into(), ArgValue::Strings(mix_text_ids));
+    }
     if let Some(t) = timeline_id {
         opts.insert("timeline".into(), ArgValue::String(t.to_string()));
     }

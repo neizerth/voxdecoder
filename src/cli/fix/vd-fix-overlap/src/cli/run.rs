@@ -15,7 +15,9 @@ use vd_output::{OutputPathRequest, OutputPaths};
 
 use super::CliError;
 use crate::config;
-use crate::overlap::{detect_duplicates, DuplicateKind, DuplicatePair, TrimAction, Utterance};
+use crate::overlap::{
+    detect_duplicates, DuplicateKind, DuplicatePair, TimelineHint, TrimAction, Utterance,
+};
 
 #[derive(Debug, Clone)]
 pub struct RunArgs {
@@ -68,7 +70,8 @@ pub fn execute(args: RunArgs) -> Result<(), CliError> {
     let utterances: Vec<Utterance> = segments.iter().map(segment_to_utterance).collect();
 
     let file = config::load(&crate::paths::config_path()).map_err(CliError::usage)?;
-    let opts = file.resolve(args.similarity_threshold, args.max_gap_ms);
+    let mut opts = file.resolve(args.similarity_threshold, args.max_gap_ms);
+    opts.timeline = timeline_hints_from_artifact(&artifact);
 
     let pairs = detect_duplicates(&utterances, &opts);
 
@@ -185,6 +188,57 @@ fn segment_to_utterance(seg: &Segment) -> Utterance {
         start_ms: seg.start_sec.map_or(0, |s| (s * 1000.0).round() as u64),
         end_ms: seg.end_sec.map_or(0, |s| (s * 1000.0).round() as u64),
     }
+}
+
+/// Pull speaker timeline hints from a meeting JSON `timeline` field when present
+/// (pipeline shape: `speakers[]` with start_sec/end_sec, or diarize `segments[]`).
+fn timeline_hints_from_artifact(artifact: &vd_artifact::Artifact) -> Vec<TimelineHint> {
+    let timeline = match artifact {
+        vd_artifact::Artifact::Json(body) => body.value.get("timeline"),
+        _ => None,
+    };
+    let Some(timeline) = timeline else {
+        return Vec::new();
+    };
+    let mut hints = Vec::new();
+    if let Some(speakers) = timeline.get("speakers").and_then(|v| v.as_array()) {
+        for seg in speakers {
+            let start = seg
+                .get("start_sec")
+                .or_else(|| seg.get("start"))
+                .and_then(|v| v.as_f64());
+            let end = seg
+                .get("end_sec")
+                .or_else(|| seg.get("end"))
+                .and_then(|v| v.as_f64());
+            let speaker = seg
+                .get("speaker")
+                .or_else(|| seg.get("id"))
+                .and_then(|v| v.as_str());
+            if let (Some(speaker), Some(start), Some(end)) = (speaker, start, end) {
+                hints.push(TimelineHint {
+                    speaker: speaker.to_string(),
+                    start_ms: (start * 1000.0).round() as u64,
+                    end_ms: (end * 1000.0).round() as u64,
+                });
+            }
+        }
+    }
+    if let Some(segments) = timeline.get("segments").and_then(|v| v.as_array()) {
+        for seg in segments {
+            let start = seg.get("start").and_then(|v| v.as_f64());
+            let end = seg.get("end").and_then(|v| v.as_f64());
+            let speaker = seg.get("speaker").and_then(|v| v.as_str());
+            if let (Some(speaker), Some(start), Some(end)) = (speaker, start, end) {
+                hints.push(TimelineHint {
+                    speaker: speaker.to_string(),
+                    start_ms: (start * 1000.0).round() as u64,
+                    end_ms: (end * 1000.0).round() as u64,
+                });
+            }
+        }
+    }
+    hints
 }
 
 fn to_report_pair(pair: &DuplicatePair, utterances: &[Utterance]) -> ReportPair {

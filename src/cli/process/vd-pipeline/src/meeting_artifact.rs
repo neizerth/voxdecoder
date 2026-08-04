@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 pub struct SpeakerTimeline {
     pub version: u32,
     pub speakers: Vec<SpeakerSegment>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub overlaps: Vec<OverlapRegion>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -16,6 +18,15 @@ pub struct SpeakerSegment {
     pub end_sec: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub confidence: Option<f64>,
+}
+
+/// Overlap / interruption region from diarize (ADR 0016).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct OverlapRegion {
+    pub start_sec: f64,
+    pub end_sec: f64,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub speakers: Vec<String>,
 }
 
 /// Canonical meeting document (Epic 6) before multi-format export.

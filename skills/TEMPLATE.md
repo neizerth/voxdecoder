@@ -14,7 +14,9 @@ When the domain accepts accompanying documents (glossaries, agendas, PDFs), coll
 
 When prior intermediates exist next to the media (`*.prepared.*`, `*.fixed.txt`, `meeting_*.md`, …), ask **overwrite vs continue** (Choices UX) before `execute: true`. Pass `overwrite: true` only for a fresh reprocess.
 
-After a successful transcript / meeting artifact, Skills may offer **optional conservative AI cleanup** (opt-in only; never automatic). Identical contract in `vd-audio` / `vd-meeting` — [ADR 0011](../docs/adr/0011-conservative-ai-transcript-cleanup-in-skills.md).
+Set artifact output to the **conversation project root** (Claude / Cursor / Claude Code project folder): **required** absolute `working_dir` / `output_dir` / `output.dir`. Omitting them dumps into Runtime `.` (= vdctl workspace, often VoxDecoder) — forbidden when the chat project is elsewhere. Media paths may stay absolute elsewhere.
+
+After a successful transcript / meeting artifact, Skills may offer **optional conservative AI cleanup** (opt-in only; never automatic). Identical contract in `vd-audio` / `vd-meeting` — [ADR 0011](../docs/adr/0011-conservative-ai-transcript-cleanup-in-skills.md). When the user opts in, run a **single tight pass** (one read, one write, all strategies together; no transcript paste into chat). Recommended noise strips trailing `Угу`/`Ага`, collapses echo invites (`Давай, давай`), clears empty husks, and эканье/аканье/stutter runs; **keep** sole-turn `Угу.`; mid-sentence `типа`/`как бы` stay optional. **Never** rewrite speaker labels — and **never** invent `room` / role ids as `**Name**` headers. After `.clean.md`, verify label set ⊆ source; fail → discard and redo.
 
 ## Runtime Contract
 

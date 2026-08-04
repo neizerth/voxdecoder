@@ -21,6 +21,7 @@ pub enum ArtifactType {
     Filler,
     OrphanLetter,
     Stutter,
+    GluedOnset,
     RepeatedWord,
     FalseStart,
     EmptyHesitation,
@@ -63,6 +64,11 @@ impl DisfluencyDetector {
     /// Detect if text is stuttering (structural pattern).
     pub fn is_stutter(&self, text: &str) -> Option<Confidence> {
         patterns::detect_stutter(text).map(|(_, _, conf)| conf)
+    }
+
+    /// Detect glued onset (`Ччисто`) — ADR 0014 §3.
+    pub fn is_glued_onset(&self, text: &str) -> Option<Confidence> {
+        patterns::detect_glued_onset(text).map(|(_, _, conf)| conf)
     }
 
     /// Detect if text is repeated words (lexical + structural).

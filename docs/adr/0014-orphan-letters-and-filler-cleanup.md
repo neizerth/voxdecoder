@@ -1,6 +1,6 @@
 # ADR 0014 — Orphan Letters and Filler Cleanup
 
-**Status:** Proposed — not implemented  
+**Status:** Partially implemented — glued-onset wired via `vd-text` → `vd-fix-disfluency`; orphan/hyphen-stutter detect remains in `vd-text` (full CLI apply path for orphans still expanding)  
 **Type:** ADR / architectural RFC  
 **Date:** 2026-08-03
 
@@ -56,6 +56,7 @@ Never change wording unless the removed fragment carries no semantic value.
 Owns:
 
 - orphan letters
+- glued onset stutter (`Ччисто` → `Чисто`)
 - hesitation syllables
 - repeated syllables
 - false starts
@@ -129,7 +130,37 @@ collapsed
 
 depending on configuration.
 
-### 3. Stuttering
+### 3. Glued onset stutter
+
+A leading letter (often from a truncated false start) glued onto the next word with no hyphen or space. Common after a cut segment ends mid-word (`чи…` + `чисто` → `Ччисто`).
+
+Examples:
+
+```text
+Ччисто никаких ошибок
+
+↓
+
+Чисто никаких ошибок
+```
+
+```text
+Ддавай
+
+↓
+
+Давай
+```
+
+Rule (deterministic, high confidence):
+
+- Word length ≥ 4.
+- First character equals the second (case-insensitive), and the remainder is a plausible word form (or the full token without the first char matches a known continuation).
+- Do **not** apply to intentional initials, acronyms, or protected tokens.
+
+Owned by `vd-fix-disfluency` via `vd-text` (same binary as orphan / hyphen stutter). Distinct from ASR dictionary repairs (`идимо`→`видимо` → `vd-fix-asr`).
+
+### 4. Stuttering
 
 Repeated syllables.
 
@@ -167,7 +198,7 @@ Examples:
 и
 ```
 
-### 4. Repeated fillers
+### 5. Repeated fillers
 
 Examples:
 
@@ -197,7 +228,7 @@ Examples:
 
 Only when clearly involuntary.
 
-### 5. Empty hesitation chains
+### 6. Empty hesitation chains
 
 Examples:
 
@@ -290,7 +321,7 @@ Between words:
 
 likely removable.
 
-Standalone utterance:
+Standalone utterance (sole-turn ack):
 
 ```text
 угу
@@ -299,6 +330,34 @@ Standalone utterance:
 ↓
 
 preserve.
+
+Trailing redundant backchannels after substantive content (same span):
+
+```text
+… там HS. Угу. Угу.
+```
+
+↓
+
+```text
+… там HS.
+```
+
+Deterministic in `vd-fix-disfluency` (light+): strip trailing `угу` / `ага` / `мгм` only when the span also has non-backchannel words. Sole-turn / backchannel-only spans stay.
+
+Echo invitation repeats (allowlisted short invites: `давай`, `ладно`, `хорошо`, …):
+
+```text
+Ну давай. Давай, давай. Ну, пример.
+```
+
+↓
+
+```text
+Ну давай. Ну, пример.
+```
+
+Deterministic in `vd-fix-disfluency` (light+). Not general word-dedup (`Это баг. Баг.` stays).
 
 ---
 

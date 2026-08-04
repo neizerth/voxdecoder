@@ -7,5 +7,6 @@
 mod detect;
 
 pub use detect::{
-    detect_duplicates, DetectOptions, DuplicateKind, DuplicatePair, TrimAction, Utterance,
+    detect_duplicates, normalize_for_compare, DetectOptions, DuplicateKind, DuplicatePair,
+    TimelineHint, TrimAction, Utterance,
 };

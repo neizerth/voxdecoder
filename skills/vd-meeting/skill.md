@@ -66,9 +66,30 @@ If both a file and a URL appear for the **same** input, ask which one to use (XO
      4. **2.2×** → `speed: 2.2`
    - Prefer 1× for quality (punctuation, rare words, meeting dialogue). Speedup trades quality for wall time.
 6. Confirm the assembled `inputs` + meeting model + speed with the user (include URLs, mix mode, any `subtitles` choices).
-7. **Prior run / leftovers** (see section below) — if intermediates or meeting artifacts already exist next to the media, ask overwrite vs continue **before** execute.
-8. Call `process_meeting` with `execute: true` only after confirmation. When using the default, **omit** `speed` (do not pass `2.0`). Pass `overwrite: true` only when the user chose a fresh reprocess.
-9. Follow the **Runtime Contract** below for status, artifacts, cancellation, failures, and recovery.
+7. **Artifact output location** (see section below) — **required** absolute `working_dir` / `output.dir` = conversation project folder. **Refuse** `execute: true` if unset or if it would land in the VoxDecoder checkout while the chat project is elsewhere.
+8. **Prior run / leftovers** (see section below) — if intermediates or meeting artifacts already exist next to the media **or** in the chosen output dir, ask overwrite vs continue **before** execute.
+9. Call `process_meeting` with `execute: true` only after confirmation. When using the default, **omit** `speed` (do not pass `2.0`). Pass `overwrite: true` only when the user chose a fresh reprocess. Always pass absolute `working_dir` (and `output.dir` when set).
+10. Follow the **Runtime Contract** below for status, artifacts, cancellation, failures, and recovery.
+
+## Artifact output location
+
+Final `meeting_*.json` / `meeting_*.md` and cleanup siblings (`*.clean.md`) must land in the **conversation project root** — the folder the user selected for this Claude / Cursor / Claude Code project (the project the chat is attached to), **not** wherever media lives and **not** a random code checkout the agent is editing.
+
+| Rule | Detail |
+|------|--------|
+| **Required** | Always pass absolute `working_dir` (prefer same for `output.dir`). Omitting it makes Runtime use `.` = **vdctl workspace** (often the VoxDecoder source tree) — that is a bug in the agent call, not an acceptable default for end-user chats. |
+| How to resolve | Claude Code / Cursor: the opened project folder (e.g. `~/Downloads` if that is the project). Prefer `pwd` / project root of **this chat**, never `vdctl.toml` `workspace` unless the user opened that repo as the project. |
+| Media elsewhere | Keep `inputs[].path` as absolute paths to the real files. Do **not** copy media into the project unless the user asks. |
+| Forbidden | Writing meeting/cleanup results into the VoxDecoder source tree (or any other repo) unless that tree **is** the selected conversation project. If artifacts appear there by mistake → move/rewrite into the project folder and fix the next Job’s `working_dir`. |
+| Cleanup | Sibling next to the primary `meeting_….md` (same directory Runtime wrote). |
+| Claude files | If the host has no usable project folder, use the client’s usual user-files / attachments area the product already uses for generated docs — still never the VoxDecoder checkout by accident. |
+
+When media directory ≠ conversation project root, present **Choices UX** once before execute:
+
+1. **Conversation project folder** (default) → `working_dir` / `output.dir` = project root
+2. **Next to media inputs** → `working_dir` / `output.dir` = media folder
+
+Always show the chosen absolute output path in the pre-execute confirmation.
 
 ## Prior run / leftovers
 
@@ -95,7 +116,7 @@ Whenever the user must pick among options (mix mode, speed, overwrite vs continu
 - Mark the default explicitly, e.g. `1. 1× / no speedup (default)`.
 - Do **not** bury options inside a single prose paragraph (“ok, or 1.5/2.2/none?”).
 - One question block at a time when possible; avoid stacking unrelated free-form prompts.
-- For **cleanup strategies**, use AskUserQuestion **`multiSelect: true`** (see **Conservative transcript cleanup**). Next appears only after **≥1** option is selected — always include a **Skip cleanup** option so the user can proceed without enabling strategies.
+- For **cleanup strategies**, use AskUserQuestion **`multiSelect: true`** (see **Conservative transcript cleanup**). Next appears only after **≥1** option is selected. To decline cleanup / optional style, use the client **Skip** control — do **not** add a Skip / None option inside the question.
 
 ## Filename heuristics
 
@@ -114,10 +135,19 @@ Examples: `meeting_mix.wav`, `all.mp4`, `merged_track.m4a`, `общая_запи
 If the basename looks like a **person name** (or contains one) and is **not** a mix token:
 
 - Set `role: participant`.
-- Set `participant` to a stable id (prefer slug of the name: `alice`, `ivan_petrov`).
-- Put a display `name` under `meeting.participants.known`.
+- Set `participant` to a stable id. Prefer the **original script** from the filename (`Игорь`, `Мария_Смирнова`). An ASCII slug (`igor`) is OK only when the source name is already Latin — **never transliterate Cyrillic → Latin** for `participant` or display.
+- Put display `name` under `meeting.participants.known` using the **same original script and casing** as the person’s name in the filename / user prompt (`Игорь`, not `Igor`).
 
-Examples: `Alice.wav`, `ivan-petrov.mp3`, `Мария_Смирнова.m4a`.
+```text
+Filename / label     participant id     known[].name
+Игорь.wav            Игорь              Игорь
+Владимир.m4a         Владимир           Владимир
+alice.wav            alice              Alice
+```
+
+Artifact **filenames** may still use ASCII when the OS/tooling needs it; that is separate. **Speaker labels inside `meeting.md` / turns must not be Latinized.**
+
+Examples: `Alice.wav`, `ivan-petrov.mp3`, `Мария_Смирнова.m4a`, `Игорь.wav`.
 
 If both a mix and speaker files exist, assign roles accordingly — do not treat the mix as a participant.
 
@@ -216,10 +246,10 @@ This Skill starts long-running Runtime Jobs.
 ### Results
 
 - When the Job reaches `completed`, use `list_artifacts` with the Job `id` to discover outputs.
-- Prefer the human-readable **`meeting_YYYY-MM-DD_<participants>.md`** (speaker blocks: bold name on its own line, text on the next; blank line between turns) as the main deliverable; also keep the matching `.json` for machine use.
+- Prefer the human-readable **`meeting_YYYY-MM-DD_<participants>.md`** (speaker header only when the speaker changes; consecutive same-speaker turns are blank-line paragraphs under one `**Name**`) as the main deliverable; also keep the matching `.json` for machine use.
 - Present artifact(s) as **clickable markdown links** (`[basename](file:///abs/path)`), not bare path strings — lead with the dated `meeting_….md` when present.
-- After linking the primary artifact, **immediately** offer the cleanup strategy multiSelect (or Skip) — see **Conservative transcript cleanup**. Do **not** insert a separate menu (show in chat / open file / both / cleanup / done) before that offer.
-- Never clean up automatically; skip is always available as a selectable option.
+- After linking the primary artifact, **immediately** offer the cleanup strategy multiSelect — see **Conservative transcript cleanup**. Do **not** insert a separate menu (show in chat / open file / both / cleanup / done) before that offer.
+- Never clean up automatically; user declines via the client **Skip** control (no Skip item in the list).
 - If the user later asks to see the transcript in chat, read the file and paste it (truncate with a note only if extremely long).
 
 ### Cancellation
@@ -291,7 +321,7 @@ Right after the artifact link (Results), present cleanup — **not** as a later 
 
 - Use **`multiSelect: true`**. It works; **Next appears only after ≥1 option is selected**.
 - Boxes start **unchecked** — markdown `[x]` does not pre-select. In the question text, tell the user: for defaults, select every option marked Recommended.
-- **Always** include **Skip cleanup** (or **None of these** on optional-only questions) so the user can unlock Next without enabling strategies.
+- Do **not** put **Skip** / **None of these** in the option list — Claude already has a **Skip** button. Client Skip on Q1 = no cleanup; on Q2 = no optional style strategies.
 - Max **4 options** per question — split if needed.
 
 **Question 1** (`multiSelect: true`):
@@ -300,31 +330,29 @@ Right after the artifact link (Results), present cleanup — **not** as a later 
 The transcript is ready: [basename](file:///…)
 
 Which cleanup strategies? Select at least one (required for Next).
-Defaults = all Recommended. Skip = leave transcript as-is.
+Defaults = all Recommended. Client Skip = leave transcript as-is.
 
 • Fix obvious ASR mistakes (Recommended)
 • Normalize technical terminology (Recommended)
-• Remove noise + normalize formatting (Recommended)
-• Skip cleanup
+• Remove noise / эканье-аканье / husks + normalize formatting (Recommended)
 ```
 
-(Label 3 combines noise + formatting so all four safe defaults fit with Skip in one 4-option question.)
+(Label 3 combines noise + stutter syllables + husks + formatting so the three Recommended defaults fit in one question.)
 
-**Question 2** (`multiSelect: true`) — only when Q1 is not Skip:
+**Question 2** (`multiSelect: true`) — only when Q1 was answered (not client-Skipped):
 
 ```text
-Optional style strategies? Select at least one (required for Next).
+Optional style strategies? Select at least one (required for Next), or Skip for none.
 
 • Make spoken language more natural
-• Remove filler words
-• None of these
+• Remove filler words (типа / как бы / mid-sentence discourse)
 ```
 
-- **Skip cleanup** → apply nothing (ignore other Q1 selections if mixed).
-- Otherwise apply exactly what was selected; label 3 enables both noise and formatting.
-- **None of these** → no style strategies.
+- Client **Skip** on Q1 → apply nothing.
+- Otherwise apply exactly what was selected; label 3 enables noise **and** formatting — and **must** strip trailing redundant `Угу`/`Ага`, collapse echo invites (`Ну давай. Давай, давай.` → `Ну давай.`), clear empty discourse husks, **and** strip эканье/аканье/stutter runs (see table). Leaving `… HS. Угу. Угу.` / `Давай, давай.` echo residue / `А В.` / `Во, да-да-да-да-да. Хмм.` after Recommended noise = incomplete pass. Sole-turn `Угу.` / `Ага.` **keep**.
+- Client **Skip** on Q2 → no style strategies.
 - **Normalize technical terminology** — only highly certain names; never guess; use glossary/`docs` when available.
-- **Remove filler words** (`как бы`, `типа`…) ≠ noise (`ээээ`, `мммм`).
+- **Remove filler words** = mid-sentence discourse fillers inside otherwise real speech (`типа`, `как бы`…). **≠** Recommended noise (syllable garbage, orphan letters, **эканье/аканье**, stutter `да-да-да`, echo `давай`/`ладно` runs, **trailing** `Угу`/`Ага`, empty husks). Sole-turn backchannel acks are not noise.
 - **Make spoken language more natural** — only when explicitly selected.
 
 ### Default strategies (recommended bundle)
@@ -333,23 +361,34 @@ Optional style strategies? Select at least one (required for Next).
 |----------|--------|
 | Fix obvious ASR mistakes | duplicates, merged/split words, punctuation, whitespace, obvious spelling |
 | Normalize technical terminology | highly certain tech names only |
-| Remove obvious speech-recognition noise | syllable garbage / recognition junk without meaning |
-| Normalize formatting | whitespace, repeated punct, Cyrillic/Latin mixups — no wording change |
+| Remove obvious speech-recognition noise | syllable garbage (`ээээ`, `мммм`, `а-а-а`, `э-э-э`); **эканье/аканье** and stutter runs (`да-да-да-да`, `нет-нет-нет`); **echo invitation repeats** (`Ну давай. Давай, давай.` → `Ну давай.`; also `ладно`/`хорошо`/… same pattern); searching/empty particles (`Во.`, `Хмм.`, `А-`) when not carrying content; orphan / glued letter junk (`А В.`, stray Latin crumbs); **trailing / redundant** `Угу` / `Ага` / `Мгм` after substantive content (`… HS. Угу. Угу.` → `… HS.`); **empty discourse husks** with no propositional content (`Вот.` / `Кайф.` / `Вот, наверное, как-то так. Угу. Кайф.` / searching `Во, да-да-да… Хмм.`) — clear or strip junk (keep turn boundary). **Keep** sole-turn meaningful acks (`**Владимир**` + `Угу.`). Do **not** strip mid-sentence `ну`/`вот` from substantive turns here unless the token is pure stutter |
+| Normalize formatting | whitespace, repeated punct, obvious mixed-script *token* junk (e.g. `SРE`→`SRE`) — **never** change speaker labels / person names’ script or casing |
 
 ### Optional strategies
 
 | Strategy | Scope |
 |----------|--------|
 | Make spoken language more natural | light conversational simplification |
-| Remove filler words | discourse fillers that may still matter for analysis |
+| Remove filler words | mid-sentence discourse fillers in substantive turns (`типа`, `как бы`, `в общем`, `короче`, filler `наверное` / `как-то так`) — keep meaning; do not gut real hedges the speaker needed |
 
 ### Preserve
 
-Never change: meaning, facts, chronology, technical content, speaker attribution, timestamps, uncertainty, document structure (including speaker turn boundaries) — except edits explicitly allowed by a selected strategy.
+Never change: meaning, facts, chronology, technical content, **speaker attribution** (**`**Name**` lines must stay byte-for-byte** — do not Latinize, do not retitle everyone `Игорь`, do not drop `Владимир` / other speakers), timestamps, uncertainty, document structure (including speaker turn boundaries) — except text edits explicitly allowed by a selected strategy.
+
+**Speaker-label hard rule (cleanup):**
+
+1. Copy each `**Speaker**` header from the source transcript **byte-for-byte** (script + casing). Cleanup edits **body text only**.
+2. Do **not** merge, split, reorder, or reassign turns.
+3. **Never invent pipeline / role ids as speakers.** Forbidden labels unless they already appear as `**…**` headers in the source: `room`, `merged`, `mix`, `track-0`, `SPEAKER_00`, `S0`, `S1`, branch ids, filenames. If the source has `**Игорь**` / `**Владимир**`, those stay — do **not** replace either with `**room**`.
+4. After writing `.clean.md`, verify:
+   - every `**Name**` in clean ∈ source speaker-label set;
+   - no new labels appeared (especially not `room`);
+   - sole-turn `Угу.` kept when it was a sole-turn ack.
+   If cleanup introduced `room` / dropped a real name / collapsed everyone to one speaker → **discard** that clean file and redo (body-only edits).
 
 ### Forbidden (regardless of strategies)
 
-Never: summarize, paraphrase, rewrite, improve style (unless **Make spoken language more natural** is selected), reorder sentences, merge/split speaker turns, translate, infer missing information, remove meaningful repetitions, invent terminology.
+Never: summarize, paraphrase, rewrite, improve style (unless **Make spoken language more natural** is selected), reorder sentences, merge/split speaker turns, **reassign or rename speakers**, **introduce `room` / role / branch-id labels**, translate, infer missing information, remove meaningful repetitions, invent terminology.
 
 The transcript must remain a transcript.
 
@@ -375,7 +414,28 @@ JSFiddle
 Not applied automatically because confidence is insufficient.
 ```
 
-If the user accepts cleanup, write the cleaned text to a **new** sibling file (e.g. `meeting_….clean.md`) or overwrite only when they explicitly ask to replace the artifact. Prefer a new file by default. Keep `meeting.json` unchanged unless the user asks to update it too. Briefly list which strategies were applied.
+If the user accepts cleanup, write the cleaned text to a **new** sibling file next to the primary artifact in the **same output directory** (conversation project root — see **Artifact output location**), e.g. `meeting_….clean.md`. Overwrite only when they explicitly ask to replace. Prefer a new file by default. Keep `meeting.json` unchanged unless the user asks to update it too. Briefly list which strategies were applied. Never drop `.clean.md` into the VoxDecoder source tree by accident.
+
+### Execution — max quality, min tokens/ops
+
+When the user opts in (any selected strategy), run cleanup **once, tightly**:
+
+1. **One read** of the primary transcript artifact (prefer `.md` / `.txt` already linked — do not re-fetch via Runtime).
+2. **One write** of the cleaned sibling (or overwrite if explicitly requested). No draft files, no intermediate copies.
+3. **Single model pass** over the whole transcript for all selected strategies together — do not run one strategy per turn, do not re-clean the output.
+4. **Do not paste** the transcript (or large excerpts) into chat. Edit via tools; chat gets only: path to cleaned file + short list of applied strategies (+ optional short uncertain-fixes note).
+5. **Chunk only if required** (context limits). If chunking: contiguous speaker-turn boundaries, non-overlapping chunks, same strategy set, stitch in order — still one write at the end. Prefer not chunking when the file fits.
+6. **No extra tool churn:** no `get_job` / `list_artifacts` / re-plan / shell loops for cleanup; no second AskUserQuestion mid-pass; no “thinking out loud” per fix.
+7. **Quality inside that pass:** apply every selected strategy thoroughly; keep the conservative rule (when in doubt, leave text). Uncertain candidates → at most a **short** bullet list in chat, not a second rewrite.
+
+Anti-patterns (forbidden once cleanup is agreed):
+
+- Streaming play-by-play of each correction
+- Multiple rewrite rounds “to be sure”
+- Re-reading the artifact after writing unless the write failed
+- Summarizing the meeting as a side effect of cleanup
+
+Goal: **highest-confidence corrections allowed by the selected strategies, in the fewest tool calls and output tokens.**
 
 ## Examples
 

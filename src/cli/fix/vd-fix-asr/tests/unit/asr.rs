@@ -17,7 +17,7 @@ fn empty_ctx(materials: &vd_fix_asr::context::Materials) -> SpanContext<'_> {
 }
 
 #[test]
-fn repairs_githap_to_githab() {
+fn without_dictionary_leaves_asr_mishears() {
     let fixer = AsrFixer::load(AsrLoadOptions {
         language: Language::Ru,
         context_paths: vec![],
@@ -35,10 +35,38 @@ fn repairs_githap_to_githab() {
             FixOptions::default(),
         )
         .unwrap();
+    assert!(!result.changed);
+    assert_eq!(result.text, "мы используем гитхап экшенс");
+}
+
+#[test]
+fn dictionary_file_repairs_asr_mishear() {
+    let dir = TempDir::new().unwrap();
+    let dict = dir.path().join("asr.yml");
+    fs::write(
+        &dict,
+        "canonical: гитхаб\nvariants:\n  - гитхап\n",
+    )
+    .unwrap();
+    let fixer = AsrFixer::load(AsrLoadOptions {
+        language: Language::Ru,
+        context_paths: vec![],
+        neighbor_window: 1,
+        confidence_policy: ConfidencePolicy::default(),
+        dictionary_paths: vec![dict],
+        project_dir: None,
+    })
+    .unwrap();
+    let mats = fixer.materials();
+    let result = fixer
+        .fix_text(
+            "мы используем гитхап",
+            empty_ctx(mats),
+            FixOptions::default(),
+        )
+        .unwrap();
     assert!(result.changed);
-    assert_eq!(result.text, "мы используем гитхаб экшенс");
-    // Must NOT jump to project-canonical English brand form.
-    assert!(!result.text.contains("GitHub"));
+    assert_eq!(result.text, "мы используем гитхаб");
 }
 
 #[test]
@@ -89,7 +117,7 @@ fn context_vocabulary_can_correct_close_token() {
     let result = fixer
         .fix_text("safetensores rocks", empty_ctx(mats), FixOptions::default())
         .unwrap();
-    // Builtin EN lexicon also maps safetensores → safetensors; either path is fine.
+    // Context vocabulary (from docs) fuzzy-corrects close ASR tokens — no in-code builtin.
     assert!(result.text.to_lowercase().contains("safetensors"));
 }
 

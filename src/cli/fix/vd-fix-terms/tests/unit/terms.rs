@@ -5,22 +5,27 @@ use vd_fix_terms::terms::{TermsFixer, TermsLoadOptions};
 use vd_fix_terms::types::Language;
 
 #[test]
-fn rewrites_shipping_variants() {
+fn rewrites_terms_file_variants() {
+    use std::fs;
+    use tempfile::TempDir;
+
+    let dir = TempDir::new().unwrap();
+    let terms = dir.path().join("terms.yaml");
+    fs::write(
+        &terms,
+        "canonical: Kubernetes\nvariants:\n  - кубернетис\n  - k8s\n",
+    )
+    .unwrap();
     let lexicon = Lexicon::load(&TermsLoadOptions {
         language: Language::Ru,
         shipping: true,
-        terms_paths: vec![],
+        terms_paths: vec![terms],
     })
     .unwrap();
     let fixer = TermsFixer::new(lexicon).unwrap();
-    let result = fixer
-        .fix("мы деплоим на кубернетис и гоняем гитхап экшенс")
-        .unwrap();
+    let result = fixer.fix("мы деплоим на кубернетис").unwrap();
     assert!(result.changed);
-    assert_eq!(
-        result.text,
-        "мы деплоим на Kubernetes и гоняем GitHub Actions"
-    );
+    assert_eq!(result.text, "мы деплоим на Kubernetes");
 }
 
 #[test]
@@ -48,12 +53,10 @@ fn word_boundary_no_partial() {
 
 #[test]
 fn already_canonical_unchanged() {
-    let lexicon = Lexicon::load(&TermsLoadOptions {
-        language: Language::Ru,
-        shipping: true,
-        terms_paths: vec![],
-    })
-    .unwrap();
+    let lexicon = Lexicon::from_entries(vec![TermEntry {
+        canonical: "Kubernetes".into(),
+        variants: vec!["кубернетис".into()],
+    }]);
     let fixer = TermsFixer::new(lexicon).unwrap();
     let result = fixer.fix("Kubernetes already correct").unwrap();
     assert!(!result.changed);

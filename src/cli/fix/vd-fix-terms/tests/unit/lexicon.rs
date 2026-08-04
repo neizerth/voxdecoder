@@ -8,15 +8,14 @@ use vd_fix_terms::terms::TermsLoadOptions;
 use vd_fix_terms::types::Language;
 
 #[test]
-fn shipping_has_kubernetes() {
+fn shipping_lexicon_is_empty() {
     let lex = Lexicon::load(&TermsLoadOptions {
         language: Language::Ru,
         shipping: true,
         terms_paths: vec![],
     })
     .unwrap();
-    assert_eq!(lex.canonical_for("k8s"), Some("Kubernetes"));
-    assert_eq!(lex.canonical_for("кубернетис"), Some("Kubernetes"));
+    assert!(lex.is_empty());
 }
 
 #[test]

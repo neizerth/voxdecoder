@@ -3677,6 +3677,7 @@ dependencies = [
  "toml",
  "vd-artifact",
  "vd-progress",
+ "vd-text",
 ]
 
 [[package]]

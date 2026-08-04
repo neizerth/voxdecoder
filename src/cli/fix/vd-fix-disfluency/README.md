@@ -73,10 +73,13 @@ Builtin deterministic rules — no model, no download, no `install` required.
 - filler syllables: `эээ`, `ммм`, `эм` (ru); `um`, `uh`, `erm` (en)
 - repeated filler runs: `эээ... эээ...` → one instance (`light`) or gone (`normal`+)
 - empty hesitations: `Ну... эээ... да...` → `Ну, да...`
+- trailing redundant backchannels after substantive content: `… HS. Угу. Угу.` → `… HS.` (`угу` / `ага` / `мгм`; light+)
+- echo invitation repeats (allowlisted): `Ну давай. Давай, давай.` → `Ну давай.` (light+)
 - false starts (`normal`+ only): `Я... я думаю...` → `Я думаю...`
 
 **Never removes**
 
+- sole-turn / backchannel-only acks (`Угу.`, `Угу. Угу.`) — conversational meaning (ADR 0014)
 - meaningful discourse markers — hardcoded protected list (`ну да`, `ну конечно`, `вот именно`, and English equivalents) that filler / false-start rules must never touch even if they superficially match (ADR 0012 §1)
 - anything outside a `TextSpan::text` — segment boundaries, timestamps, speaker labels, ids, metadata, artifact type / structure
 
@@ -86,8 +89,11 @@ Builtin deterministic rules — no model, no download, no `install` required.
 Так, эээ... эээ... начнём. Я... я думаю, что это норм.
         ↓ vd-fix-disfluency --mode normal
 Так, начнём. Я думаю, что это норм.
-```
 
+… там HS. Угу. Угу.
+        ↓ vd-fix-disfluency --mode light
+… там HS.
+```
 ---
 
 ## Priority language

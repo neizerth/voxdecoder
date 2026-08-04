@@ -307,7 +307,7 @@ meeting:
 | `start` | Same leading pad as `longest`. |
 | `end` | Pad shorter tracks with **trailing** silence (`pad-end`) to match the longest. |
 
-The planner injects `pad-start` / `pad-end` into each branch’s preprocess chain (after `trim-silence`, provider `ffmpeg`). Mode is also copied onto **`meeting-merge`** options for the artifact metadata.
+The planner injects `pad-start` / `pad-end` into each branch’s preprocess chain (before `normalize`, provider `ffmpeg`). **`trim-silence` is omitted** for meeting Jobs — uniform TimeMap cannot represent silenceremove (ADR 0016). Mode is also copied onto **`meeting-merge`** options for the artifact metadata.
 ---
 
 ## Planner algorithm

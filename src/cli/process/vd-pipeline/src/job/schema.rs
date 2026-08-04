@@ -298,6 +298,13 @@ impl ArgValue {
         }
     }
 
+    pub fn as_strings(&self) -> Option<&[String]> {
+        match self {
+            Self::Strings(v) => Some(v.as_slice()),
+            _ => None,
+        }
+    }
+
     pub fn as_bool(&self) -> Option<bool> {
         match self {
             Self::Bool(b) => Some(*b),

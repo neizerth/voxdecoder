@@ -31,6 +31,14 @@ fn light_removes_isolated_filler() {
 }
 
 #[test]
+fn light_collapses_glued_onset() {
+    let out = fix("Ччисто никаких ошибок", Language::Ru, Mode::Light);
+    assert!(out.starts_with("Чисто "), "got: {out}");
+    let out2 = fix("Ддавай попробуем", Language::Ru, Mode::Light);
+    assert_eq!(out2, "Давай попробуем");
+}
+
+#[test]
 fn light_removes_isolated_english_filler() {
     let out = fix("Well, um, I think so.", Language::En, Mode::Light);
     assert_eq!(out, "Well, I think so.");
@@ -127,4 +135,51 @@ fn structural_guarantee_only_text_changes() {
         .unwrap();
     assert_eq!(result.text, "тест");
     assert!(result.changed);
+}
+
+#[test]
+fn light_strips_trailing_backchannels_after_substance() {
+    let out = fix(
+        "На предпоследней строчке. Ну, у тебя там HS. Угу. Угу.",
+        Language::Ru,
+        Mode::Light,
+    );
+    assert_eq!(out, "На предпоследней строчке. Ну, у тебя там HS.");
+}
+
+#[test]
+fn light_keeps_sole_turn_backchannel() {
+    assert_eq!(fix("Угу.", Language::Ru, Mode::Light), "Угу.");
+    assert_eq!(fix("Угу. Угу.", Language::Ru, Mode::Light), "Угу. Угу.");
+    assert_eq!(fix("Ага", Language::Ru, Mode::Light), "Ага");
+}
+
+#[test]
+fn light_keeps_leading_backchannel_before_substance() {
+    let input = "Угу, понял, сделаю.";
+    assert_eq!(fix(input, Language::Ru, Mode::Light), input);
+}
+
+#[test]
+fn light_collapses_echo_invitation_repeats() {
+    let out = fix(
+        "Ну давай. Давай, давай. Ну, пример. Но, при reduceRight у тебя",
+        Language::Ru,
+        Mode::Light,
+    );
+    assert_eq!(
+        out,
+        "Ну давай. Ну, пример. Но, при reduceRight у тебя"
+    );
+}
+
+#[test]
+fn light_keeps_single_echo_word() {
+    assert_eq!(fix("Давай.", Language::Ru, Mode::Light), "Давай.");
+}
+
+#[test]
+fn light_does_not_collapse_non_echo_word_repeats() {
+    let input = "Это баг. Баг.";
+    assert_eq!(fix(input, Language::Ru, Mode::Light), input);
 }

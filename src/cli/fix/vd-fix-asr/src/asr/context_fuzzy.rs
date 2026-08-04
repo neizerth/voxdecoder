@@ -58,7 +58,13 @@ fn closest_context_form(lower: &str, ctx: SpanContext<'_>) -> Option<(String, us
         return None;
     }
     let mut best: Option<(usize, String)> = None;
-    for form in &ctx.materials.forms {
+    // Prefer explicit forms, then vocabulary extracted from meeting docs / context.
+    let candidates = ctx
+        .materials
+        .forms
+        .iter()
+        .chain(ctx.materials.vocabulary.iter());
+    for form in candidates {
         let cand = form.to_lowercase();
         if cand == *lower {
             return Some((form.clone(), 0));
@@ -114,10 +120,12 @@ fn plausible_asr_edit(from: &str, to: &str, dist: usize) -> bool {
     let n = from.chars().count();
     let m = to.chars().count();
     if dist == 1 {
-        return m >= n;
+        // Same length or longer always OK. One-char shortening only for longer
+        // tokens (extra vowel / typo) — short tokens keep the case-ending guard.
+        return m >= n || (n >= 8 && m + 1 >= n);
     }
     if dist == 2 && n >= 8 {
-        return m >= n;
+        return m >= n || m + 1 >= n;
     }
     false
 }

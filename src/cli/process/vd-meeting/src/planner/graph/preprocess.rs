@@ -146,6 +146,12 @@ pub fn media_input_ref(
     let bid = &src.branch_id;
     let prep_id = format!("{bid}.prepared");
     let (mut provider, mut filters) = default_preprocess_filters(&src.path, speed);
+    // Meeting clocks must stay piecewise-correct. Default ASR chain includes
+    // `trim-silence`, but preprocess only emits a *uniform* TimeMap today —
+    // silenceremove then linearly stretches compacted speech across the full
+    // original duration and wrecks participant timestamps / mix subtract
+    // (ADR 0016). Drop it until piecewise silence maps exist.
+    strip_trim_silence(&mut filters);
 
     // Alignment pad and any non-stub filter need a real ffmpeg backend.
     if pad_sec.is_some() || is_video_path(&src.path) || speed.is_some() {
@@ -170,7 +176,8 @@ pub fn media_input_ref(
     Ok(prep_id)
 }
 
-/// Insert `pad-start` / `pad-end` after `trim-silence` (so silenceremove cannot eat the pad).
+/// Insert `pad-start` / `pad-end` into the filter chain (prefer after normalize
+/// inputs that rewrite duration, before normalize when possible).
 fn insert_pad_filter(filters: &mut Vec<ArgValue>, side: PadSide, sec: f64) {
     let pad = {
         let mut m = BTreeMap::new();
@@ -178,17 +185,6 @@ fn insert_pad_filter(filters: &mut Vec<ArgValue>, side: PadSide, sec: f64) {
         m.insert("duration_sec".into(), ArgValue::Number(sec));
         ArgValue::Map(m)
     };
-    let after_trim = filters.iter().position(|f| {
-        f.as_map()
-            .and_then(|m| m.get("type").or_else(|| m.get("operation")))
-            .and_then(ArgValue::as_string)
-            .as_deref()
-            == Some("trim-silence")
-    });
-    if let Some(i) = after_trim {
-        filters.insert(i + 1, pad);
-        return;
-    }
     let before_norm = filters.iter().position(|f| {
         f.as_map()
             .and_then(|m| m.get("type").or_else(|| m.get("operation")))
@@ -201,6 +197,16 @@ fn insert_pad_filter(filters: &mut Vec<ArgValue>, side: PadSide, sec: f64) {
     } else {
         filters.push(pad);
     }
+}
+
+fn strip_trim_silence(filters: &mut Vec<ArgValue>) {
+    filters.retain(|f| {
+        f.as_map()
+            .and_then(|m| m.get("type").or_else(|| m.get("operation")))
+            .and_then(ArgValue::as_string)
+            .as_deref()
+            != Some("trim-silence")
+    });
 }
 
 fn probe_duration_sec(path: &Path) -> Option<f64> {

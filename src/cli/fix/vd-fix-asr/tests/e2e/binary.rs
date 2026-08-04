@@ -21,20 +21,24 @@ fn with_isolation(cmd: &mut Command, config: &Path) {
 fn run_writes_fixed_txt() {
     let dir = TempDir::new().unwrap();
     let input = dir.path().join("meeting.txt");
-    fs::write(&input, "мы используем гитхап экшенс").unwrap();
+    fs::write(&input, "мы используем гитхап").unwrap();
+    let dict = dir.path().join("asr.yml");
+    fs::write(&dict, "canonical: гитхаб\nvariants:\n  - гитхап\n").unwrap();
     let cfg = dir.path().join("config.toml");
 
     let mut cmd = bin();
     with_isolation(&mut cmd, &cfg);
     cmd.args(["run", "-i"])
         .arg(&input)
+        .arg("--dictionary")
+        .arg(&dict)
         .arg("-q")
         .assert()
         .success();
 
     let out = dir.path().join("meeting.fixed.txt");
     let text = fs::read_to_string(&out).unwrap();
-    assert_eq!(text, "мы используем гитхаб экшенс");
+    assert_eq!(text, "мы используем гитхаб");
 }
 
 #[test]
@@ -169,7 +173,9 @@ fn conflict_o_d_exit_2() {
 fn report_counts_dictionary_hit() {
     let dir = TempDir::new().unwrap();
     let input = dir.path().join("meeting.txt");
-    fs::write(&input, "мы используем гитхап экшенс").unwrap();
+    fs::write(&input, "мы используем гитхап").unwrap();
+    let dict = dir.path().join("asr.yml");
+    fs::write(&dict, "canonical: гитхаб\nvariants:\n  - гитхап\n").unwrap();
     let cfg = dir.path().join("config.toml");
 
     let mut cmd = bin();
@@ -177,6 +183,8 @@ fn report_counts_dictionary_hit() {
     let out = cmd
         .args(["run", "-i"])
         .arg(&input)
+        .arg("--dictionary")
+        .arg(&dict)
         .args(["-q", "--report"])
         .assert()
         .success()

@@ -52,6 +52,18 @@ impl Mode {
 const FILLERS_RU: &[&str] = &["эээ", "ммм", "эм"];
 const FILLERS_EN: &[&str] = &["um", "uh", "erm"];
 
+/// Conversational backchannels (ADR 0014): preserve when they are the whole
+/// utterance; strip only when they trail substantive content in the same span.
+const BACKCHANNELS_RU: &[&str] = &["угу", "ага", "мгм"];
+const BACKCHANNELS_EN: &[&str] = &["uhhuh", "mhm", "mmhmm"];
+
+/// Short invitation / encouragement echoes. Adjacent repeats collapse to one
+/// (`Ну давай. Давай, давай.` → `Ну давай.`). Not general word-dedup.
+const ECHO_RU: &[&str] = &[
+    "давай", "ладно", "хорошо", "погоди", "смотри", "слушай", "кидай", "валяй",
+];
+const ECHO_EN: &[&str] = &["okay", "ok", "right", "sure", "go", "come"];
+
 /// Meaningful discourse markers that must never be touched by filler / false
 /// start rules, even when they superficially match (ADR 0012 §1 "Never remove").
 const PROTECTED_RU: &[(&str, &str)] = &[("ну", "да"), ("ну", "конечно"), ("вот", "именно")];
@@ -75,6 +87,30 @@ fn fillers_for(language: Language) -> &'static [&'static str] {
 fn is_filler_for(word: &str, language: Language) -> bool {
     let lower = word.to_lowercase();
     fillers_for(language).contains(&lower.as_str())
+}
+
+fn backchannels_for(language: Language) -> &'static [&'static str] {
+    match resolved_lang(language) {
+        Language::En => BACKCHANNELS_EN,
+        _ => BACKCHANNELS_RU,
+    }
+}
+
+fn is_backchannel_for(word: &str, language: Language) -> bool {
+    let lower = word.to_lowercase();
+    backchannels_for(language).contains(&lower.as_str())
+}
+
+fn echoes_for(language: Language) -> &'static [&'static str] {
+    match resolved_lang(language) {
+        Language::En => ECHO_EN,
+        _ => ECHO_RU,
+    }
+}
+
+fn is_echo_for(word: &str, language: Language) -> bool {
+    let lower = word.to_lowercase();
+    echoes_for(language).contains(&lower.as_str())
 }
 
 /// Protection is checked against **both** language tables regardless of the
@@ -350,6 +386,133 @@ fn collapse_false_starts(chunks: &[Chunk]) -> Vec<Chunk> {
     out
 }
 
+/// Drop trailing `угу` / `ага` / … after substantive content; keep when the
+/// whole span is only backchannels (meaningful sole-turn ack). Light+.
+fn strip_trailing_backchannels(chunks: &[Chunk], language: Language) -> Vec<Chunk> {
+    let word_idxs: Vec<usize> = chunks
+        .iter()
+        .enumerate()
+        .filter_map(|(i, c)| match c {
+            Chunk::Word(_) => Some(i),
+            Chunk::Sep(_) => None,
+        })
+        .collect();
+    if word_idxs.is_empty() {
+        return chunks.to_vec();
+    }
+
+    let has_substance = word_idxs.iter().any(|&i| match &chunks[i] {
+        Chunk::Word(w) => !is_backchannel_for(w, language),
+        Chunk::Sep(_) => false,
+    });
+    if !has_substance {
+        return chunks.to_vec();
+    }
+
+    let mut first_trailing = word_idxs.len();
+    while first_trailing > 0 {
+        let idx = word_idxs[first_trailing - 1];
+        match &chunks[idx] {
+            Chunk::Word(w) if is_backchannel_for(w, language) => first_trailing -= 1,
+            _ => break,
+        }
+    }
+    if first_trailing == word_idxs.len() {
+        return chunks.to_vec();
+    }
+
+    let cut_at = word_idxs[first_trailing];
+    let mut out = chunks[..cut_at].to_vec();
+    if let Some(Chunk::Sep(s)) = out.last_mut() {
+        let trimmed = trim_sep_after_backchannel_strip(s);
+        if trimmed.is_empty() {
+            out.pop();
+        } else {
+            *s = trimmed;
+        }
+    }
+    out
+}
+
+/// After dropping trailing backchannels, keep sentence-final `.!?` on the
+/// last substantive word; drop a dangling comma/space bridge (`word, угу`).
+fn trim_sep_after_backchannel_strip(raw: &str) -> String {
+    let has_leading_space = raw.chars().next().is_some_and(char::is_whitespace);
+    let compact: String = raw.chars().filter(|c| !c.is_whitespace()).collect();
+    if compact.is_empty() || compact == "," {
+        return String::new();
+    }
+    let core: String = compact
+        .chars()
+        .take_while(|c| matches!(c, '.' | '!' | '?' | '…'))
+        .collect();
+    if core.is_empty() {
+        return String::new();
+    }
+    let mut out = String::new();
+    if has_leading_space {
+        out.push(' ');
+    }
+    out.push_str(&core);
+    out
+}
+
+fn is_light_punct_sep(raw: &str) -> bool {
+    let compact: String = raw.chars().filter(|c| !c.is_whitespace()).collect();
+    compact.is_empty()
+        || compact
+            .chars()
+            .all(|c| matches!(c, ',' | '.' | '!' | '?' | '…'))
+}
+
+fn sep_has_sentence_end(raw: &str) -> bool {
+    raw.chars().any(|c| matches!(c, '.' | '!' | '?' | '…'))
+}
+
+/// Collapse adjacent invitation/encouragement echoes (allowlisted):
+/// `Давай, давай` → `Давай`; `Ну давай. Давай, давай.` → `Ну давай.`
+fn collapse_echo_repeats(chunks: &[Chunk], language: Language) -> Vec<Chunk> {
+    let mut out: Vec<Chunk> = Vec::with_capacity(chunks.len());
+    let mut i = 0;
+    while i < chunks.len() {
+        if let Chunk::Word(w) = &chunks[i] {
+            if is_echo_for(w, language) {
+                let first = w.clone();
+                out.push(Chunk::Word(first.clone()));
+                i += 1;
+                let mut swallowed = false;
+                let mut need_sentence_end = false;
+                while i + 1 < chunks.len() {
+                    if let (Chunk::Sep(s), Chunk::Word(w2)) = (&chunks[i], &chunks[i + 1]) {
+                        if is_light_punct_sep(s) && is_repeat(&first, w2) {
+                            if sep_has_sentence_end(s) {
+                                need_sentence_end = true;
+                            }
+                            swallowed = true;
+                            i += 2;
+                            continue;
+                        }
+                    }
+                    break;
+                }
+                if swallowed && need_sentence_end {
+                    let next_has = matches!(
+                        chunks.get(i),
+                        Some(Chunk::Sep(s)) if sep_has_sentence_end(s)
+                    );
+                    if !next_has {
+                        out.push(Chunk::Sep(". ".to_string()));
+                    }
+                }
+                continue;
+            }
+        }
+        out.push(chunks[i].clone());
+        i += 1;
+    }
+    out
+}
+
 /// Run the full ADR 0012 §1 rule pipeline over one span of text.
 pub fn fix_text(text: &str, language: Language, mode: Mode) -> FixResult {
     if mode == Mode::Off {
@@ -362,6 +525,8 @@ pub fn fix_text(text: &str, language: Language, mode: Mode) -> FixResult {
     let chunks = tokenize(text);
     let chunks = apply_empty_hesitation(&chunks, language);
     let chunks = collapse_fillers(&chunks, language, mode);
+    let chunks = strip_trailing_backchannels(&chunks, language);
+    let chunks = collapse_echo_repeats(&chunks, language);
     let chunks = normalize_all_seps(merge_seps(chunks));
 
     let chunks = if mode >= Mode::Normal {
@@ -370,7 +535,22 @@ pub fn fix_text(text: &str, language: Language, mode: Mode) -> FixResult {
         chunks
     };
 
-    let out = render(&chunks);
+    let mid = render(&chunks);
+    let out = apply_glued_onset_pass(&mid);
     let changed = out != text;
     FixResult { text: out, changed }
+}
+
+/// ADR 0014 §3: collapse glued onset tokens (`Ччисто` → `Чисто`) via `vd-text`.
+/// Scoped pass — does not re-run filler/orphan/false-start (those stay in this module).
+fn apply_glued_onset_pass(text: &str) -> String {
+    tokenize(text)
+        .into_iter()
+        .map(|c| match c {
+            Chunk::Word(w) => {
+                vd_text::disfluency::patterns::collapse_glued_onset(&w).unwrap_or(w)
+            }
+            Chunk::Sep(s) => s,
+        })
+        .collect()
 }

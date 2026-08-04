@@ -1,6 +1,6 @@
 //! Deterministic local stub backend (tests / CI / dry pipelines).
 
-use crate::artifact::{AudioRef, BackendInfo, Segment, SpeakerId, SpeakerTimeline};
+use crate::artifact::{AudioRef, BackendInfo, Overlap, Segment, SpeakerId, SpeakerTimeline};
 use crate::backend::{Backend, DiarizeError, DiarizeRequest};
 
 pub struct StubBackend;
@@ -30,20 +30,27 @@ impl Backend for StubBackend {
             },
         ];
         let mid = duration / 2.0;
+        let overlap_pad = (duration * 0.05).clamp(0.2, 1.0);
         let segments = vec![
             Segment {
                 speaker: "S0".into(),
                 start: 0.0,
-                end: mid,
+                end: mid + overlap_pad,
                 confidence: Some(1.0),
             },
             Segment {
                 speaker: "S1".into(),
-                start: mid,
+                start: mid - overlap_pad,
                 end: duration,
                 confidence: Some(1.0),
             },
         ];
+        // ADR 0016: stub exposes a synthetic interruption window at the handoff.
+        let overlaps = vec![Overlap {
+            start: mid - overlap_pad,
+            end: mid + overlap_pad,
+            speakers: vec!["S0".into(), "S1".into()],
+        }];
 
         Ok(SpeakerTimeline {
             version: 1,
@@ -52,7 +59,7 @@ impl Backend for StubBackend {
             },
             speakers,
             segments,
-            overlaps: Vec::new(),
+            overlaps,
             embeddings: None,
             speech_regions: Vec::new(),
             backend: BackendInfo {

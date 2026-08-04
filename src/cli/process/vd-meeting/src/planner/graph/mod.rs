@@ -88,7 +88,8 @@ pub fn build_job(resolved: &ResolvedMeeting, options: &BuildOptions) -> Result<J
     )?;
     root.extend(merge_leafs.into_iter().map(Into::into));
 
-    if want_diarize {
+    // ADR 0016: dedup whenever ≥2 text branches (cross-track bleed), not only when diarized.
+    if text_ids.len() >= 2 {
         root.push(append_fix_overlap(resolved, options).into());
     }
 
@@ -244,11 +245,10 @@ fn append_mix_ref(
 }
 
 /// fix-overlap needs speaker + timestamp + text together, which only exists
-/// once meeting-merge has combined the per-branch transcripts with the
-/// diarization timeline (ADR 0012 places it "diarize → fix-overlap →
-/// meeting-merge", but diarize alone produces no text — see docs/adr/0012
-/// Decision for this correction). Rewrites the same well-known meeting
-/// artifact path meeting-merge just wrote, rather than a new `.fixed.` file.
+/// once meeting-merge has combined the per-branch transcripts (ADR 0012 /
+/// ADR 0016: merge → fix-overlap). Runs for any multi-text meeting so
+/// cross-track bleed is removed even when diarize is off. Rewrites the same
+/// well-known meeting artifact path meeting-merge just wrote.
 fn append_fix_overlap(resolved: &ResolvedMeeting, options: &BuildOptions) -> Step {
     let json_name = crate::planner::artifact_name::meeting_artifact_json_name(resolved);
     let output_path = resolved

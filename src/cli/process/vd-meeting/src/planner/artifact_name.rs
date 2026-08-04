@@ -180,6 +180,7 @@ mod tests {
                     participant: Some("igor".into()),
                     purposes: vec![],
                     branch_id: "igor".into(),
+                    display_name: Some("Игорь".into()),
                 },
                 ResolvedInput {
                     role: InputRole::Participant,
@@ -189,6 +190,7 @@ mod tests {
                     participant: Some("vladimir".into()),
                     purposes: vec![],
                     branch_id: "vladimir".into(),
+                    display_name: Some("Владимир".into()),
                 },
             ],
             meeting: MeetingModel {

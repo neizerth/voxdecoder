@@ -60,6 +60,86 @@ fn participant_tracks_no_diarize() {
 }
 
 #[test]
+fn cyrillic_filename_keeps_cyrillic_branch_and_label() {
+    let job = plan_job(
+        &req(
+            vec![
+                src(InputRole::Participant, "Игорь.wav", None),
+                src(InputRole::Participant, "Владимир.wav", None),
+            ],
+            DiarizationEnabled::False,
+        ),
+        &BuildOptions::default(),
+    )
+    .unwrap();
+    let leaves = job.leaf_steps();
+    assert!(
+        leaves.iter().any(|s| s.id.as_deref() == Some("игорь.text")),
+        "Cyrillic stem must become unicode branch id, not empty/track"
+    );
+    assert!(leaves
+        .iter()
+        .any(|s| s.id.as_deref() == Some("владимир.text")));
+    let merge = leaves
+        .iter()
+        .find(|s| s.r#use == Capability::MeetingMerge)
+        .expect("merge");
+    let labels = merge
+        .options
+        .get("speaker_labels")
+        .and_then(vd_pipeline::ArgValue::as_map)
+        .expect("speaker_labels");
+    assert_eq!(
+        labels
+            .get("игорь")
+            .and_then(vd_pipeline::ArgValue::as_string)
+            .as_deref(),
+        Some("Игорь")
+    );
+    assert_eq!(
+        labels
+            .get("владимир")
+            .and_then(vd_pipeline::ArgValue::as_string)
+            .as_deref(),
+        Some("Владимир")
+    );
+}
+
+#[test]
+fn latin_participant_id_still_uses_cyrillic_filename_display() {
+    let job = plan_job(
+        &req(
+            vec![src(
+                InputRole::Participant,
+                "Игорь.wav",
+                Some("igor"),
+            )],
+            DiarizationEnabled::False,
+        ),
+        &BuildOptions::default(),
+    )
+    .unwrap();
+    let merge = job
+        .leaf_steps()
+        .into_iter()
+        .find(|s| s.r#use == Capability::MeetingMerge)
+        .expect("merge");
+    let labels = merge
+        .options
+        .get("speaker_labels")
+        .and_then(vd_pipeline::ArgValue::as_map)
+        .expect("speaker_labels");
+    // Branch id may stay Latin (explicit participant), display must stay Cyrillic.
+    assert_eq!(
+        labels
+            .get("igor")
+            .and_then(vd_pipeline::ArgValue::as_string)
+            .as_deref(),
+        Some("Игорь")
+    );
+}
+
+#[test]
 fn room_alone_auto_transcript_and_diarize() {
     let job = plan_job(
         &req(
@@ -80,7 +160,7 @@ fn room_alone_auto_transcript_and_diarize() {
 }
 
 #[test]
-fn room_with_tracks_timeline_only_no_room_transcript() {
+fn room_with_tracks_includes_room_transcript() {
     let job = plan_job(
         &req(
             vec![
@@ -95,7 +175,10 @@ fn room_with_tracks_timeline_only_no_room_transcript() {
     .unwrap();
     let leaves = job.leaf_steps();
     assert!(leaves.iter().any(|s| s.r#use == Capability::Diarize));
-    assert!(!leaves.iter().any(|s| s.id.as_deref() == Some("room.text")));
+    assert!(
+        leaves.iter().any(|s| s.id.as_deref() == Some("room.text")),
+        "ADR 0016: room+tracks ASR the mix"
+    );
     assert!(leaves.iter().any(|s| s.id.as_deref() == Some("alice.text")));
     assert!(leaves.iter().any(|s| s.id.as_deref() == Some("bob.text")));
 }

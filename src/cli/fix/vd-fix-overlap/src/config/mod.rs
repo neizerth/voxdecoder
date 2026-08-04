@@ -85,6 +85,7 @@ impl FileConfig {
                 .or(self.similarity_threshold)
                 .unwrap_or(d.similarity_threshold),
             max_gap_ms: max_gap_ms.or(self.max_gap_ms).unwrap_or(d.max_gap_ms),
+            timeline: Vec::new(),
         }
     }
 }

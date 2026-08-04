@@ -21,20 +21,28 @@ fn with_isolation(cmd: &mut Command, config: &Path) {
 fn run_writes_fixed_txt() {
     let dir = TempDir::new().unwrap();
     let input = dir.path().join("meeting.txt");
-    fs::write(&input, "мы деплоим на кубернетис и гоняем гитхап экшенс").unwrap();
+    fs::write(&input, "мы деплоим на кубернетис").unwrap();
+    let terms = dir.path().join("terms.yaml");
+    fs::write(
+        &terms,
+        "canonical: Kubernetes\nvariants:\n  - кубернетис\n",
+    )
+    .unwrap();
     let cfg = dir.path().join("config.toml");
 
     let mut cmd = bin();
     with_isolation(&mut cmd, &cfg);
     cmd.args(["run", "-i"])
         .arg(&input)
+        .arg("--terms")
+        .arg(&terms)
         .arg("-q")
         .assert()
         .success();
 
     let out = dir.path().join("meeting.fixed.txt");
     let text = fs::read_to_string(&out).unwrap();
-    assert_eq!(text, "мы деплоим на Kubernetes и гоняем GitHub Actions");
+    assert_eq!(text, "мы деплоим на Kubernetes");
 }
 
 #[test]

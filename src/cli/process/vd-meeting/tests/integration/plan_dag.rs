@@ -21,7 +21,7 @@ fn src(role: InputRole, path: &str, participant: Option<&str>) -> InputSource {
 }
 
 #[test]
-fn room_plus_tracks_resolves_without_room_transcript() {
+fn room_plus_tracks_includes_room_transcript_and_timeline() {
     let req = MeetingRequest {
         working_dir: Some(PathBuf::from("/work")),
         inputs: vec![
@@ -65,7 +65,10 @@ fn room_plus_tracks_resolves_without_room_transcript() {
     let job = plan_job(&req, &BuildOptions::default()).unwrap();
     let leaves = job.leaf_steps();
     assert!(leaves.iter().any(|s| s.r#use == Capability::Diarize));
-    assert!(!leaves.iter().any(|s| s.id.as_deref() == Some("room.text")));
+    assert!(
+        leaves.iter().any(|s| s.id.as_deref() == Some("room.text")),
+        "ADR 0016: room+tracks must ASR the mix for subtract"
+    );
     let merge = leaves
         .iter()
         .find(|s| s.r#use == Capability::MeetingMerge)
@@ -73,8 +76,14 @@ fn room_plus_tracks_resolves_without_room_transcript() {
     assert!(merge.inputs.iter().any(|i| i == "timeline"));
     assert!(merge.inputs.iter().any(|i| i == "alice.text"));
     assert!(merge.inputs.iter().any(|i| i == "bob.text"));
-    assert!(!merge.inputs.iter().any(|i| i == "room.text"));
-    // Diarize mode: mix is not attached separately (timeline covers room).
+    assert!(merge.inputs.iter().any(|i| i == "room.text"));
+    let mix_text_ids = merge
+        .options
+        .get("mix_text_ids")
+        .and_then(vd_pipeline::ArgValue::as_strings)
+        .expect("mix_text_ids");
+    assert_eq!(mix_text_ids, &["room.text".to_string()]);
+    // Diarize mode: mix audio path is not attached separately (timeline covers room clock).
     assert!(merge.options.get("mix").is_none());
 
     resolve_job(job).expect("planned Job must resolve");
@@ -165,6 +174,40 @@ fn diarized_meeting_appends_fix_overlap_after_merge() {
         overlap.output, merge.output,
         "fix-overlap must rewrite the same well-known meeting artifact path, not a new file"
     );
+
+    resolve_job(job).expect("planned Job must resolve");
+}
+
+#[test]
+fn multi_speaker_without_diarize_still_gets_fix_overlap() {
+    use vd_meeting::{AlignmentOptions, AlignmentReference};
+
+    let req = MeetingRequest {
+        working_dir: Some(PathBuf::from("/work")),
+        inputs: vec![
+            src(InputRole::Participant, "alice.wav", Some("alice")),
+            src(InputRole::Participant, "bob.wav", Some("bob")),
+        ],
+        meeting: MeetingModel {
+            diarization: DiarizationPolicy {
+                enabled: DiarizationEnabled::False,
+            },
+            alignment: AlignmentOptions {
+                reference: AlignmentReference::None,
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+        output: Default::default(),
+    };
+
+    let job = plan_job(&req, &BuildOptions::default()).unwrap();
+    let leaves = job.leaf_steps();
+    assert!(
+        leaves.iter().any(|s| s.r#use == Capability::FixOverlap),
+        "ADR 0016: ≥2 text sources must get fix-overlap even without diarize"
+    );
+    assert!(!leaves.iter().any(|s| s.r#use == Capability::Diarize));
 
     resolve_job(job).expect("planned Job must resolve");
 }
@@ -481,7 +524,8 @@ fn longest_alignment_pads_shorter_track() {
         "longest track should not get a pad preprocess"
     );
 
-    // pad-start must sit after trim-silence in the chain.
+    // Meeting preprocess must not use trim-silence (uniform TimeMap cannot
+    // represent silenceremove). Pad sits before normalize.
     let types: Vec<_> = filters
         .iter()
         .filter_map(|f| {
@@ -490,11 +534,15 @@ fn longest_alignment_pads_shorter_track() {
                 .and_then(vd_pipeline::ArgValue::as_string)
         })
         .collect();
-    let trim_i = types.iter().position(|t| *t == "trim-silence");
-    let pad_i = types.iter().position(|t| *t == "pad-start");
     assert!(
-        matches!((trim_i, pad_i), (Some(t), Some(p)) if p > t),
-        "pad-start should follow trim-silence: {types:?}"
+        !types.iter().any(|t| *t == "trim-silence"),
+        "meeting preprocess must omit trim-silence: {types:?}"
+    );
+    let pad_i = types.iter().position(|t| *t == "pad-start");
+    let norm_i = types.iter().position(|t| *t == "normalize");
+    assert!(
+        matches!((pad_i, norm_i), (Some(p), Some(n)) if p < n),
+        "pad-start should precede normalize: {types:?}"
     );
 
     resolve_job(job).expect("planned Job must resolve");

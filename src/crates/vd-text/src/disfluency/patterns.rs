@@ -65,6 +65,57 @@ pub fn detect_repeated_word(text: &str) -> Option<(usize, usize, Confidence)> {
     None
 }
 
+/// Detect glued onset stutter: leading letter duplicated onto the word
+/// (`Ччисто` → remainder `чисто`, `Ддавай` → `давай`). ADR 0014 §3.
+///
+/// Returns `(start, end, confidence)` spanning the whole token when the first
+/// alphabetic character equals the second (case-insensitive) and the remainder
+/// has at least 3 alphabetic characters.
+pub fn detect_glued_onset(text: &str) -> Option<(usize, usize, Confidence)> {
+    let trimmed = text.trim();
+    let alpha: Vec<char> = trimmed.chars().filter(|c| c.is_alphabetic()).collect();
+    if alpha.len() < 4 {
+        return None;
+    }
+    let first = alpha[0].to_lowercase().next()?;
+    let second = alpha[1].to_lowercase().next()?;
+    if first != second {
+        return None;
+    }
+    // Remainder after dropping one leading letter must still be a word-ish span.
+    let remainder: String = alpha.iter().skip(1).collect();
+    if remainder.chars().filter(|c| c.is_alphabetic()).count() < 3 {
+        return None;
+    }
+    Some((0, trimmed.len(), Confidence::Certain))
+}
+
+/// Collapse glued onset: drop the duplicated leading letter, preserve the rest
+/// of the token (including trailing punctuation).
+pub fn collapse_glued_onset(text: &str) -> Option<String> {
+    detect_glued_onset(text)?;
+    let trimmed = text.trim();
+    let mut chars = trimmed.chars();
+    let first = chars.next()?;
+    // Skip the duplicated onset letter; keep casing of the remainder as-is.
+    let rest: String = chars.collect();
+    if rest.is_empty() {
+        return None;
+    }
+    // If the original started with uppercase and the remainder's first letter
+    // is lowercase, capitalize for sentence-start tokens like `Ччисто` → `Чисто`.
+    let mut rest_chars = rest.chars();
+    let rest_first = rest_chars.next()?;
+    let out = if first.is_uppercase() && rest_first.is_lowercase() {
+        let mut s = rest_first.to_uppercase().collect::<String>();
+        s.extend(rest_chars);
+        s
+    } else {
+        rest
+    };
+    Some(out)
+}
+
 /// Detect false starts: word... word-continuation (я... я думаю).
 pub fn detect_false_start(word1: &str, word2: &str) -> Option<Confidence> {
     let w1_normalized = word1.trim().to_lowercase();
@@ -137,5 +188,15 @@ mod tests {
 
         // No false start
         assert!(detect_false_start("я", "думаю").is_none());
+    }
+
+    #[test]
+    fn test_glued_onset() {
+        let (_, _, conf) = detect_glued_onset("Ччисто").expect("Ччисто");
+        assert_eq!(conf, Confidence::Certain);
+        assert_eq!(collapse_glued_onset("Ччисто").as_deref(), Some("Чисто"));
+        assert_eq!(collapse_glued_onset("Ддавай").as_deref(), Some("Давай"));
+        assert!(detect_glued_onset("чисто").is_none());
+        assert!(detect_glued_onset("JS").is_none());
     }
 }

@@ -15,10 +15,18 @@ pub struct Utterance {
     pub end_ms: u64,
 }
 
+/// Optional diarize timeline hint (ADR 0016 prefer-active speaker).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TimelineHint {
+    pub speaker: String,
+    pub start_ms: u64,
+    pub end_ms: u64,
+}
+
 /// Detection thresholds (ADR 0012 §2: "Corrections require high
 /// confidence. If uncertain: preserve both copies." — both knobs default
 /// conservative).
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct DetectOptions {
     /// Normalized text similarity in `[0.0, 1.0]` at/above which two spans
     /// from different speakers count as "near-identical" / "high lexical
@@ -29,13 +37,19 @@ pub struct DetectOptions {
     /// that still counts as "short temporal distance" when the ranges do
     /// not overlap outright.
     pub max_gap_ms: u64,
+    /// When set, prefer keeping the utterance whose speaker matches the
+    /// timeline-dominant speaker in the pair's time window (ADR 0016).
+    pub timeline: Vec<TimelineHint>,
 }
 
 impl Default for DetectOptions {
     fn default() -> Self {
         Self {
-            similarity_threshold: 0.85,
+            // 0.80 catches same-window bleed with a truncated tail (meeting
+            // 2026-07-31 style) while staying high-confidence for gap pairs.
+            similarity_threshold: 0.80,
             max_gap_ms: 500,
+            timeline: Vec::new(),
         }
     }
 }
@@ -69,10 +83,9 @@ pub enum TrimAction {
 
 /// One detected duplicate pair.
 ///
-/// `keep` / `drop` are input indices, ordered by start time (earlier
-/// survives) with a stable index tie-break — this module only
-/// *recommends*; it never mutates anything (ADR 0012 §2 "Never delete
-/// unique speech").
+/// `keep` / `drop` are input indices — prefer timeline-active speaker when
+/// hints match, else earlier start (ADR 0012 / 0016). This module only
+/// *recommends*; it never mutates anything.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DuplicatePair {
     pub keep: usize,
@@ -106,13 +119,13 @@ pub fn detect_duplicates(utterances: &[Utterance], opts: &DetectOptions) -> Vec<
             let (kind, similarity) = if na == nb {
                 (DuplicateKind::Exact, 1.0)
             } else {
-                let sim = similarity_ratio(na, nb);
+                let sim = pair_similarity(na, nb);
                 if sim < opts.similarity_threshold {
                     continue;
                 }
                 (DuplicateKind::Near, sim)
             };
-            let (keep, drop) = order_pair(a, i, b, j);
+            let (keep, drop) = order_pair(a, i, b, j, &opts.timeline);
             let trim = compute_trim(&utterances[keep].text, &utterances[drop].text);
             out.push(DuplicatePair {
                 keep,
@@ -128,8 +141,7 @@ pub fn detect_duplicates(utterances: &[Utterance], opts: &DetectOptions) -> Vec<
 
 /// "overlapping timestamps" or "short temporal distance" (ADR 0012 §2).
 fn temporally_close(a: &Utterance, b: &Utterance, max_gap_ms: u64) -> bool {
-    let overlaps = a.start_ms < b.end_ms && b.start_ms < a.end_ms;
-    if overlaps {
+    if ranges_overlap(a, b) {
         return true;
     }
     let gap = if a.end_ms <= b.start_ms {
@@ -140,12 +152,104 @@ fn temporally_close(a: &Utterance, b: &Utterance, max_gap_ms: u64) -> bool {
     gap <= max_gap_ms
 }
 
-fn order_pair(a: &Utterance, i: usize, b: &Utterance, j: usize) -> (usize, usize) {
+fn ranges_overlap(a: &Utterance, b: &Utterance) -> bool {
+    a.start_ms < b.end_ms && b.start_ms < a.end_ms
+}
+
+/// Prefer containment / shared-prefix signal when one track's ASR is a
+/// truncated echo of the other (common bleed pattern).
+fn pair_similarity(a: &str, b: &str) -> f64 {
+    let base = vd_text::similarity::asr_near_duplicate_ratio(a, b);
+    let (short, long) = if a.len() <= b.len() { (a, b) } else { (b, a) };
+    if short.is_empty() {
+        return base;
+    }
+    // Prefix/suffix containment only — mid-string `contains` is too aggressive
+    // for strict threshold tests and unrelated shared phrases.
+    if long.starts_with(short) || long.ends_with(short) {
+        let coverage = short.len() as f64 / long.len() as f64;
+        return base.max(coverage);
+    }
+    // Same-window bleed with a mid-string micro-edit ("не плохо, не" vs
+    // "не плохо и не"): full containment fails and Levenshtein dips below
+    // 0.80, but a long shared prefix of the shorter turn is still a
+    // high-confidence echo. Force into the near-dup band when ≥65% of the
+    // shorter normalized text matches as a prefix.
+    let lcp = longest_common_prefix_bytes(a, b);
+    let lcp_short = lcp as f64 / short.len() as f64;
+    if lcp_short >= 0.65 {
+        return base.max(0.80_f64.max(lcp_short));
+    }
+    base
+}
+
+fn longest_common_prefix_bytes(a: &str, b: &str) -> usize {
+    a.bytes()
+        .zip(b.bytes())
+        .take_while(|(x, y)| x == y)
+        .count()
+}
+
+fn order_pair(
+    a: &Utterance,
+    i: usize,
+    b: &Utterance,
+    j: usize,
+    timeline: &[TimelineHint],
+) -> (usize, usize) {
+    let win_start = a.start_ms.max(b.start_ms);
+    let win_end = a.end_ms.min(b.end_ms);
+    let window = if win_start < win_end {
+        (win_start, win_end)
+    } else {
+        (a.start_ms.min(b.start_ms), a.end_ms.max(b.end_ms))
+    };
+    if let Some(preferred) = dominant_timeline_speaker(timeline, window.0, window.1) {
+        let a_match = speakers_match(&a.speaker, &preferred);
+        let b_match = speakers_match(&b.speaker, &preferred);
+        if a_match && !b_match {
+            return (i, j);
+        }
+        if b_match && !a_match {
+            return (j, i);
+        }
+    }
     if a.start_ms <= b.start_ms {
         (i, j)
     } else {
         (j, i)
     }
+}
+
+fn speakers_match(a: &str, b: &str) -> bool {
+    a.eq_ignore_ascii_case(b)
+}
+
+fn dominant_timeline_speaker(
+    timeline: &[TimelineHint],
+    start_ms: u64,
+    end_ms: u64,
+) -> Option<String> {
+    if timeline.is_empty() || start_ms >= end_ms {
+        return None;
+    }
+    let mut best: Option<(String, u64)> = None;
+    for hint in timeline {
+        let overlap_start = hint.start_ms.max(start_ms);
+        let overlap_end = hint.end_ms.min(end_ms);
+        if overlap_start >= overlap_end {
+            continue;
+        }
+        let dur = overlap_end - overlap_start;
+        match &best {
+            None => best = Some((hint.speaker.clone(), dur)),
+            Some((_, best_dur)) if dur > *best_dur => {
+                best = Some((hint.speaker.clone(), dur));
+            }
+            _ => {}
+        }
+    }
+    best.map(|(s, _)| s)
 }
 
 fn compute_trim(keep_text: &str, drop_text: &str) -> TrimAction {
@@ -208,6 +312,7 @@ fn normalize(text: &str) -> String {
     out
 }
 
-fn similarity_ratio(a: &str, b: &str) -> f64 {
-    vd_text::similarity::similarity_ratio(a, b)
+/// Public normalize for merge subtract / tests (same key as duplicate detect).
+pub fn normalize_for_compare(text: &str) -> String {
+    normalize(text)
 }

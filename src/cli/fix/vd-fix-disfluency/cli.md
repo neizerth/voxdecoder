@@ -67,9 +67,11 @@ Existing outputs → exit 2 unless `--overwrite` (or `--in-place`).
 - filler syllables (`эээ`, `ммм`, `эм` / `um`, `uh`, `erm`) — all modes except `off`
 - repeated filler runs — collapsed to one instance (`light`) or removed entirely (`normal`/`aggressive`)
 - empty hesitations (`Ну... эээ... да...` → `Ну, да...`)
+- trailing redundant backchannels after substance (`… HS. Угу. Угу.` → `… HS.`; sole-turn `Угу.` kept)
+- echo invitation repeats (`Ну давай. Давай, давай.` → `Ну давай.`; allowlisted short invites)
 - false starts (`Я... я думаю...` → `Я думаю...`) — `normal`/`aggressive` only
 
-Never touches a hardcoded protected-phrase list of meaningful discourse markers (`ну да`, `ну конечно`, `вот именно`, English equivalents), and never changes segment boundaries / timestamps / speakers / ids / metadata.
+Never touches a hardcoded protected-phrase list of meaningful discourse markers (`ну да`, `ну конечно`, `вот именно`, English equivalents), never clears sole-turn backchannel acks, and never changes segment boundaries / timestamps / speakers / ids / metadata.
 
 #### Options
 
