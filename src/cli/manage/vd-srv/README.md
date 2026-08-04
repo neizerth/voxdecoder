@@ -411,7 +411,7 @@ Live UI: `vd-progress` (no timings). Durable numbers: Job / Event Store.
 | `vd-srv workers` / `worker info <n>` | Pool + single worker detail |
 | `vd-srv metrics` / `profile` | Counters + latency + time share |
 
-HTTP: `--http 127.0.0.1:7701` ([ADR 0006](../../../../docs/adr/0006-http-transport-for-runtime-api.md); umbrella [ADR 0007](../../../../docs/adr/0007-runtime-api-transports.md)). Routes: `/live` · `/ready` · `/health` · `/doctor` · `/server_info` · `/openapi.json` · `/docs` · `/planning/*` · `/jobs` · `/jobs/:id` · `/jobs/:id/events` (live SSE). gRPC: `--grpc 127.0.0.1:7702` (OperatorService.Health required). Details: [cli.md](cli.md).
+HTTP: `--http 127.0.0.1:7701` ([ADR 0006](../../../../docs/adr/0006-http-transport-for-runtime-api.md); umbrella [ADR 0007](../../../../docs/adr/0007-runtime-api-transports.md)). Routes: `/live` · `/ready` · `/health` · `/doctor` · `/server_info` · `/openapi.json` · `/docs` · `/planning/*` · `/jobs` · `/jobs/:id` · `/jobs/:id/events` (live SSE). gRPC: `--grpc 127.0.0.1:7702` — typed observe (`JobView`, `Event` stream, `HealthResponse`); Planning/Submit remain `JsonBody`. Proto + codegen notes: [proto/README.md](proto/README.md). Details: [cli.md](cli.md).
 
 ---
 

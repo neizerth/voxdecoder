@@ -94,7 +94,7 @@ It is an external protocol translated by `vd-mcp` into Runtime API calls.
 
 Native local control plane remains JSON-RPC 2.0 over UDS / Named Pipe / TCP — see [`TRANSPORT.md`](../../src/cli/manage/vd-srv/TRANSPORT.md). That plane is the default for `vdctl`, `vd-mcp`, and Desktop.
 
-This ADR defines the **optional standard transports** (HTTP, gRPC) that expose the same Planning / Execution / Operator / Event APIs. ADR 0006 details HTTP; gRPC is specified here and implemented later.
+This ADR defines the **optional standard transports** (HTTP, gRPC) that expose the same Planning / Execution / Operator / Event APIs. ADR 0006 details HTTP; gRPC is specified here and implemented in `vd-srv` (`proto/runtime/v1`, tonic codegen).
 
 ---
 
@@ -227,6 +227,16 @@ Polling should not be required.
 | Events | `EventService` |
 
 Streaming uses native gRPC streams.
+
+### Typed observe (codegen)
+
+`ExecutionService.GetJob` / `ListJobs` / `CancelJob` return `JobView` (status, progress, nodes — not the full Job DAG).  
+`EventService.WatchJob` returns `stream Event` with a `oneof` payload (`JobStarted`, `NodeProgress`, …, `UnknownEvent`).  
+`OperatorService.Health` / `Ready` return `HealthResponse`.
+
+Planning and `SubmitJob` remain `JsonBody` until the Job document is modeled in proto.  
+IDL: [`src/cli/manage/vd-srv/proto/`](../../src/cli/manage/vd-srv/proto/). Rust stubs: `tonic-build` (server + client).  
+TypeScript client (codegen, no UI yet): [`src/desktop/grpc-client/`](../../src/desktop/grpc-client/).
 
 ---
 

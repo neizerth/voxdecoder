@@ -10,6 +10,8 @@
 src/desktop/node_modules/
 src/desktop/dist/
 src/desktop/src-tauri/target/
+src/desktop/grpc-client/node_modules/
+src/desktop/grpc-client/dist/
 src/cli/transcribe/vd-gigaam/models/
 src/cli/transcribe/vd-gigaam/scripts/.venv/
 **/fixtures/golden/

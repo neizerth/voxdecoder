@@ -2,7 +2,10 @@ syntax = "proto3";
 
 package voxdecoder.runtime.v1;
 
-// Runtime API over gRPC (ADR 0007). Payloads mirror HTTP/JSON-RPC JSON.
+// Runtime API over gRPC (ADR 0007).
+//
+// Observe path (GetJob / ListJobs / CancelJob / WatchJob / Health) is typed for
+// codegen. Planning + Submit stay JsonBody until Job DAG lands in proto.
 
 message Empty {}
 
@@ -14,6 +17,138 @@ message JobId {
   string id = 1;
 }
 
+// --- Observe enums / views -------------------------------------------------
+
+enum JobStatus {
+  JOB_STATUS_UNSPECIFIED = 0;
+  JOB_STATUS_SUBMITTED = 1;
+  JOB_STATUS_QUEUED = 2;
+  JOB_STATUS_WAITING_RESOURCES = 3;
+  JOB_STATUS_SCHEDULED = 4;
+  JOB_STATUS_RUNNING = 5;
+  JOB_STATUS_COMPLETED = 6;
+  JOB_STATUS_FAILED = 7;
+  JOB_STATUS_CANCELLED = 8;
+}
+
+enum NodeStatus {
+  NODE_STATUS_UNSPECIFIED = 0;
+  NODE_STATUS_PENDING = 1;
+  NODE_STATUS_WAITING_DEPENDENCIES = 2;
+  NODE_STATUS_WAITING_RESOURCES = 3;
+  NODE_STATUS_READY = 4;
+  NODE_STATUS_RUNNING = 5;
+  NODE_STATUS_COMPLETED = 6;
+  NODE_STATUS_FAILED = 7;
+  NODE_STATUS_CANCELLED = 8;
+  NODE_STATUS_SKIPPED = 9;
+}
+
+enum Priority {
+  PRIORITY_UNSPECIFIED = 0;
+  PRIORITY_LOW = 1;
+  PRIORITY_NORMAL = 2;
+  PRIORITY_HIGH = 3;
+}
+
+message NodeView {
+  string id = 1;
+  uint32 leaf_index = 2;
+  string capability = 3;
+  NodeStatus status = 4;
+  repeated string depends_on = 5;
+  optional string started_at = 6;
+  optional string finished_at = 7;
+  optional string error = 8;
+}
+
+// Observe projection of a Job — no full DAG document.
+message JobView {
+  string id = 1;
+  JobStatus status = 2;
+  Priority priority = 3;
+  optional string created_at = 4;
+  optional string queued_at = 5;
+  optional string started_at = 6;
+  optional string finished_at = 7;
+  optional int32 exit_code = 8;
+  optional string error = 9;
+  optional uint32 progress = 10;
+  optional string phase = 11;
+  optional uint64 processed = 12;
+  optional uint64 total = 13;
+  optional string unit = 14;
+  repeated NodeView nodes = 15;
+}
+
+message ListJobsResponse {
+  repeated JobView jobs = 1;
+}
+
+message HealthResponse {
+  uint32 workers = 1;
+  uint32 workers_busy = 2;
+  string data_dir = 3;
+  // Opaque resources snapshot (JSON object) for forward-compat.
+  string resources_json = 4;
+}
+
+// --- Events ----------------------------------------------------------------
+
+message JobQueued {}
+message JobStarted {}
+message JobWaitingResources {}
+message JobFinished {}
+message JobCompleted {}
+message JobFailed {}
+message JobCancelled {}
+
+message NodeStarted {}
+message NodeCompleted {}
+message NodeFailed {}
+message NodeProgress {
+  optional uint32 percent = 1;
+  optional string phase = 2;
+  optional uint64 processed = 3;
+  optional uint64 total = 4;
+  optional string unit = 5;
+}
+
+message ArtifactProduced {
+  optional string artifact_id = 1;
+  optional string path = 2;
+  optional string kind = 3;
+}
+
+message UnknownEvent {
+  string kind = 1;
+  // JSON object of leftover fields when kind is not in the oneof.
+  string fields_json = 2;
+}
+
+message Event {
+  string ts = 1;
+  optional string node_id = 2;
+  optional string message = 3;
+  oneof payload {
+    JobQueued job_queued = 10;
+    JobStarted job_started = 11;
+    JobWaitingResources job_waiting_resources = 12;
+    JobFinished job_finished = 13;
+    JobCompleted job_completed = 14;
+    JobFailed job_failed = 15;
+    JobCancelled job_cancelled = 16;
+    NodeStarted node_started = 20;
+    NodeCompleted node_completed = 21;
+    NodeFailed node_failed = 22;
+    NodeProgress node_progress = 23;
+    ArtifactProduced artifact_produced = 24;
+    UnknownEvent unknown = 99;
+  }
+}
+
+// --- Services --------------------------------------------------------------
+
 service PlanningService {
   rpc PlanAudio(JsonBody) returns (JsonBody);
   rpc PlanMeeting(JsonBody) returns (JsonBody);
@@ -21,20 +156,20 @@ service PlanningService {
 
 service ExecutionService {
   rpc SubmitJob(JsonBody) returns (JsonBody);
-  rpc ListJobs(Empty) returns (JsonBody);
-  rpc GetJob(JobId) returns (JsonBody);
-  rpc CancelJob(JobId) returns (JsonBody);
+  rpc ListJobs(Empty) returns (ListJobsResponse);
+  rpc GetJob(JobId) returns (JobView);
+  rpc CancelJob(JobId) returns (JobView);
 }
 
 service OperatorService {
   // Required on every Runtime transport.
-  rpc Health(Empty) returns (JsonBody);
-  rpc Ready(Empty) returns (JsonBody);
+  rpc Health(Empty) returns (HealthResponse);
+  rpc Ready(Empty) returns (HealthResponse);
   rpc Live(Empty) returns (JsonBody);
   rpc Doctor(Empty) returns (JsonBody);
   rpc ServerInfo(Empty) returns (JsonBody);
 }
 
 service EventService {
-  rpc WatchJob(JobId) returns (stream JsonBody);
+  rpc WatchJob(JobId) returns (stream Event);
 }

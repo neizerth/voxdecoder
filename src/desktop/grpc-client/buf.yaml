@@ -1,0 +1,4 @@
+# Proto source of truth: vd-srv/proto (not copied here).
+version: v2
+modules:
+  - path: ../../cli/manage/vd-srv/proto

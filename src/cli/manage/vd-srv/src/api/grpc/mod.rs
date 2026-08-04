@@ -1,7 +1,13 @@
 //! Optional gRPC transport for the Runtime API (ADR 0007).
 //!
 //! Disabled by default. Every service maps to the same Engine / dispatch semantics
-//! as HTTP and JSON-RPC. `OperatorService::Health` is required.
+//! as HTTP and JSON-RPC. Observe path (`GetJob` / `ListJobs` / `CancelJob` /
+//! `WatchJob` / `Health`) is typed for codegen; Planning + `SubmitJob` stay
+//! `JsonBody` until the Job DAG is modeled in proto.
+//!
+//! `OperatorService::Health` is required on every transport.
+
+mod convert;
 
 use std::net::SocketAddr;
 use std::pin::Pin;
@@ -30,7 +36,7 @@ use pb::execution_service_server::{ExecutionService, ExecutionServiceServer};
 use pb::event_service_server::{EventService, EventServiceServer};
 use pb::operator_service_server::{OperatorService, OperatorServiceServer};
 use pb::planning_service_server::{PlanningService, PlanningServiceServer};
-use pb::{Empty, JobId, JsonBody};
+use pb::{Empty, Event, HealthResponse, JobId, JobView, JsonBody, ListJobsResponse};
 
 #[derive(Clone)]
 struct GrpcState {
@@ -105,14 +111,23 @@ fn parse_body(body: &JsonBody) -> Result<Value, Status> {
     serde_json::from_str(&body.json).map_err(|e| Status::invalid_argument(e.to_string()))
 }
 
+fn engine_status(e: impl ToString) -> Status {
+    let msg = e.to_string();
+    if msg.contains("not found") {
+        Status::not_found(msg)
+    } else {
+        Status::internal(msg)
+    }
+}
+
 #[tonic::async_trait]
 impl OperatorService for GrpcState {
-    async fn health(&self, _: Request<Empty>) -> Result<Response<JsonBody>, Status> {
-        json_ok(self.engine.health_json())
+    async fn health(&self, _: Request<Empty>) -> Result<Response<HealthResponse>, Status> {
+        Ok(Response::new(self.health_pb()))
     }
 
-    async fn ready(&self, _: Request<Empty>) -> Result<Response<JsonBody>, Status> {
-        json_ok(self.engine.health_json())
+    async fn ready(&self, _: Request<Empty>) -> Result<Response<HealthResponse>, Status> {
+        Ok(Response::new(self.health_pb()))
     }
 
     async fn live(&self, _: Request<Empty>) -> Result<Response<JsonBody>, Status> {
@@ -127,6 +142,24 @@ impl OperatorService for GrpcState {
 
     async fn server_info(&self, _: Request<Empty>) -> Result<Response<JsonBody>, Status> {
         json_ok(rpc_json(&self.engine, "server.info", None)?)
+    }
+}
+
+impl GrpcState {
+    fn health_pb(&self) -> HealthResponse {
+        let v = self.engine.health_json();
+        let workers = v.get("workers").and_then(|x| x.as_u64()).unwrap_or(0) as u32;
+        let workers_busy = v
+            .get("workers_busy")
+            .and_then(|x| x.as_u64())
+            .unwrap_or(0) as u32;
+        let data_dir = v
+            .get("data_dir")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string();
+        let resources = v.get("resources").cloned().unwrap_or_else(|| json!({}));
+        convert::health_response(workers, workers_busy, data_dir, &resources)
     }
 }
 
@@ -150,30 +183,31 @@ impl ExecutionService for GrpcState {
         json_ok(rpc_json(&self.engine, "job.submit", Some(params))?)
     }
 
-    async fn list_jobs(&self, _: Request<Empty>) -> Result<Response<JsonBody>, Status> {
-        json_ok(rpc_json(&self.engine, "job.list", None)?)
+    async fn list_jobs(&self, _: Request<Empty>) -> Result<Response<ListJobsResponse>, Status> {
+        let jobs = self.engine.list().map_err(engine_status)?;
+        Ok(Response::new(convert::list_jobs_response(&jobs)))
     }
 
-    async fn get_job(&self, req: Request<JobId>) -> Result<Response<JsonBody>, Status> {
+    async fn get_job(&self, req: Request<JobId>) -> Result<Response<JobView>, Status> {
         let id = req.into_inner().id;
-        json_ok(rpc_json(
-            &self.engine,
-            "job.status",
-            Some(json!({"id": id})),
-        )?)
+        if id.is_empty() {
+            return Err(Status::invalid_argument("id required"));
+        }
+        let rec = self.engine.job(&id).map_err(engine_status)?;
+        Ok(Response::new(convert::job_record_to_view(&rec)))
     }
 
-    async fn cancel_job(&self, req: Request<JobId>) -> Result<Response<JsonBody>, Status> {
+    async fn cancel_job(&self, req: Request<JobId>) -> Result<Response<JobView>, Status> {
         let id = req.into_inner().id;
-        json_ok(rpc_json(
-            &self.engine,
-            "job.cancel",
-            Some(json!({"id": id})),
-        )?)
+        if id.is_empty() {
+            return Err(Status::invalid_argument("id required"));
+        }
+        let rec = self.engine.cancel(&id).map_err(engine_status)?;
+        Ok(Response::new(convert::job_record_to_view(&rec)))
     }
 }
 
-type EventStream = Pin<Box<dyn Stream<Item = Result<JsonBody, Status>> + Send>>;
+type EventStream = Pin<Box<dyn Stream<Item = Result<Event, Status>> + Send>>;
 
 #[tonic::async_trait]
 impl EventService for GrpcState {
@@ -187,10 +221,7 @@ impl EventService for GrpcState {
         if id.is_empty() {
             return Err(Status::invalid_argument("id required"));
         }
-        let _ = self
-            .engine
-            .job(&id)
-            .map_err(|e| Status::not_found(e.to_string()))?;
+        let _ = self.engine.job(&id).map_err(engine_status)?;
 
         let engine = self.engine.clone();
         let stop = Arc::clone(&self.stop);
@@ -207,13 +238,11 @@ impl EventService for GrpcState {
                 };
                 while sent < events.len() {
                     let ev = &events[sent];
-                    let body = JsonBody {
-                        json: serde_json::to_string(ev).unwrap_or_else(|_| "{}".into()),
-                    };
-                    if tx.blocking_send(Ok(body)).is_err() {
+                    let pb = convert::event_record_to_pb(ev);
+                    let kind = ev.kind.as_str();
+                    if tx.blocking_send(Ok(pb)).is_err() {
                         return;
                     }
-                    let kind = ev.kind.as_str();
                     sent += 1;
                     if matches!(
                         kind,

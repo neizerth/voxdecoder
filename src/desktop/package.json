@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "generate": "npm --prefix grpc-client run generate",
+    "generate:verify": "npm --prefix grpc-client run smoke"
   },
   "dependencies": {
     "react": "^19.1.0",

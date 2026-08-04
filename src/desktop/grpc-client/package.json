@@ -1,0 +1,40 @@
+{
+  "name": "@voxdecoder/grpc-client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "gRPC Runtime API TypeScript stubs (buf codegen from vd-srv proto)",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./gen/*": "./src/gen/*"
+  },
+  "files": [
+    "dist",
+    "src/gen"
+  ],
+  "scripts": {
+    "generate": "buf generate",
+    "postinstall": "npm run generate",
+    "smoke": "npm run generate && tsc -p tsconfig.json && node dist/smoke.js"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "^2.13.0",
+    "@connectrpc/connect": "^2.1.2",
+    "@connectrpc/connect-node": "^2.1.2",
+    "dotenv": "^16.5.0"
+  },
+  "devDependencies": {
+    "@bufbuild/buf": "^1.55.1",
+    "@bufbuild/protoc-gen-es": "^2.13.0",
+    "@types/node": "^22.15.0",
+    "typescript": "~5.8.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

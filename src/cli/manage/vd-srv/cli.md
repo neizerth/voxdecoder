@@ -61,7 +61,7 @@ HTTP transport (ADR 0006 / 0007, **disabled by default**): `--http 127.0.0.1:770
 - Execution: `POST /jobs` · `GET /jobs` · `GET /jobs/:id` · `POST /jobs/:id/cancel` · `GET /jobs/:id/events` (live SSE)
 - Operator: `GET /health` · `GET /ready` · `GET /doctor` · `GET /server_info` · `GET /live` · `GET /openapi.json` · `GET /docs`
 
-gRPC transport (ADR 0007, **disabled by default**): `--grpc 127.0.0.1:7702` or `[grpc] enabled = true`. Services: `PlanningService`, `ExecutionService`, `OperatorService` (**Health** required), `EventService.WatchJob`.
+gRPC transport (ADR 0007, **disabled by default**): `--grpc 127.0.0.1:7702` or `[grpc] enabled = true`. Services: `PlanningService`, `ExecutionService`, `OperatorService` (**Health** required), `EventService.WatchJob`. Observe is typed (`JobView` / `Event` / `HealthResponse`); Planning + Submit stay `JsonBody`. See [proto/README.md](proto/README.md).
 
 Health is available on **every** transport (`server.health` / `GET /health` / `OperatorService.Health`).
 

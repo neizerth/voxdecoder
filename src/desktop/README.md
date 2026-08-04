@@ -1,27 +1,22 @@
 # VoxDecoder Desktop
 
-Tauri 2 + React + TypeScript client. Speaks the Runtime API (local UDS / pipe → `vd-srv`); does not embed capability binaries.
-
-Scaffold only — Runtime wiring lands later.
-
-## Stack
-
-| Layer | Tech |
-|-------|------|
-| UI | React 19 + TypeScript + Vite |
-| Shell | Tauri 2 (`src-tauri/`) |
-| Identifier | `com.voxdecoder.desktop` |
-
-Rust crate stays **outside** the repo Cargo workspace via `workspace.exclude` (`src/desktop/src-tauri`) so Tauri deps do not pollute CLI builds. Build from this directory.
+Tauri 2 + React + TypeScript. Runtime API client — local `vd-srv` (gRPC / HTTP).
 
 ## Setup
 
 ```bash
 cd src/desktop
 npm install
+cd grpc-client && npm install && cd ..   # postinstall → generate → src/gen/
 ```
 
-System deps: [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) (Xcode CLT on macOS, WebView2 on Windows).
+## Generate gRPC client (schema → TS)
+
+Schema: `vd-srv/proto`. Output `grpc-client/src/gen/` is **gitignored**.
+
+```bash
+npm run generate
+```
 
 ## Dev
 
@@ -29,23 +24,11 @@ System deps: [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) (X
 npm run tauri:dev
 ```
 
-Frontend-only (no native shell):
-
-```bash
-npm run dev
-```
-
-## Build
-
-```bash
-npm run tauri:build
-```
-
 ## Layout
 
 ```text
 src/desktop/
   src/           # React UI
-  src-tauri/     # Rust host + tauri.conf.json
-  package.json
+  src-tauri/     # Tauri host
+  grpc-client/   # buf codegen (proto → src/gen/)
 ```
