@@ -131,6 +131,8 @@ Returns `{ classified: [ { path, role, name, gender } ] }` — one per input, pr
 - **`room`** (alias: `merged`): shared mix / common room recording. Name contains keywords like `mix`, `merged`, `all`, `весь`, `общ`, etc.
 - **`participant`**: per-speaker track. Inferred from person names; original script/casing preserved (never transliterate Cyrillic → Latin).
 
+The tool's `name` is a single field used **as both** the `participant` id and (for Cyrillic sources) `meeting.participants.known[].name` — pass it through unchanged for those. For plain-ASCII sources (`alice.wav` → `name: "alice"`), the tool does **not** capitalize: use `name` as-is for `participant` id, but title-case it for the display `known[].name` (`alice` → `Alice`) unless the user's own prompt spelled it differently.
+
 **Never invent gender; only infer from known tables.** Returns `null` for ambiguous nicknames (`Alex`, `Саша`, `Женя`).
 
 **For URL-only inputs**, no basename → ask the user for `role` / `participant` / `gender` explicitly instead of guessing.

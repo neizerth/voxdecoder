@@ -82,10 +82,10 @@ pub fn execute(args: PruneCli) -> Result<(), CliError> {
 }
 
 fn parse_duration(s: &str) -> Option<u64> {
-    let (num_str, unit) = if let Some(pos) = s.rfind(|c: char| !c.is_ascii_digit()) {
-        s.split_at(pos + 1)
+    let (num_str, unit) = if let Some(pos) = s.find(|c: char| !c.is_ascii_digit()) {
+        s.split_at(pos)
     } else {
-        (s, "")
+        (s, "s")
     };
 
     let num: u64 = num_str.parse().ok()?;
@@ -97,6 +97,41 @@ fn parse_duration(s: &str) -> Option<u64> {
         "w" | "week" | "weeks" => num * 604800,
         _ => return None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_common_units() {
+        assert_eq!(parse_duration("7d"), Some(7 * 86400));
+        assert_eq!(parse_duration("24h"), Some(24 * 3600));
+        assert_eq!(parse_duration("1w"), Some(604800));
+        assert_eq!(parse_duration("30m"), Some(30 * 60));
+        assert_eq!(parse_duration("45s"), Some(45));
+    }
+
+    #[test]
+    fn bare_number_defaults_to_seconds() {
+        assert_eq!(parse_duration("100"), Some(100));
+    }
+
+    #[test]
+    fn rejects_unknown_unit() {
+        assert_eq!(parse_duration("7x"), None);
+    }
+
+    #[test]
+    fn rejects_garbage() {
+        assert_eq!(parse_duration(""), None);
+        assert_eq!(parse_duration("abc"), None);
+    }
+
+    #[test]
+    fn default_cli_value_parses() {
+        assert_eq!(parse_duration("7d"), Some(604800));
+    }
 }
 
 fn du_bytes(path: &std::path::Path) -> std::io::Result<u64> {
