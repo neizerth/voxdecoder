@@ -241,14 +241,17 @@ Right after the artifact link (Results), present cleanup — **not** as a later 
 The transcript is ready: [basename](file:///…)
 
 Which cleanup strategies? Select at least one (required for Next).
-Defaults = all Recommended. Client Skip = leave transcript as-is.
+Pick "All recommended" for one click, or choose individually. Client Skip = leave transcript as-is.
 
+• All recommended — applies the three below in one click (Recommended)
 • Fix obvious ASR mistakes (Recommended)
 • Normalize technical terminology (Recommended)
 • Remove noise / эканье-аканье / husks + normalize formatting (Recommended)
 ```
 
-(Label 3 combines noise + stutter syllables + husks + formatting so the three Recommended defaults fit in one question.)
+(Label 3/4 combines noise + stutter syllables + husks + formatting so the three Recommended defaults fit in one question alongside the one-click "All recommended" option — four total, at the max per question.)
+
+Selecting **All recommended** (alone or together with any of the other three) applies all three Recommended strategies — treat it as shorthand for ticking all three, not a fourth strategy of its own. Selecting only a subset of the individual three (without "All recommended") applies exactly that subset, unchanged from before — this option is purely a faster default path, it does not remove the ability to pick a partial set.
 
 **Question 2** (`multiSelect: true`) — only when Q1 was answered (not client-Skipped):
 
@@ -260,7 +263,8 @@ Optional style strategies? Select at least one (required for Next), or Skip for 
 ```
 
 - Client **Skip** on Q1 → apply nothing.
-- Otherwise apply exactly what was selected; label 3 enables noise **and** formatting — and **must** strip trailing redundant `Угу`/`Ага`, collapse echo invites (`Ну давай. Давай, давай.` → `Ну давай.`), clear empty discourse husks, **and** strip эканье/аканье/stutter runs (see table). Leaving `… HS. Угу. Угу.` / `Давай, давай.` echo residue / `А В.` / `Во, да-да-да-да-да. Хмм.` after Recommended noise = incomplete pass. Sole-turn `Угу.` / `Ага.` **keep**.
+- **All recommended** selected → treat as if the three Recommended strategies below it were all selected, whether or not the user also ticked any of them individually.
+- Otherwise apply exactly what was selected; label 3/4 (noise) enables noise **and** formatting — and **must** strip trailing redundant `Угу`/`Ага`, collapse echo invites (`Ну давай. Давай, давай.` → `Ну давай.`), clear empty discourse husks, **and** strip эканье/аканье/stutter runs (see table). Leaving `… HS. Угу. Угу.` / `Давай, давай.` echo residue / `А В.` / `Во, да-да-да-да-да. Хмм.` after Recommended noise = incomplete pass. Sole-turn `Угу.` / `Ага.` **keep**.
 - Client **Skip** on Q2 → no style strategies.
 - **Normalize technical terminology** — only highly certain names; never guess; use glossary/`docs` when available.
 - **Remove filler words** = mid-sentence discourse fillers inside otherwise real speech (`типа`, `как бы`…). **≠** Recommended noise (syllable garbage, orphan letters, **эканье/аканье**, stutter `да-да-да`, echo `давай`/`ладно` runs, **trailing** `Угу`/`Ага`, empty husks). Sole-turn backchannel acks are not noise.

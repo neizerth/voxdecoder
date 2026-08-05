@@ -50,6 +50,7 @@ fn parallel_transcribe_branches_share_one_metal_slot() {
 
     let job = Job {
         version: 1,
+        id: None,
         name: Some("metal-gate".into()),
         working_dir: Some(PathBuf::from("/work")),
         input: JobInput {

@@ -27,6 +27,7 @@ fn sample_job(dir: &std::path::Path) -> Job {
     std::fs::write(&sample, "hello world\n").unwrap();
     Job {
         version: 1,
+        id: None,
         name: Some("fix".into()),
         working_dir: Some(dir.to_path_buf()),
         input: JobInput::default(),

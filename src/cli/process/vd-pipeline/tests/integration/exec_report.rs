@@ -21,6 +21,7 @@ fn report_records_step_order_and_timings() {
 
     let job = Job {
         version: 1,
+        id: None,
         name: Some("timing".into()),
         working_dir: Some(PathBuf::from("/work")),
         input: JobInput {
@@ -76,6 +77,7 @@ fn report_on_failure_is_partial() {
     let binder = RecordingBinder::failing(Capability::FixCasing);
     let job = Job {
         version: 1,
+        id: None,
         name: None,
         working_dir: Some(PathBuf::from("/work")),
         input: JobInput {

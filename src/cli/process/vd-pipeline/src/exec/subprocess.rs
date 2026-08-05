@@ -214,7 +214,8 @@ fn infer_preprocess_output(req: &InvokeRequest) -> PathBuf {
     if let Some(d) = &req.output_dir {
         return d.join(name);
     }
-    default_work_dir(&req.input).join(name)
+    // ADR 0017 Decision B: intermediates live in global cache, not next to input.
+    vd_artifact::job_cache_dir(&req.cache_key).join(name)
 }
 
 fn filters_include_extract_audio(req: &InvokeRequest) -> bool {
@@ -231,10 +232,6 @@ fn filters_include_extract_audio(req: &InvokeRequest) -> bool {
 }
 
 /// `{input_parent}/.voxdecoder/work` — Job intermediates next to the source tree.
-fn default_work_dir(input: &Path) -> PathBuf {
-    vd_artifact::paths::work_dir_for_input(input)
-}
-
 fn explicit_overwrite(req: &InvokeRequest) -> bool {
     req.options.get("overwrite").and_then(ArgValue::as_bool) == Some(true)
 }
@@ -1303,7 +1300,8 @@ fn infer_diarize_output(req: &InvokeRequest) -> PathBuf {
     if let Some(d) = &req.output_dir {
         return d.join(name);
     }
-    default_work_dir(&req.input).join(name)
+    // ADR 0017 Decision B: intermediates live in global cache, not next to input.
+    vd_artifact::job_cache_dir(&req.cache_key).join(name)
 }
 
 fn run_transcribe(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
@@ -1401,7 +1399,8 @@ fn infer_gigaam_output(req: &InvokeRequest) -> PathBuf {
     if let Some(d) = &req.output_dir {
         return d.join(name);
     }
-    default_work_dir(&req.input).join(name)
+    // ADR 0017 Decision B: intermediates live in global cache, not next to input.
+    vd_artifact::job_cache_dir(&req.cache_key).join(name)
 }
 
 fn run_prepare_context(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
@@ -1410,7 +1409,10 @@ fn run_prepare_context(req: &InvokeRequest) -> Result<InvokeResult, ExecError> {
         .output
         .clone()
         .or_else(|| req.context_assets.clone())
-        .unwrap_or_else(|| req.working_dir.join(".voxdecoder"));
+        .unwrap_or_else(|| {
+            // ADR 0017 Decision B: assets live in global cache, not hidden .voxdecoder.
+            vd_artifact::job_cache_dir(&req.cache_key).join("assets")
+        });
 
     // No docs root / nothing convertible → empty assets dir (fix-* still run).
     if !req.input.exists() || !docs_have_sources(&req.input) {
@@ -1647,7 +1649,8 @@ fn infer_fix_output(req: &InvokeRequest) -> PathBuf {
     if let Some(d) = &req.output_dir {
         return d.join(name);
     }
-    default_work_dir(&req.input).join(name)
+    // ADR 0017 Decision B: intermediates live in global cache, not next to input.
+    vd_artifact::job_cache_dir(&req.cache_key).join(name)
 }
 
 fn run_cmd(
@@ -1760,6 +1763,7 @@ mod tests {
         InvokeRequest {
             capability: Capability::FixAsr,
             step_id: None,
+            cache_key: "test-cache-key".into(),
             working_dir: input.parent().unwrap_or(Path::new(".")).to_path_buf(),
             input: input.to_path_buf(),
             output: None,

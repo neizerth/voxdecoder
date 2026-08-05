@@ -29,6 +29,7 @@ vd-artifact = { path = "../../../crates/vd-artifact" }
 vd-progress = { path = "../../../crates/vd-progress" }
 vd-pipeline = { path = "../vd-pipeline" }
 vd-input = { path = "../../../crates/vd-input" }
+atty = "0.2"
 
 [dev-dependencies]
 assert_cmd = "2"

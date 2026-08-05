@@ -30,6 +30,8 @@ pub struct RunArgs {
     pub json: bool,
     pub progress: Option<ProgressMode>,
     pub quiet: bool,
+    /// True if interactive mode is requested (explicit --interactive or auto-detected TTY)
+    pub interactive: bool,
 }
 
 impl RunArgs {
@@ -48,6 +50,32 @@ impl RunArgs {
 pub fn execute(args: RunArgs) -> Result<(), CliError> {
     let file_cfg = config::load(&paths::config_path()).map_err(CliError::usage)?;
     let (mut request, file_build) = assemble_request(&args)?;
+
+    // Interactive wizard: classify files, confirm with user
+    if args.interactive && !args.dry_run {
+        let wd = request.working_dir.as_deref();
+        let (wizard_inputs, wizard_context) = crate::interactive::show_wizard(wd)
+            .map_err(CliError::usage)?;
+        if !wizard_inputs.is_empty() {
+            request.inputs.extend(wizard_inputs);
+        }
+        if let Some(ctx) = wizard_context {
+            if request.inputs
+                .iter()
+                .all(|i| i.role != crate::model::InputRole::Context)
+            {
+                request.inputs.push(InputSource {
+                    role: crate::model::InputRole::Context,
+                    path: ctx,
+                    url: None,
+                    participant: None,
+                    purposes: Vec::new(),
+                    subtitles: None,
+                    provider: None,
+                });
+            }
+        }
+    }
     apply_config_defaults(&mut request, &file_cfg);
 
     let mut options = file_build.unwrap_or_default();

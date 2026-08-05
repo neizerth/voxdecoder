@@ -12,6 +12,7 @@ fn omitted_input_uses_previous_output() {
     let binder = RecordingBinder::new();
     let job = Job {
         version: 1,
+        id: None,
         name: None,
         working_dir: Some(PathBuf::from("/work")),
         input: JobInput {

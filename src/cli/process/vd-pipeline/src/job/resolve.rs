@@ -36,14 +36,35 @@ pub fn resolve_job(job: Job) -> Result<ResolvedJob, JobError> {
     )?;
 
     let order = schedule_leaf_order(&job, leaves.len())?;
+    let cache_key = resolve_cache_key(&job);
 
     Ok(ResolvedJob {
         job,
         working_dir,
+        cache_key,
         steps: leaves,
         plan,
         order,
     })
+}
+
+/// Priority: explicit `job.id` (meeting Jobs — run-identity keying, set by the meeting
+/// planner) > content hash of `job.input.audio` (single-input Jobs — automatic dedup) >
+/// freshly minted id (neither present, e.g. a hand-authored Job document).
+///
+/// Hashing failure (missing/unreadable file — common in `--dry-run` / plan-only calls with
+/// no real media on disk yet) falls through to a minted id rather than erroring: cache key
+/// resolution must never block planning.
+fn resolve_cache_key(job: &Job) -> String {
+    if let Some(id) = &job.id {
+        return id.clone();
+    }
+    if let Some(audio) = &job.input.audio {
+        if let Ok(hash) = vd_artifact::content_hash_key(audio) {
+            return hash;
+        }
+    }
+    vd_artifact::new_job_id()
 }
 
 fn compile_plan(

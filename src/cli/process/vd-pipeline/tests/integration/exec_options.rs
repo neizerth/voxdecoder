@@ -18,6 +18,7 @@ fn options_forwarded_untouched() {
 
     let job = Job {
         version: 1,
+        id: None,
         name: None,
         working_dir: Some(PathBuf::from("/work")),
         input: JobInput {

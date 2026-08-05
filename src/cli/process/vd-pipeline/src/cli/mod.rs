@@ -1,6 +1,7 @@
 //! Commands for `vd-pipeline`.
 
 mod config_cmd;
+mod prune;
 mod run;
 
 use std::ffi::{OsStr, OsString};
@@ -16,6 +17,7 @@ pub use run::RunArgs;
 pub enum Command {
     Run(RunArgs),
     Config(ConfigArgs),
+    Prune(PruneCli),
 }
 
 #[derive(Debug, Parser)]
@@ -37,6 +39,8 @@ enum RootCommand {
     Run(RunCli),
     /// Show or change default settings
     Config(ConfigArgs),
+    /// Delete old cache entries from $VD_HOME/cache
+    Prune(PruneCli),
 }
 
 #[derive(Debug, Clone, Parser)]
@@ -94,6 +98,12 @@ pub struct RunCli {
     /// Write report.json + resolved-job.json into this directory
     #[arg(long = "report-dir")]
     pub report_dir: Option<PathBuf>,
+    /// Enable interactive mode (auto-detect by TTY if not specified)
+    #[arg(long = "interactive")]
+    pub interactive: bool,
+    /// Disable interactive mode (non-TTY default)
+    #[arg(long = "non-interactive")]
+    pub non_interactive: bool,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
@@ -109,6 +119,20 @@ impl From<CliProgress> for ProgressMode {
             CliProgress::Json => Self::Json,
         }
     }
+}
+
+#[derive(Debug, Clone, Parser)]
+#[command(about = "Delete old cache entries from $VD_HOME/cache")]
+pub struct PruneCli {
+    /// Delete entries older than this duration (e.g. 7d, 24h)
+    #[arg(long = "older-than", default_value = "7d")]
+    pub older_than: String,
+    /// Actually delete (default: dry-run only)
+    #[arg(long = "force", short = 'f')]
+    pub force: bool,
+    /// Skip confirmation (use with --force)
+    #[arg(long = "yes", short = 'y')]
+    pub yes: bool,
 }
 
 #[derive(Debug, Clone, Parser)]
@@ -177,6 +201,7 @@ where
     match root.command {
         RootCommand::Run(cli) => Ok(Command::Run(validate_run(cli)?)),
         RootCommand::Config(c) => Ok(Command::Config(c)),
+        RootCommand::Prune(c) => Ok(Command::Prune(c)),
     }
 }
 
@@ -184,6 +209,7 @@ pub fn dispatch(cmd: Command) -> Result<(), CliError> {
     match cmd {
         Command::Run(args) => run::execute(args),
         Command::Config(args) => config_cmd::execute(args),
+        Command::Prune(args) => prune::execute(args),
     }
 }
 
@@ -194,7 +220,7 @@ fn normalize_argv(mut args: Vec<OsString>) -> Vec<OsString> {
     let first = args.get(1).map(OsString::as_os_str);
     let known = matches!(
         first.and_then(OsStr::to_str),
-        Some("run" | "config" | "help" | "--help" | "-h" | "--version" | "-V")
+        Some("run" | "config" | "prune" | "help" | "--help" | "-h" | "--version" | "-V")
     );
     if !known {
         args.insert(1, OsString::from("run"));
@@ -216,6 +242,11 @@ fn validate_run(cli: RunCli) -> Result<RunArgs, CliError> {
             "--report / --report-dir require a real run (not --dry-run)",
         ));
     }
+    if cli.interactive && cli.non_interactive {
+        return Err(CliError::usage(
+            "cannot use both --interactive and --non-interactive",
+        ));
+    }
     let job_file = cli.file.or(cli.job_positional);
     if job_file.is_some() && cli.input.is_some() {
         return Err(CliError::usage(
@@ -228,6 +259,14 @@ fn validate_run(cli: RunCli) -> Result<RunArgs, CliError> {
             "missing -i / --input or job file".to_string(),
         ));
     }
+    // Decide interactive mode: explicit flag > auto-detect TTY > default to false
+    let interactive = if cli.interactive {
+        true
+    } else if cli.non_interactive {
+        false
+    } else {
+        atty::is(atty::Stream::Stdin)
+    };
     Ok(RunArgs {
         input: cli.input,
         job_file,
@@ -246,5 +285,6 @@ fn validate_run(cli: RunCli) -> Result<RunArgs, CliError> {
         overwrite: cli.overwrite,
         report: cli.report,
         report_dir: cli.report_dir,
+        interactive,
     })
 }

@@ -9,6 +9,7 @@ use vd_pipeline::{resolve_job, ArgValue, Capability, Job, JobInput, Step};
 fn postprocess_requires_recipes() {
     let job = Job {
         version: 1,
+        id: None,
         name: None,
         working_dir: Some(PathBuf::from("/work")),
         input: JobInput::default(),
@@ -51,6 +52,7 @@ fn postprocess_with_recipes_ok() {
 
     let job = Job {
         version: 1,
+        id: None,
         name: None,
         working_dir: Some(PathBuf::from("/work")),
         input: JobInput::default(),

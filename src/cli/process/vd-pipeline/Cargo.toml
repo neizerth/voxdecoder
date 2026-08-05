@@ -28,6 +28,7 @@ toml = "0.8"
 vd-artifact = { path = "../../../crates/vd-artifact" }
 vd-progress = { path = "../../../crates/vd-progress" }
 vd-text = { path = "../../../crates/vd-text" }
+atty = "0.2"
 
 [dev-dependencies]
 assert_cmd = "2"

@@ -10,6 +10,7 @@ use super::RecordingBinder;
 fn base_job(steps: Vec<Step>) -> Job {
     Job {
         version: 1,
+        id: None,
         name: None,
         working_dir: Some(PathBuf::from("/work")),
         input: JobInput {

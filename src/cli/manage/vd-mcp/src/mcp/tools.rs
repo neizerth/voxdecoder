@@ -17,6 +17,11 @@ pub fn list() -> Vec<Value> {
             meeting_schema(),
         ),
         tool(
+            "classify_meeting_inputs",
+            "Propose role (room/mix vs participant), name, and gender for a list of candidate meeting input files, from filename heuristics (ADR 0017). Present the result to the user for confirmation/edit — never apply it unconfirmed.",
+            json!({"type":"object","required":["paths"],"properties":{"paths":{"type":"array","items":{"type":"string"}}}}),
+        ),
+        tool(
             "submit_job",
             "Submit a complete Runtime Job document.",
             json!({"type":"object","properties":{"job":{},"job_yaml":{"type":"string"},"document":{"type":"string"}}}),
@@ -47,6 +52,7 @@ pub fn call(client: &RuntimeClient, name: &str, arguments: Value) -> Result<Valu
     match name {
         "process_audio" => with_observe(client.call("plan.audio", Some(arguments))?),
         "process_meeting" => with_observe(client.call("plan.meeting", Some(arguments))?),
+        "classify_meeting_inputs" => client.call("plan.classify", Some(arguments)),
         "submit_job" => with_observe(client.call("job.submit", Some(arguments))?),
         "get_job" => client.call("job.status", Some(arguments)),
         "cancel_job" => client.call("job.cancel", Some(arguments)),

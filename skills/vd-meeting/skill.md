@@ -120,54 +120,22 @@ Whenever the user must pick among options (mix mode, speed, overwrite vs continu
 
 ## Filename heuristics
 
-Apply case-insensitively to the **basename** (ignore extension) for **path** inputs. Prefer explicit user labels over heuristics. For **URL-only** inputs with no useful basename, ask the user for `role` / `participant` instead of guessing.
+**Use the `classify_meeting_inputs` MCP tool to auto-classify path inputs** (ADR 0017 Decision H). Call it with the list of media file paths:
 
-### Shared mix (`role: room` / `merged`)
-
-Treat as the common room recording when the name contains tokens such as:
-
-`mix`, `mixed`, `merged`, `all`, `room`, `full`, `combined`, `common`, `overall`, `together`, `весь`, `общ`, `микс`, `слит`, `полный`
-
-Examples: `meeting_mix.wav`, `all.mp4`, `merged_track.m4a`, `общая_запись.wav`.
-
-### Per-speaker (`role: participant`)
-
-If the basename looks like a **person name** (or contains one) and is **not** a mix token:
-
-- Set `role: participant`.
-- Set `participant` to a stable id. Prefer the **original script** from the filename (`Игорь`, `Мария_Смирнова`). An ASCII slug (`igor`) is OK only when the source name is already Latin — **never transliterate Cyrillic → Latin** for `participant` or display.
-- Put display `name` under `meeting.participants.known` using the **same original script and casing** as the person’s name in the filename / user prompt (`Игорь`, not `Igor`).
-
-```text
-Filename / label     participant id     known[].name
-Игорь.wav            Игорь              Игорь
-Владимир.m4a         Владимир           Владимир
-alice.wav            alice              Alice
+```
+classify_meeting_inputs paths=[meeting_mix.wav, alice.wav, ivan.m4a]
 ```
 
-Artifact **filenames** may still use ASCII when the OS/tooling needs it; that is separate. **Speaker labels inside `meeting.md` / turns must not be Latinized.**
+Returns `{ classified: [ { path, role, name, gender } ] }` — one per input, preserving order. Roles:
 
-Examples: `Alice.wav`, `ivan-petrov.mp3`, `Мария_Смирнова.m4a`, `Игорь.wav`.
+- **`room`** (alias: `merged`): shared mix / common room recording. Name contains keywords like `mix`, `merged`, `all`, `весь`, `общ`, etc.
+- **`participant`**: per-speaker track. Inferred from person names; original script/casing preserved (never transliterate Cyrillic → Latin).
 
-If both a mix and speaker files exist, assign roles accordingly — do not treat the mix as a participant.
+**Never invent gender; only infer from known tables.** Returns `null` for ambiguous nicknames (`Alex`, `Саша`, `Женя`).
 
-### Context materials (`role: context`)
+**For URL-only inputs**, no basename → ask the user for `role` / `participant` / `gender` explicitly instead of guessing.
 
-Documents and non-media materials for **vd-assets** (glossaries, agendas, attendee lists, PDFs, markdown) — these feed **fix-asr / fix-terms**:
-
-- Prefer `inputs[].role: context` with `path` (or `uri`), **or** top-level MCP `docs: /path/to/folder-or-file` (same effect).
-- **Never** set `url` on context inputs — Runtime rejects it.
-- If the user pastes accompanying notes in chat (no file path): write them to a local markdown file next to the media (e.g. `./.voxdecoder/context/notes.md`) and pass that path as `docs` / `role: context`. Do **not** leave notes only in chat.
-- Ask the user for materials if they mentioned slides/docs but did not attach paths.
-- Do not put PDF/DOCX binary contents into chat instead of `role: context`.
-## Gender
-
-When a participant file (or known name) is present and the user prompt does **not** explicitly give gender:
-
-1. Infer `male` / `female` / leave unset from the **given name** using common language conventions (RU/EN and other languages you know).
-2. Set `meeting.participants.known[].constraints.gender` only when reasonably confident.
-3. If unsure, ask once; do not invent gender for ambiguous nicknames (`Alex`, `Саша`, `Женя`) without confirmation.
-4. Never override an explicit gender from the user prompt.
+**Context materials** (`role: context`): Documents and non-media for **vd-assets**. Prefer `inputs[].role: context` with `path`, **or** top-level MCP `docs: /path/to/folder`. Never set `url` on context inputs — Runtime rejects it. If user pastes notes in chat (no file): write to `./.voxdecoder/context/notes.md` and pass as `docs`. Do not put PDF/DOCX binary contents in chat.
 
 ## Mix + tracks
 
@@ -330,14 +298,17 @@ Right after the artifact link (Results), present cleanup — **not** as a later 
 The transcript is ready: [basename](file:///…)
 
 Which cleanup strategies? Select at least one (required for Next).
-Defaults = all Recommended. Client Skip = leave transcript as-is.
+Pick "All recommended" for one click, or choose individually. Client Skip = leave transcript as-is.
 
+• All recommended — applies the three below in one click (Recommended)
 • Fix obvious ASR mistakes (Recommended)
 • Normalize technical terminology (Recommended)
 • Remove noise / эканье-аканье / husks + normalize formatting (Recommended)
 ```
 
-(Label 3 combines noise + stutter syllables + husks + formatting so the three Recommended defaults fit in one question.)
+(Label 3/4 combines noise + stutter syllables + husks + formatting so the three Recommended defaults fit in one question alongside the one-click "All recommended" option — four total, at the max per question.)
+
+Selecting **All recommended** (alone or together with any of the other three) applies all three Recommended strategies — treat it as shorthand for ticking all three, not a fourth strategy of its own. Selecting only a subset of the individual three (without "All recommended") applies exactly that subset, unchanged from before — this option is purely a faster default path, it does not remove the ability to pick a partial set.
 
 **Question 2** (`multiSelect: true`) — only when Q1 was answered (not client-Skipped):
 
@@ -349,7 +320,8 @@ Optional style strategies? Select at least one (required for Next), or Skip for 
 ```
 
 - Client **Skip** on Q1 → apply nothing.
-- Otherwise apply exactly what was selected; label 3 enables noise **and** formatting — and **must** strip trailing redundant `Угу`/`Ага`, collapse echo invites (`Ну давай. Давай, давай.` → `Ну давай.`), clear empty discourse husks, **and** strip эканье/аканье/stutter runs (see table). Leaving `… HS. Угу. Угу.` / `Давай, давай.` echo residue / `А В.` / `Во, да-да-да-да-да. Хмм.` after Recommended noise = incomplete pass. Sole-turn `Угу.` / `Ага.` **keep**.
+- **All recommended** selected → treat as if the three Recommended strategies below it were all selected, whether or not the user also ticked any of them individually.
+- Otherwise apply exactly what was selected; label 3/4 (noise) enables noise **and** formatting — and **must** strip trailing redundant `Угу`/`Ага`, collapse echo invites (`Ну давай. Давай, давай.` → `Ну давай.`), clear empty discourse husks, **and** strip эканье/аканье/stutter runs (see table). Leaving `… HS. Угу. Угу.` / `Давай, давай.` echo residue / `А В.` / `Во, да-да-да-да-да. Хмм.` after Recommended noise = incomplete pass. Sole-turn `Угу.` / `Ага.` **keep**.
 - Client **Skip** on Q2 → no style strategies.
 - **Normalize technical terminology** — only highly certain names; never guess; use glossary/`docs` when available.
 - **Remove filler words** = mid-sentence discourse fillers inside otherwise real speech (`типа`, `как бы`…). **≠** Recommended noise (syllable garbage, orphan letters, **эканье/аканье**, stutter `да-да-да`, echo `давай`/`ладно` runs, **trailing** `Угу`/`Ага`, empty husks). Sole-turn backchannel acks are not noise.

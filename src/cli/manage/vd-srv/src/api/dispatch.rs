@@ -37,6 +37,7 @@ pub fn handle(engine: &Engine, req: Request) -> Option<Response> {
         "job.submit" => job_submit(engine, req.params.as_ref()),
         "plan.audio" => plan_audio_request(engine, req.params.as_ref()),
         "plan.meeting" => plan_meeting_request(engine, req.params.as_ref()),
+        "plan.classify" => plan_classify_request(req.params.as_ref()),
         "job.cancel" => job_id_op(engine, req.params.as_ref(), |e, id| {
             e.cancel(id)
                 .map(|j| serde_json::to_value(j).unwrap_or_default())
@@ -145,6 +146,35 @@ fn plan_meeting_request(engine: &Engine, params: Option<&Value>) -> Result<Value
         .submit(job, Priority::default(), RestartPolicy::default())
         .map(|record| serde_json::to_value(record).unwrap_or_default())
         .map_err(|e| ErrorObject::application(e.to_string()))
+}
+
+/// `plan.classify` — filename classification heuristics (ADR 0017 Decision H), gatewayed by
+/// `vd-mcp` as the `classify_meeting_inputs` MCP tool. No Engine/Job Store involved: this is
+/// a pure function call over `vd-classify`, not a Job.
+///
+/// `params.paths: [String]` — candidate media file paths (same list a `vd-meeting
+/// --interactive` run or a Skill would show the user). Returns `{ "classified": [...] }`,
+/// one `vd_classify::ClassifiedInput` per input path, same order.
+///
+/// Scaffolding note: `vd_classify::classify_inputs` is a `todo!()` stub pending ADR 0017
+/// P1-B — this handler is wired end-to-end and needs no further change once that lands.
+fn plan_classify_request(params: Option<&Value>) -> Result<Value, ErrorObject> {
+    let params = params.ok_or_else(|| ErrorObject::invalid_params("params required"))?;
+    let paths: Vec<std::path::PathBuf> = params
+        .get("paths")
+        .ok_or_else(|| ErrorObject::invalid_params("params.paths required"))?
+        .as_array()
+        .ok_or_else(|| ErrorObject::invalid_params("params.paths must be an array"))?
+        .iter()
+        .map(|v| {
+            v.as_str()
+                .map(std::path::PathBuf::from)
+                .ok_or_else(|| ErrorObject::invalid_params("params.paths entries must be strings"))
+        })
+        .collect::<Result<_, _>>()?;
+
+    let classified = vd_classify::classify_inputs(&paths);
+    Ok(json!({ "classified": classified }))
 }
 
 fn job_submit(engine: &Engine, params: Option<&Value>) -> Result<Value, ErrorObject> {

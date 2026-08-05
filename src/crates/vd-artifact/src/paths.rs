@@ -2,9 +2,17 @@
 
 use std::env;
 use std::fs;
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use directories::ProjectDirs;
+
+/// Process-env override for the global cache root (mirrors `vdctl`'s `VD_HOME`).
+pub const ENV_HOME: &str = "VD_HOME";
+
+/// Subdirectory of `$VD_HOME` holding the content-addressed Job cache (ADR 0017).
+pub const CACHE_DIR_NAME: &str = "cache";
 
 /// Default project assets directory name (dot-prefixed so it stays out of the way).
 pub const DEFAULT_PROJECT_DIR_NAME: &str = ".voxdecoder";
@@ -33,6 +41,99 @@ pub fn cache_dir(app: &str, env_var: &str, subdir: &str) -> PathBuf {
     ProjectDirs::from("", "", app)
         .map(|d| d.cache_dir().join(subdir))
         .unwrap_or_else(|| PathBuf::from(subdir))
+}
+
+/// Platform home (data root) — mirrors `vdctl::paths::home_dir()`: `$VD_HOME` if set,
+/// else the OS `ProjectDirs` data dir for the `voxdecoder` app.
+fn platform_home_dir() -> PathBuf {
+    if let Ok(p) = env::var(ENV_HOME) {
+        let t = p.trim();
+        if !t.is_empty() {
+            return PathBuf::from(t);
+        }
+    }
+    ProjectDirs::from("", "", "voxdecoder")
+        .map(|d| d.data_dir().to_path_buf())
+        .unwrap_or_else(|| PathBuf::from(".voxdecoder"))
+}
+
+/// Mint a new Job run id: `job-{nanos:x}-{pid:x}`.
+///
+/// Shared by `vd-srv` (`JobRecord.id`, minted on submit) and local `vd-meeting`/`vd-pipeline`
+/// CLI runs with no Runtime involved (minted before `resolve_job`) — both produce ids in the
+/// same format (ADR 0017 Decision B). This id is a *run* identity (one per submit/attempt),
+/// distinct from a [`content_hash_key`] or [`job_cache_dir`] cache key: retries of the same
+/// meeting mint a fresh run id each time but are expected to be resumed against the same
+/// cache key by the caller re-supplying it.
+pub fn new_job_id() -> String {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let pid = std::process::id();
+    format!("job-{nanos:x}-{pid:x}")
+}
+
+/// Global, content-addressed Job cache root: `$VD_HOME/cache` (ADR 0017).
+///
+/// Sibling to `$VD_HOME/models`, `$VD_HOME/skills`, `$VD_HOME/bundles` — the one platform-data
+/// root every binary (Workspace or Installed) already agrees on. Nothing under this tree is
+/// written next to user media / project files.
+pub fn job_cache_root() -> PathBuf {
+    platform_home_dir().join(CACHE_DIR_NAME)
+}
+
+/// Cache directory for a specific key: `$VD_HOME/cache/{key}`.
+///
+/// `key` is either a [`content_hash_key`] (single-input / audio Jobs) or a Job `job_id`
+/// (multi-input / meeting Jobs) — see ADR 0017 Decision B.
+pub fn job_cache_dir(key: &str) -> PathBuf {
+    job_cache_root().join(key)
+}
+
+/// BLAKE3 content hash of a file, hex-encoded — the cache key for single-input Jobs.
+///
+/// Streams the file instead of reading it fully into memory: hashing cost is negligible
+/// next to multi-minute ASR wall time, but multi-GB video inputs should not be loaded whole.
+pub fn content_hash_key(path: &Path) -> io::Result<String> {
+    let mut file = fs::File::open(path)?;
+    let mut hasher = blake3::Hasher::new();
+    let mut buf = vec![0u8; 64 * 1024];
+    loop {
+        let n = file.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(hasher.finalize().to_hex().to_string())
+}
+
+/// Temp sibling path for atomically producing `final_path`: `{parent}/{file_name}.tmp-{pid}`.
+///
+/// Callers (subprocess invocations, direct writers) write to this path, then call
+/// [`finalize_atomic`] to make the result visible under `final_path`. A reader that only
+/// ever looks at `final_path` never observes a partially written file — `rename()` is atomic
+/// on the same filesystem, so a process crashing mid-write leaves only an orphaned `.tmp-*`
+/// file, never a corrupt `final_path` a later resume could mistake for a completed step.
+pub fn atomic_temp_path(final_path: &Path) -> PathBuf {
+    let name = final_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("out");
+    let parent = final_path.parent().unwrap_or_else(|| Path::new("."));
+    parent.join(format!("{name}.tmp-{}", std::process::id()))
+}
+
+/// Make `tmp_path` visible as `final_path` (rename). Ensures `final_path`'s parent dir exists.
+///
+/// Only call this after `tmp_path` was fully written and closed — the rename itself is the
+/// atomic step; this function does not flush or sync the file.
+pub fn finalize_atomic(tmp_path: &Path, final_path: &Path) -> io::Result<()> {
+    if let Some(parent) = final_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::rename(tmp_path, final_path)
 }
 
 /// Resolve the project assets directory for writing (e.g. `vd-assets -o` default).
@@ -213,5 +314,66 @@ mod tests {
         let input = work.join("meeting.prepared.mp3");
         fs::write(&input, "x").unwrap();
         assert_eq!(work_dir_for_input(&input), work);
+    }
+
+    #[test]
+    fn job_cache_root_honors_vd_home() {
+        let _g = ENV_LOCK.lock().unwrap();
+        let dir = tempfile::TempDir::new().unwrap();
+        env::set_var(ENV_HOME, dir.path());
+        assert_eq!(job_cache_root(), dir.path().join(CACHE_DIR_NAME));
+        assert_eq!(job_cache_dir("abc123"), dir.path().join(CACHE_DIR_NAME).join("abc123"));
+        env::remove_var(ENV_HOME);
+    }
+
+    #[test]
+    fn content_hash_key_is_deterministic_and_content_sensitive() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let a = dir.path().join("a.wav");
+        let b = dir.path().join("b.wav");
+        fs::write(&a, b"same bytes").unwrap();
+        fs::write(&b, b"same bytes").unwrap();
+        let different = dir.path().join("c.wav");
+        fs::write(&different, b"different bytes").unwrap();
+
+        let key_a = content_hash_key(&a).unwrap();
+        let key_b = content_hash_key(&b).unwrap();
+        let key_c = content_hash_key(&different).unwrap();
+
+        assert_eq!(key_a, key_b, "identical content must hash identically");
+        assert_ne!(key_a, key_c, "different content must not collide");
+    }
+
+    #[test]
+    fn atomic_write_is_invisible_until_finalized() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let final_path = dir.path().join("step").join("out.txt");
+        let tmp_path = atomic_temp_path(&final_path);
+
+        // Simulate a crashed writer: tmp exists, final does not.
+        fs::create_dir_all(tmp_path.parent().unwrap()).unwrap();
+        fs::write(&tmp_path, b"partial or complete, doesn't matter yet").unwrap();
+        assert!(!final_path.exists(), "final path must not appear before finalize");
+
+        finalize_atomic(&tmp_path, &final_path).unwrap();
+        assert!(final_path.exists());
+        assert!(!tmp_path.exists(), "rename must remove the tmp sibling");
+        assert_eq!(
+            fs::read_to_string(&final_path).unwrap(),
+            "partial or complete, doesn't matter yet"
+        );
+    }
+
+    #[test]
+    fn atomic_temp_path_is_a_sibling_with_pid_suffix() {
+        let final_path = Path::new("/tmp/voxdecoder-test/meeting.prepared.wav");
+        let tmp = atomic_temp_path(final_path);
+        assert_eq!(tmp.parent(), final_path.parent());
+        assert!(tmp
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .starts_with("meeting.prepared.wav.tmp-"));
     }
 }

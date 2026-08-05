@@ -2,6 +2,7 @@
 
 pub mod cli;
 pub mod config;
+pub mod interactive;
 pub mod model;
 pub mod paths;
 pub mod planner;

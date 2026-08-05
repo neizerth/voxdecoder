@@ -7,6 +7,7 @@ use vd_pipeline::{resolve_job, Capability, Job, JobInput, Step};
 fn job_with_steps(steps: Vec<Step>) -> Job {
     Job {
         version: 1,
+        id: None,
         name: None,
         working_dir: Some(PathBuf::from("/tmp")),
         input: JobInput {

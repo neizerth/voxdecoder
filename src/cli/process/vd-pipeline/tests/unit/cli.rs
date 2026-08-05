@@ -21,6 +21,8 @@ fn shorthand_input_inserts_run() {
             assert!(r.job_file.is_none());
         }
         Command::Config(_) => panic!("expected Run"),
+        Command::Prune(_) => panic!("expected Run"),
+        Command::Prune(_) => panic!("expected Run"),
     }
 }
 
@@ -55,6 +57,8 @@ fn run_with_asr_model_docs() {
             assert_eq!(r.progress, Some(ProgressMode::Json));
         }
         Command::Config(_) => panic!("expected Run"),
+        Command::Prune(_) => panic!("expected Run"),
+        Command::Prune(_) => panic!("expected Run"),
     }
 }
 
@@ -86,6 +90,7 @@ fn positional_job_file() {
             assert!(r.input.is_none());
         }
         Command::Config(_) => panic!("expected Run"),
+        Command::Prune(_) => panic!("expected Run"),
     }
 }
 
@@ -98,6 +103,7 @@ fn report_flag_parses() {
             assert!(r.report_dir.is_none());
         }
         Command::Config(_) => panic!("expected Run"),
+        Command::Prune(_) => panic!("expected Run"),
     }
 }
 

@@ -8,6 +8,12 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Job {
     pub version: u32,
+    /// Run identity (ADR 0017 Decision B). `vd-srv` sets this to `JobRecord.id` on submit;
+    /// local CLI runs with no Runtime involved mint one with `vd_artifact::new_job_id()`
+    /// before `resolve_job`. Used as the cache key for multi-input (meeting) Jobs — single
+    /// input Jobs key on content hash instead, see `ResolvedJob::cache_key`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -449,6 +455,13 @@ fn is_filesystem_ref(raw: &str) -> bool {
 pub struct ResolvedJob {
     pub job: Job,
     pub working_dir: PathBuf,
+    /// Global content-addressed cache key for this Job (ADR 0017 Decision B). `job.id` when
+    /// set (meeting Jobs — run-identity keying), else the content hash of `job.input.audio`
+    /// (single-input Jobs — automatic dedup by file content), else a freshly minted id as a
+    /// last resort (hand-authored Job document with neither). Threaded into every step's
+    /// `InvokeRequest::cache_key`; step output inference resolves through
+    /// `vd_artifact::job_cache_dir(cache_key)` instead of the old flat `.voxdecoder/work/`.
+    pub cache_key: String,
     /// Flattened capability leaves (declaration / DFS order).
     pub steps: Vec<ResolvedStep>,
     /// Execution plan: recursive workflow over leaf indices / control structure.

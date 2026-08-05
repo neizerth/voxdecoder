@@ -129,6 +129,10 @@ pub fn build_job(resolved: &ResolvedMeeting, options: &BuildOptions) -> Result<J
 
     Ok(Job {
         version: 1,
+        // Meeting Jobs key the global cache on run identity, not content hash (ADR 0017
+        // Decision B) — a meeting has many inputs, no single file to hash. `resolve_job`
+        // uses this id verbatim as the cache key when set.
+        id: Some(vd_artifact::new_job_id()),
         name: Some("meeting".into()),
         working_dir: Some(resolved.working_dir.clone()),
         input: JobInput { audio },

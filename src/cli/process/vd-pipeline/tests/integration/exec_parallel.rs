@@ -14,6 +14,7 @@ fn parallel_branches_run_concurrently() {
     let binder = RecordingBinder::new();
     let job = Job {
         version: 1,
+        id: None,
         name: Some("parallel-demo".into()),
         working_dir: Some(PathBuf::from("/work")),
         input: JobInput {

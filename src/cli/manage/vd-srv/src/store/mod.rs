@@ -56,7 +56,7 @@ impl JobStore {
         restart: RestartPolicy,
     ) -> Result<JobRecord, StoreError> {
         let resolved = resolve_job(job.clone()).map_err(|e| StoreError::Usage(e.to_string()))?;
-        let id = new_job_id();
+        let id = vd_artifact::new_job_id();
         let dir = self.job_dir(&id);
         fs::create_dir_all(&dir).map_err(|e| StoreError::Io(e.to_string()))?;
 
@@ -385,15 +385,6 @@ fn resolved_summary(resolved: &ResolvedJob) -> serde_json::Value {
             })
         }).collect::<Vec<_>>(),
     })
-}
-
-fn new_job_id() -> String {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    let rumble = std::process::id();
-    format!("job-{nanos:x}-{rumble:x}")
 }
 
 pub fn now_rfc3339() -> String {

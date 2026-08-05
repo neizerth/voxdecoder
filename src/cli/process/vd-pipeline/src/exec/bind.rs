@@ -12,6 +12,11 @@ pub struct InvokeRequest {
     pub capability: Capability,
     /// Step / artifact id when set (e.g. `igor.cased`) — used by Runtime observe binding.
     pub step_id: Option<String>,
+    /// Global content-addressed cache key for this Job (ADR 0017 Decision B) — content hash
+    /// of `job.input.audio` for single-input Jobs, `job.id` (Runtime `JobRecord.id`, or the
+    /// same-format id minted locally) for multi-input meeting Jobs. Same value for every step
+    /// of one Job. Step output inference resolves through `vd_artifact::job_cache_dir(cache_key)`.
+    pub cache_key: String,
     pub working_dir: PathBuf,
     pub input: PathBuf,
     pub output: Option<PathBuf>,

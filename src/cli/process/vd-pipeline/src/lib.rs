@@ -4,6 +4,7 @@ pub mod artifacts;
 pub mod cli;
 pub mod config;
 pub mod exec;
+pub mod interactive;
 pub mod job;
 pub mod meeting_artifact;
 pub mod paths;
@@ -19,6 +20,7 @@ pub use job::{
     ArtifactRef, Capability, DefaultJobArgs, Job, JobContext, JobError, JobInput, JobOutput,
     ResolvedJob, ResolvedStep, Step, TranscribeEngine, WorkflowNode, WorkflowPlan,
 };
+pub use interactive::{MenuItem, MenuOutcome};
 pub use meeting_artifact::{
     MeetingArtifact, MeetingTurn, MergeStrategy, SpeakerSegment, SpeakerTimeline,
 };

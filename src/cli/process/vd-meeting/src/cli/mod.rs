@@ -82,6 +82,12 @@ pub struct RunCli {
     pub progress: Option<CliProgress>,
     #[arg(short = 'q', long = "quiet")]
     pub quiet: bool,
+    /// Enable interactive mode (auto-detect by TTY if not specified)
+    #[arg(long = "interactive")]
+    pub interactive: bool,
+    /// Disable interactive mode (non-TTY default)
+    #[arg(long = "non-interactive")]
+    pub non_interactive: bool,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
@@ -195,10 +201,21 @@ fn validate_run(cli: RunCli, force_dry: bool) -> Result<RunArgs, CliError> {
     if cli.json && !(cli.dry_run || force_dry) {
         return Err(CliError::usage("--json requires --dry-run (or use plan)"));
     }
+    if cli.interactive && cli.non_interactive {
+        return Err(CliError::usage("cannot use both --interactive and --non-interactive"));
+    }
     let meeting_file = cli.meeting_flag.or(cli.meeting_file);
     if meeting_file.is_none() && cli.inputs.is_empty() {
         return Err(CliError::usage("need a meeting document and/or --input …"));
     }
+    // Decide interactive mode: explicit flag > auto-detect TTY > default to false
+    let interactive = if cli.interactive {
+        true
+    } else if cli.non_interactive {
+        false
+    } else {
+        atty::is(atty::Stream::Stdin)
+    };
     Ok(RunArgs {
         meeting_file,
         inputs: cli.inputs,
@@ -216,5 +233,6 @@ fn validate_run(cli: RunCli, force_dry: bool) -> Result<RunArgs, CliError> {
         json: cli.json,
         progress: cli.progress.map(ProgressMode::from),
         quiet: cli.quiet,
+        interactive,
     })
 }

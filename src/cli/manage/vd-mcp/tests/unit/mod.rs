@@ -18,6 +18,7 @@ fn exposes_expected_tools() {
         [
             "process_audio".to_string(),
             "process_meeting".to_string(),
+            "classify_meeting_inputs".to_string(),
             "submit_job".to_string(),
             "get_job".to_string(),
             "cancel_job".to_string(),

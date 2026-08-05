@@ -10,6 +10,7 @@ use super::RecordingBinder;
 fn job(continue_on_error: bool) -> Job {
     Job {
         version: 1,
+        id: None,
         name: None,
         working_dir: Some(PathBuf::from("/work")),
         input: JobInput {
@@ -90,6 +91,7 @@ fn parallel_branch_failure_fails_job_by_default() {
     let binder = RecordingBinder::failing(Capability::FixCasing);
     let job = Job {
         version: 1,
+        id: None,
         name: Some("meeting".into()),
         working_dir: Some(PathBuf::from("/work")),
         input: JobInput {

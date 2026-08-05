@@ -1,6 +1,7 @@
 //! Light e2e runs (real child CLIs when available).
 
 use std::fs;
+use std::path::Path;
 
 use tempfile::TempDir;
 
@@ -9,6 +10,29 @@ use super::helpers::{
     which_near_pipeline, word_coverage,
 };
 use super::{bin, fixture, with_isolation};
+
+fn find_output_file(work_dir: &Path, filename: &str) -> Option<std::path::PathBuf> {
+    // Try cache first (using VD_HOME, usually work_dir/cache)
+    let cache_root = work_dir.join("cache");
+    if cache_root.exists() {
+        if let Ok(cache_entries) = std::fs::read_dir(&cache_root) {
+            for entry in cache_entries {
+                if let Ok(e) = entry {
+                    let candidate = e.path().join(filename);
+                    if candidate.exists() {
+                        return Some(candidate);
+                    }
+                }
+            }
+        }
+    }
+    // Fallback: old location
+    let fallback = work_dir.join(".voxdecoder/work").join(filename);
+    if fallback.exists() {
+        return Some(fallback);
+    }
+    None
+}
 
 #[test]
 fn run_fix_only() {
@@ -37,9 +61,11 @@ fn run_fix_only() {
 
     let mut cmd = bin();
     with_isolation(&mut cmd, &cfg);
+    cmd.env("VD_HOME", dir.path());
     cmd.arg(job).arg("-q").assert().success();
 
-    let fixed = dir.path().join(".voxdecoder/work/sample.fixed.txt");
+    let fixed = find_output_file(dir.path(), "sample.fixed.txt")
+        .unwrap_or_else(|| dir.path().join(".voxdecoder/work/sample.fixed.txt"));
     assert!(
         fixed.exists(),
         "expected {} after fix chain",
@@ -99,6 +125,7 @@ fn run_diarize_stub() {
 
     let mut cmd = bin();
     with_isolation(&mut cmd, &cfg);
+    cmd.env("VD_HOME", dir.path());
     if let Ok(d) = which_near_pipeline("vd-diarize") {
         if let Some(parent) = d.parent() {
             let path = env_path_prepend(parent);
@@ -107,7 +134,8 @@ fn run_diarize_stub() {
     }
     cmd.arg(&job).arg("-q").assert().success();
 
-    let out = dir.path().join(".voxdecoder/work/meeting.diarization.json");
+    let out = find_output_file(dir.path(), "meeting.diarization.json")
+        .unwrap_or_else(|| dir.path().join(".voxdecoder/work/meeting.diarization.json"));
     assert!(out.exists(), "expected {}", out.display());
 }
 

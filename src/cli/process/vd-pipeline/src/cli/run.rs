@@ -32,6 +32,8 @@ pub struct RunArgs {
     pub overwrite: bool,
     pub report: Option<PathBuf>,
     pub report_dir: Option<PathBuf>,
+    /// True if interactive mode is requested (explicit --interactive or auto-detected TTY)
+    pub interactive: bool,
 }
 
 impl RunArgs {

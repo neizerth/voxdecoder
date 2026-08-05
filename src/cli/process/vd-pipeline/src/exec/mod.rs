@@ -419,6 +419,7 @@ impl<B: Binder + Sync> Executor<B> {
         let req = InvokeRequest {
             capability: step.capability,
             step_id: step.id.clone(),
+            cache_key: resolved.cache_key.clone(),
             working_dir: resolved.working_dir.clone(),
             input: input.clone(),
             output: step.output.clone(),

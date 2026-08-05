@@ -12,6 +12,7 @@ fn artifact_id_wires_path() {
     let binder = RecordingBinder::new();
     let job = Job {
         version: 1,
+        id: None,
         name: None,
         working_dir: Some(PathBuf::from("/work")),
         input: JobInput {
@@ -55,6 +56,7 @@ fn dotted_meeting_ids_wire_across_parallel_branches() {
     let binder = RecordingBinder::new();
     let job = Job {
         version: 1,
+        id: None,
         name: Some("meeting".into()),
         working_dir: Some(PathBuf::from("/work")),
         input: JobInput {

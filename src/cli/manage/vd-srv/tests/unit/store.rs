@@ -9,6 +9,7 @@ use vd_srv::{JobStatus, JobStore, Priority, RestartPolicy};
 fn sample_job() -> Job {
     Job {
         version: 1,
+        id: None,
         name: Some("t".into()),
         working_dir: Some(PathBuf::from(".")),
         input: JobInput::default(),
@@ -42,6 +43,7 @@ fn parallel_meeting_branches_do_not_chain_depends_on() {
     let store = JobStore::open(dir.path()).unwrap();
     let job = Job {
         version: 1,
+        id: None,
         name: Some("meeting".into()),
         working_dir: Some(PathBuf::from("/work")),
         input: JobInput {

@@ -25,6 +25,7 @@ fn rec(id: &str, status: JobStatus, priority: Priority) -> JobRecord {
         unit: None,
         job: Job {
             version: 1,
+            id: None,
             name: None,
             working_dir: Some(PathBuf::from(".")),
             input: JobInput::default(),

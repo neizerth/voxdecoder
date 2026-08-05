@@ -25,5 +25,9 @@ pub use segments::{collect_segments, remove_segments, set_segment_text, Segment,
 pub use text_spans::{apply_to_text_spans, collect_span_texts, count_text_spans};
 pub use timeline::{remap_segments_json, remap_segments_value, remap_srt_file, remap_srt_text};
 pub use timemap::{TimeInterval, TimeMap, TimeMapSegment};
+pub use paths::{
+    atomic_temp_path, content_hash_key, finalize_atomic, job_cache_dir, job_cache_root,
+    new_job_id,
+};
 pub use types::{ArtifactType, FixOptions, FixResult, Language, SpanId, TextSpan};
 pub use writer::write;

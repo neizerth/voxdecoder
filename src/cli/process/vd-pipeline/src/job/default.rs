@@ -154,6 +154,7 @@ pub fn default_job(args: &DefaultJobArgs) -> Job {
 
     Job {
         version: 1,
+        id: None,
         name: None,
         working_dir: args.working_dir.clone(),
         input: JobInput {

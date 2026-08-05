@@ -8,6 +8,7 @@ use vd_pipeline::{resolve_job, Capability, Job, JobContext, JobInput, Step};
 fn relative_paths_join_working_dir() {
     let job = Job {
         version: 1,
+        id: None,
         name: None,
         working_dir: Some(PathBuf::from("/work")),
         input: JobInput {
@@ -48,6 +49,7 @@ fn relative_paths_join_working_dir() {
 fn diarize_resolves_from_audio() {
     let job = Job {
         version: 1,
+        id: None,
         name: None,
         working_dir: Some(PathBuf::from("/work")),
         input: JobInput {

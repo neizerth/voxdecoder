@@ -30,6 +30,7 @@ tokio-stream = "0.1"
 tonic = "0.12"
 prost = "0.13"
 vd-artifact = { path = "../../../crates/vd-artifact" }
+vd-classify = { path = "../../../crates/vd-classify" }
 vd-progress = { path = "../../../crates/vd-progress" }
 vd-pipeline = { path = "../../process/vd-pipeline" }
 vd-meeting = { path = "../../process/vd-meeting" }
