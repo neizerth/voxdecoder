@@ -183,3 +183,45 @@ This is the same pattern ADR 0008 already established for input resolution (`vd-
 - [ ] `vd-pipeline prune` (+ `vd-meeting prune` alias) exists, defaults to a dry-run-safe posture; `vdctl doctor`/`paths` may report cache size but never deletes.
 - [ ] `skills/vd-meeting/skill.md`'s Filename heuristics / Gender / Mix + tracks sections replaced by a call to `classify_meeting_inputs`; token size of the Skill drops measurably.
 - [ ] `vdctl` surface (`cli.md`, README, non-commands list) unchanged.
+
+## Implementation status
+
+Phase 0 (P0-1..6) and Phase 1 (P1-A..G) are done and merged — cache primitives, `new_job_id()` relocation, cache-path conversion across all `subprocess.rs` call sites, the `vd-pipeline::interactive` menu primitive, `vd-classify` (implemented: `strip_basename_noise`, `is_mix_token`, `infer_gender`, `classify_inputs` — all with unit tests), `plan.classify` + `classify_meeting_inputs` MCP tool, `resolve_context_dir()`, CLI scaffolding for `--interactive` on both `vd-meeting run` and `vd-pipeline run`, the `vd-pipeline prune` subcommand, and the `skill.md` rewrite to call the classify tool.
+
+**Known gaps found during review** (do not treat as done despite CLI surface existing):
+
+1. `vd-meeting`'s `interactive::show_wizard()` (`src/cli/process/vd-meeting/src/interactive/mod.rs`) is `todo!()` — the `--interactive` flag parses and auto-triggers on TTY but calling it panics.
+2. `vd-pipeline run --interactive` (`src/cli/process/vd-pipeline/src/cli/run.rs`) parses the flag into `RunArgs.interactive` but nothing reads that field — it is currently inert, not wired to anything.
+3. P1-H (resume test) has no actual test in the repo. A first attempt (`tests/integration/resume.rs`) didn't compile against the real `default_job`/`resolve_job`/`Executor` signatures and was deleted rather than fixed.
+4. `prune` filters candidates by directory mtime only — it does not check whether a `.tmp-{pid}` entry's PID is a still-live process before offering it for deletion.
+5. P2-1 (end-to-end `vd-meeting run` on cache), P2-2 (concurrency/crash-safety test for atomic cache write) are not started.
+
+### Remaining tasks (H1–H5)
+
+Each task's definition of done includes unit tests for any new non-trivial logic — a task is not complete on `cargo build`/existing-test-sweep success alone. Review each task's diff before starting the next; do not batch.
+
+**H1 — `vd-meeting` interactive wizard body** (closes gap 1)
+File: `src/cli/process/vd-meeting/src/interactive/mod.rs`. Implement `show_wizard()`:
+1. Collect candidate files from `working_dir` (or an explicit path list).
+2. Call `vd_classify::classify_inputs(&paths)`.
+3. Build `Vec<MenuItem<InputSource>>` from the result (label = `"{role} {name} [{gender}]"`).
+4. Run through `vd_pipeline::interactive::run()` (accept/edit/drop loop) on stdin/stdout.
+5. `edit_one` callback: allow manual override via a small `role=…,name=…,gender=…` text format.
+6. Call `crate::paths::resolve_context_dir()`; if found, offer to add it as `role: context` (separate y/n).
+7. Return `(Vec<InputSource>, Option<PathBuf>)`.
+
+Tests required: edit-string parsing (valid/invalid), `MenuItem` construction from `ClassifiedInput`, context-offer branch (found/not found), full happy path with a mocked `Cursor` stdin (mirror the pattern in `vd_pipeline::interactive::run`'s own tests).
+
+**H2 — Wire `vd-pipeline run --interactive`** (closes gap 2)
+File: `src/cli/process/vd-pipeline/src/cli/run.rs`. When `interactive && !dry_run && input.is_some()`: classify the single input via `vd_classify::classify_inputs`, confirm/edit through `vd_pipeline::interactive::run()` before building the default Job. Non-interactive path must be unchanged.
+Tests required: CLI flag parsing (`--interactive`/`--non-interactive` conflict — already validated, add a test asserting it), unit test confirming the non-interactive path is untouched.
+
+**H3 — Real resume test** (closes gap 3)
+Before writing anything, read the current signatures of `default_job()`, `resolve_job()`, and `Executor` in `src/job/default.rs`, `src/job/resolve.rs`, `src/exec/mod.rs` — do not guess from memory. Build a Job from the same input file twice (same content-hash → same `cache_key`), run the preprocess step, assert the second run reuses the cached file in `$VD_HOME/cache/{key}/` (mtime unchanged / subprocess not re-invoked).
+
+**H4 — Prune: skip live-process cache entries** (closes gap 4)
+File: `src/cli/process/vd-pipeline/src/cli/prune.rs`. Detect `{key}.tmp-{pid}` entries; before offering one for deletion, check whether `pid` is a live process (`kill(pid, 0)` or `sysinfo`) — skip if alive.
+Tests required: mtime-based filtering (extend existing), pid-alive detection (fake/mock pid), orphaned tmp-dir (dead pid) always prunable.
+
+**H5 — Concurrency/crash-safety test for atomic write** (P2-2)
+Test `vd_artifact::atomic_temp_path` + `finalize_atomic`: two writers targeting the same `cache_key` concurrently must not produce a partially-written final file. Simulate a crash (skip `finalize_atomic`) and assert the orphaned `.tmp-{pid}` is invisible at the final path.
