@@ -16,6 +16,7 @@ Schema: `vd-srv/proto`. Output `grpc-client/src/gen/` is **gitignored**.
 
 ```bash
 npm run generate
+npm run generate:verify   # optional smoke
 ```
 
 ## Dev
