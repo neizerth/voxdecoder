@@ -376,4 +376,70 @@ mod tests {
             .unwrap()
             .starts_with("meeting.prepared.wav.tmp-"));
     }
+
+    #[test]
+    fn concurrent_atomic_writes_do_not_corrupt_final_file() {
+        use std::thread;
+        use std::sync::{Arc, Barrier};
+
+        let dir = Arc::new(tempfile::TempDir::new().unwrap());
+        let final_path = dir.path().join("output.txt");
+
+        // Two threads attempt to write to the same final path simultaneously
+        let barrier = Arc::new(Barrier::new(2));
+        let mut handles = vec![];
+
+        for thread_id in 0..2 {
+            let _dir = Arc::clone(&dir);
+            let barrier = Arc::clone(&barrier);
+            let final_path = final_path.clone();
+
+            let handle = thread::spawn(move || {
+                let tmp_path = atomic_temp_path(&final_path);
+                fs::create_dir_all(tmp_path.parent().unwrap()).ok();
+
+                // Write to temp file
+                let content = format!("thread-{}\n", thread_id);
+                fs::write(&tmp_path, &content).unwrap();
+
+                // Synchronize both threads to maximize race condition window
+                barrier.wait();
+
+                // Attempt atomic finalize (only one should succeed)
+                finalize_atomic(&tmp_path, &final_path).ok();
+            });
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        // Final file must exist and contain complete content (no partial writes)
+        assert!(final_path.exists(), "final file must exist after concurrent writes");
+        let content = fs::read_to_string(&final_path).unwrap();
+        assert!(!content.is_empty(), "final file must not be empty");
+
+        // The winner's temp file should be gone; loser's might still exist
+        // but must not be visible as the final path
+        let tmp_patterns: Vec<_> = fs::read_dir(final_path.parent().unwrap())
+            .unwrap()
+            .filter_map(|e| {
+                let path = e.ok()?.path();
+                let name = path.file_name()?.to_str()?.to_string();
+                if name.contains(".tmp-") {
+                    Some(name)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        // At most one tmp file should remain (the loser's failed finalize)
+        assert!(
+            tmp_patterns.len() <= 1,
+            "at most one tmp file should remain: {:?}",
+            tmp_patterns
+        );
+    }
 }

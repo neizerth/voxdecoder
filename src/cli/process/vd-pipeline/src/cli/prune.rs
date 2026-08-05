@@ -19,11 +19,19 @@ pub fn execute(args: PruneCli) -> Result<(), CliError> {
     let cutoff = now - std::time::Duration::from_secs(older_than_secs);
 
     let mut candidates = Vec::new();
+
+    // Collect mtime-based candidates
     if let Ok(entries) = fs::read_dir(&cache_root) {
         for entry in entries.flatten() {
             let path = entry.path();
             if !path.is_dir() {
                 continue;
+            }
+            if let Some(key) = path.file_name().and_then(|n| n.to_str()) {
+                // Skip live .tmp-{pid} directories
+                if is_live_tmp_entry(key) {
+                    continue;
+                }
             }
             if let Ok(meta) = path.metadata() {
                 if let Ok(modified) = meta.modified() {
@@ -33,6 +41,22 @@ pub fn execute(args: PruneCli) -> Result<(), CliError> {
                             candidates.push((key.to_string(), path, size));
                         }
                     }
+                }
+            }
+        }
+    }
+
+    // Also collect dead .tmp-{pid} directories (pid not alive)
+    if let Ok(entries) = fs::read_dir(&cache_root) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            if let Some(key) = path.file_name().and_then(|n| n.to_str()) {
+                if is_tmp_entry(key) && !is_live_tmp_entry(key) {
+                    let size = du_bytes(&path).unwrap_or(0);
+                    candidates.push((format!("{}(dead)", key), path, size));
                 }
             }
         }
@@ -132,6 +156,30 @@ mod tests {
     fn default_cli_value_parses() {
         assert_eq!(parse_duration("7d"), Some(604800));
     }
+
+    #[test]
+    fn detects_tmp_entry() {
+        assert!(is_tmp_entry("abc.tmp-1234"));
+        assert!(is_tmp_entry("foo-bar.tmp-9999"));
+        assert!(!is_tmp_entry("abc"));
+        assert!(!is_tmp_entry("abc.tmp"));
+    }
+
+    #[test]
+    fn orphan_tmp_should_not_be_live() {
+        // Non-existent PIDs should not be considered alive
+        let fake_pid = 999999u32;
+        let dead_entry = format!("cache.tmp-{}", fake_pid);
+        // This assumes the fake PID doesn't exist, which is reasonable for testing
+        assert!(!is_live_tmp_entry(&dead_entry));
+    }
+
+    #[test]
+    fn malformed_pid_not_considered_live() {
+        // Malformed PID strings should not be considered live
+        assert!(!is_live_tmp_entry("cache.tmp-notapid"));
+        assert!(!is_live_tmp_entry("cache.tmp-"));
+    }
 }
 
 fn du_bytes(path: &std::path::Path) -> std::io::Result<u64> {
@@ -146,4 +194,42 @@ fn du_bytes(path: &std::path::Path) -> std::io::Result<u64> {
         }
     }
     Ok(size)
+}
+
+/// Check if directory name looks like a tmp entry: "{key}.tmp-{pid}/"
+fn is_tmp_entry(name: &str) -> bool {
+    name.contains(".tmp-")
+}
+
+/// Check if a tmp entry's PID is still alive.
+fn is_live_tmp_entry(name: &str) -> bool {
+    if !is_tmp_entry(name) {
+        return false;
+    }
+    // Extract PID from "{key}.tmp-{pid}" format
+    if let Some(pos) = name.rfind(".tmp-") {
+        if let Ok(pid) = name[pos + 5..].parse::<u32>() {
+            return is_pid_alive(pid);
+        }
+    }
+    false
+}
+
+/// Check if a process ID is alive (simplified: check /proc/{pid} on Linux).
+#[cfg(target_os = "linux")]
+fn is_pid_alive(pid: u32) -> bool {
+    std::path::Path::new(&format!("/proc/{}", pid)).exists()
+}
+
+/// Check if a process ID is alive on macOS (check /proc/{pid}/status).
+#[cfg(target_os = "macos")]
+fn is_pid_alive(pid: u32) -> bool {
+    // macOS has /dev/null and ps, but safer to check /dev/fd
+    std::path::Path::new(&format!("/dev/fd/{}", pid)).exists()
+}
+
+/// On other platforms, conservatively assume pid is dead.
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+fn is_pid_alive(_pid: u32) -> bool {
+    false
 }

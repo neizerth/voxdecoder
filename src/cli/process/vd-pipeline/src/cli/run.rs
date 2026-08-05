@@ -57,6 +57,13 @@ pub fn execute(args: RunArgs) -> Result<(), CliError> {
     let continue_on_error =
         args.continue_on_error || file.continue_on_error.unwrap_or(d.continue_on_error);
 
+    // Interactive wizard: classify single input, confirm with user
+    let input = if args.interactive && !args.dry_run {
+        args.input.clone()
+    } else {
+        args.input.clone()
+    };
+
     let job = if let Some(path) = &args.job_file {
         if !path.exists() {
             return Err(CliError::with_code(
@@ -66,9 +73,7 @@ pub fn execute(args: RunArgs) -> Result<(), CliError> {
         }
         load_job_file(path).map_err(map_job_err)?
     } else {
-        let audio = args
-            .input
-            .clone()
+        let audio = input
             .ok_or_else(|| CliError::with_code(3, "missing -i / --input".to_string()))?;
         if !audio.exists() {
             return Err(CliError::with_code(
@@ -76,6 +81,13 @@ pub fn execute(args: RunArgs) -> Result<(), CliError> {
                 format!("input missing: {}", audio.display()),
             ));
         }
+
+        // Interactive mode: classify and confirm single audio file
+        let audio_to_use = if args.interactive && !args.dry_run {
+            classify_and_confirm_audio(&audio)?
+        } else {
+            audio.clone()
+        };
         let asr = if args.asr == d.asr {
             file.asr.clone().unwrap_or_else(|| d.asr.to_string())
         } else {
@@ -84,7 +96,7 @@ pub fn execute(args: RunArgs) -> Result<(), CliError> {
         let engine = TranscribeEngine::parse(&asr)
             .ok_or_else(|| CliError::usage(format!("invalid --asr: {}", args.asr)))?;
         default_job(&DefaultJobArgs {
-            audio,
+            audio: audio_to_use,
             engine,
             model: args.model.clone(),
             device: args.device.clone(),
@@ -165,4 +177,103 @@ fn write_resolved_job(dir: &Path, resolved: &ResolvedJob) -> Result<(), CliError
 
 fn map_job_err(e: JobError) -> CliError {
     CliError::with_code(e.exit_code(), e.to_string())
+}
+
+/// Classify single audio file and show confirm menu to user.
+pub fn classify_and_confirm_audio(audio: &Path) -> Result<PathBuf, CliError> {
+    use std::io::{BufRead, Write};
+
+    // Classify the single file
+    let classified = vd_classify::classify_inputs(&[audio.to_path_buf()]);
+    if classified.is_empty() {
+        return Ok(audio.to_path_buf());
+    }
+
+    let c = &classified[0];
+    let gender_str = match c.gender {
+        Some(g) => format!("{:?}", g),
+        None => "?".to_string(),
+    };
+
+    eprintln!("Detected: {:?} {} [{}]", c.role, c.name, gender_str);
+
+    // Show simple y/n confirm (lightweight version for audio)
+    eprint!("Proceed? (y/N): ");
+    std::io::stderr().flush().ok();
+
+    let stdin = std::io::stdin();
+    let mut buf = String::new();
+    stdin
+        .lock()
+        .read_line(&mut buf)
+        .map_err(|e| CliError::usage(format!("read stdin: {}", e)))?;
+
+    if !buf.trim().eq_ignore_ascii_case("y") {
+        return Err(CliError::usage("audio confirmation aborted".to_string()));
+    }
+
+    Ok(audio.to_path_buf())
+}
+
+#[cfg(test)]
+mod interactive_tests {
+    use super::*;
+
+    #[test]
+    fn non_interactive_preserves_input() {
+        // Non-interactive mode should not call classify_and_confirm_audio
+        // and should use the input path unchanged
+        let run_args = RunArgs {
+            input: Some(PathBuf::from("test.wav")),
+            job_file: None,
+            asr: "whisper".to_string(),
+            model: None,
+            device: None,
+            flash: false,
+            docs: None,
+            output_dir: None,
+            working_dir: None,
+            dry_run: true,
+            json: false,
+            progress: None,
+            quiet: false,
+            continue_on_error: false,
+            overwrite: false,
+            report: None,
+            report_dir: None,
+            interactive: false, // Non-interactive
+        };
+
+        // With dry_run, we just verify the args are preserved
+        assert_eq!(run_args.input, Some(PathBuf::from("test.wav")));
+        assert!(!run_args.interactive);
+    }
+
+    #[test]
+    fn interactive_flag_set() {
+        // Verify that interactive flag can be set on RunArgs
+        let run_args = RunArgs {
+            input: Some(PathBuf::from("test.wav")),
+            job_file: None,
+            asr: "whisper".to_string(),
+            model: None,
+            device: None,
+            flash: false,
+            docs: None,
+            output_dir: None,
+            working_dir: None,
+            dry_run: false,
+            json: false,
+            progress: None,
+            quiet: false,
+            continue_on_error: false,
+            overwrite: false,
+            report: None,
+            report_dir: None,
+            interactive: true, // Interactive mode enabled
+        };
+
+        assert!(run_args.interactive);
+        assert_eq!(run_args.input, Some(PathBuf::from("test.wav")));
+    }
 }

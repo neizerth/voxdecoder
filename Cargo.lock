@@ -3748,6 +3748,7 @@ dependencies = [
  "thiserror 2.0.19",
  "toml",
  "vd-artifact",
+ "vd-classify",
  "vd-progress",
  "vd-text",
 ]
