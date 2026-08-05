@@ -57,13 +57,6 @@ pub fn execute(args: RunArgs) -> Result<(), CliError> {
     let continue_on_error =
         args.continue_on_error || file.continue_on_error.unwrap_or(d.continue_on_error);
 
-    // Interactive wizard: classify single input, confirm with user
-    let input = if args.interactive && !args.dry_run {
-        args.input.clone()
-    } else {
-        args.input.clone()
-    };
-
     let job = if let Some(path) = &args.job_file {
         if !path.exists() {
             return Err(CliError::with_code(
@@ -73,7 +66,9 @@ pub fn execute(args: RunArgs) -> Result<(), CliError> {
         }
         load_job_file(path).map_err(map_job_err)?
     } else {
-        let audio = input
+        let audio = args
+            .input
+            .clone()
             .ok_or_else(|| CliError::with_code(3, "missing -i / --input".to_string()))?;
         if !audio.exists() {
             return Err(CliError::with_code(

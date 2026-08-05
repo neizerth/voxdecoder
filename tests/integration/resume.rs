@@ -57,10 +57,16 @@ mod tests {
             "same audio file should produce same cache_key for deduplication"
         );
 
-        // Verify that cache_key is not an error/fresh id (should be content hash)
+        // Verify that cache_key is a BLAKE3 hash, not a minted id
+        // BLAKE3 hex: exactly 64 chars (256 bits in hex)
+        assert_eq!(
+            resolved1.cache_key.len(),
+            64,
+            "cache_key should be BLAKE3 hex hash (64 chars), not minted id"
+        );
         assert!(
-            resolved1.cache_key.len() > 10,
-            "cache_key should be a hash, not a fresh id"
+            resolved1.cache_key.chars().all(|c| c.is_ascii_hexdigit()),
+            "cache_key should be valid hex"
         );
     }
 

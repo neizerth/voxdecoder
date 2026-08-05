@@ -20,7 +20,7 @@ pub fn execute(args: PruneCli) -> Result<(), CliError> {
 
     let mut candidates = Vec::new();
 
-    // Collect mtime-based candidates
+    // Single pass: collect both mtime-based and dead-.tmp-{pid} candidates
     if let Ok(entries) = fs::read_dir(&cache_root) {
         for entry in entries.flatten() {
             let path = entry.path();
@@ -32,7 +32,14 @@ pub fn execute(args: PruneCli) -> Result<(), CliError> {
                 if is_live_tmp_entry(key) {
                     continue;
                 }
+                // Dead .tmp-{pid} entries are always prunable
+                if is_tmp_entry(key) && !is_live_tmp_entry(key) {
+                    let size = du_bytes(&path).unwrap_or(0);
+                    candidates.push((format!("{}(dead)", key), path, size));
+                    continue;
+                }
             }
+            // Regular entries: prune only if older than cutoff
             if let Ok(meta) = path.metadata() {
                 if let Ok(modified) = meta.modified() {
                     if modified < cutoff {
@@ -41,22 +48,6 @@ pub fn execute(args: PruneCli) -> Result<(), CliError> {
                             candidates.push((key.to_string(), path, size));
                         }
                     }
-                }
-            }
-        }
-    }
-
-    // Also collect dead .tmp-{pid} directories (pid not alive)
-    if let Ok(entries) = fs::read_dir(&cache_root) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if !path.is_dir() {
-                continue;
-            }
-            if let Some(key) = path.file_name().and_then(|n| n.to_str()) {
-                if is_tmp_entry(key) && !is_live_tmp_entry(key) {
-                    let size = du_bytes(&path).unwrap_or(0);
-                    candidates.push((format!("{}(dead)", key), path, size));
                 }
             }
         }

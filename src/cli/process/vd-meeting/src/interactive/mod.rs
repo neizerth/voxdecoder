@@ -76,7 +76,7 @@ pub fn show_wizard(
 
     if context_path.is_some() {
         eprint!("Found context folder. Add to inputs? (y/N): ");
-        stdout.flush().ok();
+        std::io::stderr().flush().ok();
         let mut buf = String::new();
         stdin_lock.read_line(&mut buf).ok();
         if !buf.trim().eq_ignore_ascii_case("y") {
