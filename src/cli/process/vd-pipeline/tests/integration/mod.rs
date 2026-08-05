@@ -10,6 +10,7 @@ mod exec_parallel;
 mod exec_prepare_context;
 mod exec_report;
 mod exec_resources;
+mod resume;
 mod stub;
 
 use stub::RecordingBinder;

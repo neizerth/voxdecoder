@@ -377,35 +377,37 @@ mod tests {
             .starts_with("meeting.prepared.wav.tmp-"));
     }
 
+    /// Two *distinct* writers (simulated: two literal tmp sibling paths, mirroring what
+    /// two different OS processes would get from `atomic_temp_path` since it keys on
+    /// `std::process::id()`) race to finalize onto the same `final_path`. Threads within
+    /// one test process share a pid, so `atomic_temp_path` alone can't produce two
+    /// different paths here — the distinct suffixes are constructed directly instead.
     #[test]
     fn concurrent_atomic_writes_do_not_corrupt_final_file() {
-        use std::thread;
         use std::sync::{Arc, Barrier};
+        use std::thread;
 
-        let dir = Arc::new(tempfile::TempDir::new().unwrap());
+        let dir = tempfile::TempDir::new().unwrap();
         let final_path = dir.path().join("output.txt");
+        let parent = final_path.parent().unwrap();
+        fs::create_dir_all(parent).unwrap();
 
-        // Two threads attempt to write to the same final path simultaneously
         let barrier = Arc::new(Barrier::new(2));
         let mut handles = vec![];
 
-        for thread_id in 0..2 {
-            let _dir = Arc::clone(&dir);
+        for writer_id in 0..2u32 {
             let barrier = Arc::clone(&barrier);
             let final_path = final_path.clone();
+            // Distinct tmp sibling per writer, as two different processes would produce.
+            let tmp_path = parent.join(format!("output.txt.tmp-{}", 90000 + writer_id));
 
             let handle = thread::spawn(move || {
-                let tmp_path = atomic_temp_path(&final_path);
-                fs::create_dir_all(tmp_path.parent().unwrap()).ok();
-
-                // Write to temp file
-                let content = format!("thread-{}\n", thread_id);
+                let content = format!("writer-{}\n", writer_id);
                 fs::write(&tmp_path, &content).unwrap();
 
-                // Synchronize both threads to maximize race condition window
+                // Synchronize both writers to maximize the race window around rename().
                 barrier.wait();
 
-                // Attempt atomic finalize (only one should succeed)
                 finalize_atomic(&tmp_path, &final_path).ok();
             });
             handles.push(handle);
@@ -415,31 +417,53 @@ mod tests {
             handle.join().unwrap();
         }
 
-        // Final file must exist and contain complete content (no partial writes)
-        assert!(final_path.exists(), "final file must exist after concurrent writes");
+        // Final file must exist and contain exactly one writer's complete content —
+        // never a mix of both, never empty, never partially written.
+        assert!(
+            final_path.exists(),
+            "final file must exist after concurrent writes"
+        );
         let content = fs::read_to_string(&final_path).unwrap();
-        assert!(!content.is_empty(), "final file must not be empty");
+        assert!(
+            content == "writer-0\n" || content == "writer-1\n",
+            "final file must contain exactly one writer's full content, got: {:?}",
+            content
+        );
 
-        // The winner's temp file should be gone; loser's might still exist
-        // but must not be visible as the final path
-        let tmp_patterns: Vec<_> = fs::read_dir(final_path.parent().unwrap())
+        // POSIX rename() atomically replaces an existing destination rather than failing,
+        // so both writers' renames succeed in turn (whichever runs last wins the content)
+        // and both source tmp siblings are consumed — none should remain.
+        let remaining_tmp = fs::read_dir(parent)
             .unwrap()
             .filter_map(|e| {
                 let path = e.ok()?.path();
                 let name = path.file_name()?.to_str()?.to_string();
-                if name.contains(".tmp-") {
-                    Some(name)
-                } else {
-                    None
-                }
+                name.contains(".tmp-").then_some(name)
             })
-            .collect();
-
-        // At most one tmp file should remain (the loser's failed finalize)
-        assert!(
-            tmp_patterns.len() <= 1,
-            "at most one tmp file should remain: {:?}",
-            tmp_patterns
+            .count();
+        assert_eq!(
+            remaining_tmp, 0,
+            "both writers' tmp siblings must be consumed by rename(), none orphaned"
         );
+    }
+
+    /// Crash-safety: a writer that dies before calling `finalize_atomic` leaves only an
+    /// orphaned `.tmp-{pid}` sibling — a reader watching only `final_path` never observes
+    /// it, and never mistakes it for a completed step.
+    #[test]
+    fn crashed_writer_leaves_final_path_untouched() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let final_path = dir.path().join("step").join("out.bin");
+        let tmp_path = atomic_temp_path(&final_path);
+
+        fs::create_dir_all(tmp_path.parent().unwrap()).unwrap();
+        fs::write(&tmp_path, b"in-flight, writer crashed before finalize").unwrap();
+        // Simulate the crash: never call finalize_atomic.
+
+        assert!(
+            !final_path.exists(),
+            "final_path must stay invisible after a crashed writer"
+        );
+        assert!(tmp_path.exists(), "the orphaned tmp sibling must remain on disk");
     }
 }

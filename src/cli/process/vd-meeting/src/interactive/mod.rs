@@ -1,6 +1,6 @@
 //! Interactive wizard for meeting input selection (ADR 0017 Decision D).
 
-use std::io::{self, BufRead, Cursor, Write};
+use std::io::{self, BufRead, Write};
 use std::path::PathBuf;
 
 use vd_pipeline::interactive::{MenuItem, MenuOutcome};

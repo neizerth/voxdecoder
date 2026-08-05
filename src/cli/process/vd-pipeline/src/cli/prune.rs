@@ -171,6 +171,22 @@ mod tests {
         assert!(!is_live_tmp_entry("cache.tmp-notapid"));
         assert!(!is_live_tmp_entry("cache.tmp-"));
     }
+
+    #[test]
+    fn current_pid_is_alive() {
+        // The running test process's own PID must be detected as alive.
+        let current_pid = std::process::id();
+        let live_entry = format!("cache.tmp-{}", current_pid);
+        assert!(is_live_tmp_entry(&live_entry));
+    }
+
+    #[test]
+    fn definitely_dead_pid_is_not_alive() {
+        // PID 1 is always alive (init/launchd); a very high, almost-certainly-unassigned
+        // PID should not be. This is inherently a best-effort check (PID reuse exists),
+        // but a fresh max-range PID is a reasonable negative case.
+        assert!(!is_pid_alive(u32::from(u16::MAX) * 100));
+    }
 }
 
 fn du_bytes(path: &std::path::Path) -> std::io::Result<u64> {
@@ -206,21 +222,21 @@ fn is_live_tmp_entry(name: &str) -> bool {
     false
 }
 
-/// Check if a process ID is alive (simplified: check /proc/{pid} on Linux).
-#[cfg(target_os = "linux")]
+/// Check if a process ID is alive via `kill -0 {pid}` — sends no signal, only checks
+/// existence/permission (POSIX `kill(pid, 0)` semantics). Shells out instead of an
+/// `unsafe` libc FFI call, per this workspace's `unsafe-code` lint. Works uniformly
+/// across Unix (Linux, macOS, BSD).
+#[cfg(unix)]
 fn is_pid_alive(pid: u32) -> bool {
-    std::path::Path::new(&format!("/proc/{}", pid)).exists()
+    std::process::Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .output()
+        .map(|out| out.status.success())
+        .unwrap_or(false)
 }
 
-/// Check if a process ID is alive on macOS (check /proc/{pid}/status).
-#[cfg(target_os = "macos")]
-fn is_pid_alive(pid: u32) -> bool {
-    // macOS has /dev/null and ps, but safer to check /dev/fd
-    std::path::Path::new(&format!("/dev/fd/{}", pid)).exists()
-}
-
-/// On other platforms, conservatively assume pid is dead.
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+/// On non-Unix platforms, conservatively assume pid is dead.
+#[cfg(not(unix))]
 fn is_pid_alive(_pid: u32) -> bool {
     false
 }

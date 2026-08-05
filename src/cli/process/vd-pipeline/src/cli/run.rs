@@ -214,14 +214,11 @@ pub fn classify_and_confirm_audio(audio: &Path) -> Result<PathBuf, CliError> {
 mod interactive_tests {
     use super::*;
 
-    #[test]
-    fn non_interactive_preserves_input() {
-        // Non-interactive mode should not call classify_and_confirm_audio
-        // and should use the input path unchanged
-        let run_args = RunArgs {
-            input: Some(PathBuf::from("test.wav")),
+    fn base_args(input: PathBuf, interactive: bool) -> RunArgs {
+        RunArgs {
+            input: Some(input),
             job_file: None,
-            asr: "whisper".to_string(),
+            asr: "gigaam".to_string(),
             model: None,
             device: None,
             flash: false,
@@ -231,44 +228,40 @@ mod interactive_tests {
             dry_run: true,
             json: false,
             progress: None,
-            quiet: false,
+            quiet: true,
             continue_on_error: false,
             overwrite: false,
             report: None,
             report_dir: None,
-            interactive: false, // Non-interactive
-        };
+            interactive,
+        }
+    }
 
-        // With dry_run, we just verify the args are preserved
-        assert_eq!(run_args.input, Some(PathBuf::from("test.wav")));
-        assert!(!run_args.interactive);
+    /// `execute()` guards the wizard call on `!args.dry_run` (see the `audio_to_use`
+    /// branch above) specifically so `--interactive --dry-run` never blocks on stdin.
+    /// This exercises the real guard through `execute()`, not just that the field is
+    /// settable: if that guard regressed, this test would hang instead of passing.
+    #[test]
+    fn dry_run_interactive_does_not_block_on_stdin() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let audio = temp.path().join("test.wav");
+        std::fs::write(&audio, b"dummy audio content").unwrap();
+
+        let result = execute(base_args(audio, true));
+        assert!(
+            result.is_ok(),
+            "dry-run + interactive must complete without stdin, got: {:?}",
+            result.err()
+        );
     }
 
     #[test]
-    fn interactive_flag_set() {
-        // Verify that interactive flag can be set on RunArgs
-        let run_args = RunArgs {
-            input: Some(PathBuf::from("test.wav")),
-            job_file: None,
-            asr: "whisper".to_string(),
-            model: None,
-            device: None,
-            flash: false,
-            docs: None,
-            output_dir: None,
-            working_dir: None,
-            dry_run: false,
-            json: false,
-            progress: None,
-            quiet: false,
-            continue_on_error: false,
-            overwrite: false,
-            report: None,
-            report_dir: None,
-            interactive: true, // Interactive mode enabled
-        };
+    fn dry_run_non_interactive_completes() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let audio = temp.path().join("test.wav");
+        std::fs::write(&audio, b"dummy audio content").unwrap();
 
-        assert!(run_args.interactive);
-        assert_eq!(run_args.input, Some(PathBuf::from("test.wav")));
+        let result = execute(base_args(audio, false));
+        assert!(result.is_ok(), "got: {:?}", result.err());
     }
 }
